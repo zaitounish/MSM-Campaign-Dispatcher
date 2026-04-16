@@ -53,16 +53,16 @@ export const generateEmail = ({ merchant, selectedPromos, promoConfigs, repSetti
 
   const mName = merchant.merchantName || "Merchant Partner";
   
-  // Subject — use rep's override if set, otherwise auto-generate
+  // Subject - use rep's override if set, otherwise auto-generate
   let subject = merchant.subjectOverride || "";
   if (!subject) {
     if (selectedPromos.length === 1) {
       const p1 = getPromoInfo(selectedPromos[0]);
-      if (p1) subject = `${mName} \u2014 Boost Sales with ${p1.name} on DoorDash \ud83d\ude80`;
+      if (p1) subject = `${mName} | Boost Sales with ${p1.name} on DoorDash \ud83d\ude80`;
     } else if (selectedPromos.length > 1 && selectedPromos.length < 4) {
-      subject = `${mName} \u2014 ${selectedPromos.length} Growth Opportunities Waiting For You on DoorDash`;
+      subject = `${mName} | ${selectedPromos.length} Growth Opportunities Waiting For You on DoorDash`;
     } else {
-      subject = `${mName} \u2014 Your Personalized DoorDash Growth Plan`;
+      subject = `${mName} | Your Personalized DoorDash Growth Plan`;
     }
   }
 
@@ -142,7 +142,7 @@ export const generateEmail = ({ merchant, selectedPromos, promoConfigs, repSetti
   } catch (err) {
     console.error("[generateEmail] crashed for merchant:", merchant?.merchantName, err);
     return {
-      subject: `${merchant?.merchantName || "Merchant"} — DoorDash Campaign`,
+      subject: `${merchant?.merchantName || "Merchant"} | DoorDash Campaign`,
       htmlBody: `<p style="font-family:sans-serif;color:#333">Email generation encountered an error. Please review your promo configuration.</p>`,
       plainTextBody: "Email generation encountered an error. Please review your promo configuration.",
       isCustom: false

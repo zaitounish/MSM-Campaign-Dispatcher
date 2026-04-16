@@ -5,15 +5,18 @@ export default function MerchantEmailEditor({ merchant, initialHtml, initialSubj
   const [applyToAll, setApplyToAll] = useState(false);
   const editorRef = useRef(null);
 
-  // Parse the subject into two parts: "Store Name" and "— title part"
-  // Format is always: "{merchantName} — {title}"
-  const separatorIdx = (initialSubject || "").indexOf(" \u2014 ");
+  // Parse the subject into two parts: "Store Name" and "| title part"
+  // Format is always: "{merchantName} | {title}"
+  let separatorIdx = (initialSubject || "").indexOf(" | ");
+  if (separatorIdx === -1) separatorIdx = (initialSubject || "").indexOf(" - ");
+  if (separatorIdx === -1) separatorIdx = (initialSubject || "").indexOf(" \u2014 ");
+  
   const namePart = separatorIdx !== -1 ? initialSubject.slice(0, separatorIdx) : (merchant?.merchantName || "");
   const titlePart = separatorIdx !== -1 ? initialSubject.slice(separatorIdx + 3) : (initialSubject || "");
 
   // Subject edit modes
   const [subjectMode, setSubjectMode] = useState("title"); // "title" | "full"
-  const [subjectTitle, setSubjectTitle] = useState(titlePart);    // only the part after " — "
+  const [subjectTitle, setSubjectTitle] = useState(titlePart);    // only the part after " - "
   const [subjectFull, setSubjectFull] = useState(initialSubject || ""); // full subject override
 
   // Populate the WYSIWYG editor once
@@ -30,7 +33,7 @@ export default function MerchantEmailEditor({ merchant, initialHtml, initialSubj
 
   const buildSubjectFor = (merchantName) => {
     if (subjectMode === "full") return subjectFull;
-    return `${merchantName} \u2014 ${subjectTitle}`;
+    return `${merchantName} | ${subjectTitle}`;
   };
 
   const handleSave = () => {
@@ -119,7 +122,7 @@ export default function MerchantEmailEditor({ merchant, initialHtml, initialSubj
                 className="px-3 py-2.5 text-sm text-slate-400 bg-slate-50 border-r border-slate-200 whitespace-nowrap font-medium select-none"
                 title="Store name is always personalized per merchant"
               >
-                {applyToAll ? "{Store Name}" : namePart} —
+                {applyToAll ? "{Store Name}" : namePart} |
               </span>
               <input
                 type="text"
@@ -142,7 +145,7 @@ export default function MerchantEmailEditor({ merchant, initialHtml, initialSubj
 
           {subjectMode === "title" && applyToAll && (
             <p className="text-xs text-slate-400">
-              Each merchant will get their own store name prepended: <em>"{`{Store Name} — ${subjectTitle || "..."}`}"</em>
+              Each merchant will get their own store name prepended: <em>"{`{Store Name} | ${subjectTitle || "..."}`}"</em>
             </p>
           )}
           {subjectMode === "full" && applyToAll && (

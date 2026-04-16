@@ -52,7 +52,7 @@ export default function EmailPreview({
       if (subjectMode === "full") {
         subjectOverride = subjectFull;
       } else if (subjectTitle) {
-        subjectOverride = `${m.merchantName} \u2014 ${subjectTitle}`;
+        subjectOverride = `${m.merchantName} | ${subjectTitle}`;
       }
       return { ...m, emailOverride: html, subjectOverride };
     }));

@@ -1,4 +1,4 @@
-# MSM Campaign Dispatcher — Implementation Plan (FINAL)
+# MSM Campaign Dispatcher - Implementation Plan (FINAL)
 
 ## Overview
 
@@ -24,7 +24,7 @@ MSM Campaign Dispatcher/
 │   └── Code.gs                  # Google Apps Script companion (bulk send backend)
 └── src/
     ├── main.jsx
-    ├── App.jsx                   # Root orchestrator — all global state lives here
+    ├── App.jsx                   # Root orchestrator - all global state lives here
     ├── config.js                 # Constants: BASE_DEEP_LINK_URL, static param defaults
     ├── lib/
     │   ├── bobParser.js          # BOB extraction + deduplication engine
@@ -46,14 +46,14 @@ MSM Campaign Dispatcher/
 
 ---
 
-## Phase 0 — Scaffolding
+## Phase 0 - Scaffolding
 
 Run inside `MSM Campaign Dispatcher/`:
 ```bash
 npx -y create-vite@latest ./ --template react
 npm install tailwindcss @tailwindcss/vite lucide-react
 ```
-No CDN for Tailwind — use the Vite plugin for full JIT.
+No CDN for Tailwind - use the Vite plugin for full JIT.
 `xlsx` loaded from CDN via `<script>` in `index.html` (matches the proven pattern from App.jsx baseline).
 
 `tailwind.config.js` extends with:
@@ -63,11 +63,11 @@ theme: { extend: { colors: { 'dd-red': '#eb1700', 'dd-red-dark': '#d11500' } } }
 
 ---
 
-## Phase 1 — Data Ingestion (BOB Parser)
+## Phase 1 - Data Ingestion (BOB Parser)
 
 ### `src/lib/bobParser.js`
 
-**Column Detection — Fuzzy Keyword Matching**
+**Column Detection - Fuzzy Keyword Matching**
 
 Headers are normalized: `h.toLowerCase().trim().replace(/\s+/g, ' ')` before matching.
 
@@ -97,7 +97,7 @@ Pass 2: Among rows *without* a businessId, group by dmEmail (fallback key)
   id: crypto.randomUUID(),
   merchantName: string,
   businessId: string,
-  sids: string,           // "123,456" — comma-separated
+  sids: string,           // "123,456" - comma-separated
   targetEmail: string,    // dmEmail ?? storeEmail
   dmEmail: string,
   storeEmail: string,
@@ -136,7 +136,7 @@ Pass 2: Among rows *without* a businessId, group by dmEmail (fallback key)
 
 ---
 
-## Phase 2 — Credits Feature
+## Phase 2 - Credits Feature
 
 ### `src/components/CreditsPanel.jsx`
 
@@ -155,7 +155,7 @@ Rendered as a collapsible section **within each merchant row's expanded accordio
 ```
 💳 You Have Credits Available!
 You currently have $[X] in DoorDash credits [expiring on MM/DD/YYYY].
-This is a perfect time to activate your [Promo Name] — your credits can
+This is a perfect time to activate your [Promo Name] - your credits can
 help offset the initial cost and maximize your return.
 ```
 
@@ -163,7 +163,7 @@ help offset the initial cost and maximize your return.
 
 ---
 
-## Phase 3 — Promo Selector & Customizer
+## Phase 3 - Promo Selector & Customizer
 
 ### `src/components/PromoSelector.jsx`
 
@@ -204,8 +204,8 @@ One accordion section per selected promo. All financial inputs here feed **both*
 | UI Field | URL Param | Format |
 |---|---|---|
 | Weekly Budget | `abv` | Integer (dollars × 100, e.g. $10 → `1000`) |
-| — | `aud` | hardcoded `all` |
-| — | `bsia=true`, `sch_ad=true`, `bsao=0` | static |
+| - | `aud` | hardcoded `all` |
+| - | `bsia=true`, `sch_ad=true`, `bsao=0` | static |
 
 ---
 
@@ -213,8 +213,8 @@ One accordion section per selected promo. All financial inputs here feed **both*
 | UI Field | URL Param | Format |
 |---|---|---|
 | Weekly Budget | `abv` | Integer (dollars × 100) |
-| — | `aud` | hardcoded `new_to_merchant` |
-| — | `bsia=true`, `sch_ad=true`, `bsao=0` | static |
+| - | `aud` | hardcoded `new_to_merchant` |
+| - | `bsia=true`, `sch_ad=true`, `bsao=0` | static |
 
 ---
 
@@ -237,9 +237,9 @@ One accordion section per selected promo. All financial inputs here feed **both*
 | UI Field | URL Param | Format | Notes |
 |---|---|---|---|
 | Discount Amount ($) | `bscv` | Integer (dollars × 100, e.g. $5 → `500`) | |
-| Minimum Order ($) | (text only, no param) | — | Optional, email copy only |
+| Minimum Order ($) | (text only, no param) | - | Optional, email copy only |
 | Target Audience | `aud` | See audience map below | |
-| — | `bsia=true`, `bsao=0` | static | |
+| - | `bsia=true`, `bsao=0` | static | |
 
 Audience dropdown:
 ```
@@ -257,7 +257,7 @@ Audience dropdown:
 | Start Time (h:mm) | (text only) | Email copy only |
 | End Time (h:mm) | (text only) | Email copy only |
 | Discount Amount ($) | `bscv` | Integer (× 100) |
-| — | `bsia=true`, `bsao=0` | static |
+| - | `bsia=true`, `bsao=0` | static |
 | `aud` | `all` | hardcoded |
 
 ---
@@ -288,7 +288,7 @@ Identical structure to Happy Hour. Default time window hint: "11 am – 2 pm".
 
 ---
 
-## Phase 4 — Deep Link Builder
+## Phase 4 - Deep Link Builder
 
 ### `src/lib/deepLinkBuilder.js`
 
@@ -325,7 +325,7 @@ Each promo's customizer config feeds this function:
 
 ---
 
-## Phase 5 — Template Engine
+## Phase 5 - Template Engine
 
 ### `src/lib/emailTemplates.js`
 
@@ -341,16 +341,16 @@ generateEmail({
 ```
 
 **Subject line logic:**
-- 1 promo: `"[MerchantName] — Unlock [PromoName] on DoorDash 🚀"`
-- 2–3 promos: `"[MerchantName] — [N] Growth Opportunities on DoorDash"`
-- 4+ promos: `"[MerchantName] — Your Personalized DoorDash Growth Plan"`
+- 1 promo: `"[MerchantName] - Unlock [PromoName] on DoorDash 🚀"`
+- 2–3 promos: `"[MerchantName] - [N] Growth Opportunities on DoorDash"`
+- 4+ promos: `"[MerchantName] - Your Personalized DoorDash Growth Plan"`
 
 **HTML body structure:**
 ```
 [Greeting]
 Hi [Merchant Name] team, hope you're doing well!
 
-[Credits Block — only if hasCredits=true]
+[Credits Block - only if hasCredits=true]
 💳 You Have $[X] in DoorDash Credits [expiring MM/DD/YYYY]!
   "This is a great time to activate one of the campaigns below..."
 
@@ -386,7 +386,7 @@ DoorDash Merchant Success
 
 ---
 
-## Phase 6 — Settings Modal
+## Phase 6 - Settings Modal
 
 ### `src/components/RepSettingsModal.jsx`
 
@@ -406,7 +406,7 @@ Persists to `localStorage` key `"mcd_rep_settings"`:
 
 ---
 
-## Phase 7 — Delivery Panel
+## Phase 7 - Delivery Panel
 
 ### `src/components/DeliveryPanel.jsx`
 
@@ -438,7 +438,7 @@ Body: {
 
 ---
 
-## Phase 8 — GAS Companion Script
+## Phase 8 - GAS Companion Script
 
 ### `gas/Code.gs`
 
