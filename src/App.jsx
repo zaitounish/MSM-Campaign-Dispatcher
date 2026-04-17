@@ -50,10 +50,12 @@ export default function App() {
 function AppInner() {
   const [phase, setPhase] = useState("upload");
   const [merchants, setMerchants] = useState([]);
+  const [activeMerchantIds, setActiveMerchantIds] = useState(new Set());
   
   // Phase 3 states
   const [selectedPromos, setSelectedPromos] = useState([]);
   const [promoConfigs, setPromoConfigs] = useState({});
+  const [dispatchMode, setDispatchMode] = useState("cc");
   
   // Scaffolding states for later phases
   const [repSettings, setRepSettings] = useState(() => {
@@ -79,19 +81,23 @@ function AppInner() {
   }, [repSettings]);
 
   // Derived phase 4 states
+  const targetMerchants = useMemo(() => {
+    return merchants.filter(m => activeMerchantIds.has(m.id));
+  }, [merchants, activeMerchantIds]);
+
   const deepLinks = useMemo(() => {
-    return buildAllDeepLinks(merchants, selectedPromos, promoConfigs, repSettings.repId);
-  }, [merchants, selectedPromos, promoConfigs, repSettings.repId]);
+    return buildAllDeepLinks(targetMerchants, selectedPromos, promoConfigs, repSettings.repId);
+  }, [targetMerchants, selectedPromos, promoConfigs, repSettings.repId]);
 
   const emailDrafts = useMemo(() => {
-    return merchants.map(m => generateEmail({ 
+    return targetMerchants.map(m => generateEmail({ 
       merchant: m, 
       selectedPromos, 
       promoConfigs, 
       repSettings, 
       deepLinks: deepLinks[m.id] 
-    })).map((draft, i) => ({ merchantId: merchants[i].id, ...draft }));
-  }, [merchants, selectedPromos, promoConfigs, repSettings, deepLinks]);
+    })).map((draft, i) => ({ merchantId: targetMerchants[i].id, ...draft }));
+  }, [targetMerchants, selectedPromos, promoConfigs, repSettings, deepLinks]);
 
   const handleDataLoaded = (parsedData) => {
     setMerchants(parsedData);
@@ -132,18 +138,15 @@ function AppInner() {
                </p>
             </div>
             
-            <MerchantTable merchants={merchants} setMerchants={setMerchants} />
-            
-            <div className="flex justify-end pt-4">
-              <button
-                onClick={() => setPhase("build")}
-                disabled={selectedCount === 0}
-                className="flex items-center gap-2 px-8 py-3.5 bg-dd-red text-white font-bold rounded-xl shadow-md hover:bg-dd-red-dark hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0 disabled:cursor-not-allowed"
-              >
-                Continue to Configure Promos
-                <ArrowRight className="w-5 h-5" />
-              </button>
-            </div>
+            <MerchantTable 
+              merchants={merchants} 
+              setMerchants={setMerchants} 
+              onActiveMerchantsChange={setActiveMerchantIds}
+              onContinue={(payloadIds) => {
+                if (payloadIds) setActiveMerchantIds(payloadIds);
+                setPhase("build");
+              }} 
+            />
           </div>
         )}
 
@@ -174,12 +177,12 @@ function AppInner() {
 
         {phase === "deliver" && (
           <div className="space-y-4">
-            {selectedPromos.length === 0 || merchants.filter(m => m.selected).length === 0 ? (
+            {selectedPromos.length === 0 || targetMerchants.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-24 text-slate-400">
                 <div className="text-6xl mb-4">📭</div>
                 <h3 className="text-xl font-bold text-slate-600 mb-2">Nothing to Preview Yet</h3>
                 <p className="text-slate-500 text-center max-w-sm">
-                  {merchants.filter(m => m.selected).length === 0
+                  {targetMerchants.length === 0
                     ? "Go back to Step 2 and select at least one merchant."
                     : "Go back to Step 3 and select at least one promotion."
                   }
@@ -188,14 +191,17 @@ function AppInner() {
             ) : (
               <>
                 <EmailPreview 
-                  merchants={merchants} 
+                  merchants={targetMerchants} 
                   emailDrafts={emailDrafts} 
                   setMerchants={setMerchants} 
+                  dispatchMode={dispatchMode}
                 />
                 <DeliveryPanel 
-                  merchants={merchants} 
+                  merchants={targetMerchants} 
                   emailDrafts={emailDrafts} 
                   repSettings={repSettings} 
+                  dispatchMode={dispatchMode}
+                  setDispatchMode={setDispatchMode}
                 />
               </>
             )}

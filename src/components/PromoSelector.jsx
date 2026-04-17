@@ -1,18 +1,17 @@
 import React from "react";
-import { CheckCircle2, TrendingUp, Users, RefreshCw, Gift, HandCoins, Percent, Clock, Coffee, Star } from "lucide-react";
+import { CheckCircle2, TrendingUp, Users, Gift, HandCoins, Percent, Clock, Coffee, Star } from "lucide-react";
 
 export const PROMO_CATALOG = [
   {
     category: "Recommended for you",
     items: [
       { id: "smart_campaign", name: "Smart campaign", desc: "DoorDash will personalize each discount in real-time.", icon: TrendingUp },
-      { id: "ads_all", name: "Advertise to all customers", desc: "Featured prominently on the app to all customers.", icon: Users },
+      { id: "ads", name: "Advertise to customers", desc: "Featured prominently on the app to your selected audience.", icon: Users },
     ]
   },
   {
     category: "More ways to help you grow",
     items: [
-      { id: "ads_new", name: "Advertise to new customers", desc: "Target entirely new customers to your store.", icon: RefreshCw },
       { id: "bogo", name: "Buy 1, get 1 free promotion", desc: "Include a free item with purchase of the same item.", icon: Gift },
       { id: "delivery_fee", name: "Pay customer's delivery fee", desc: "Cover delivery fees to stand out.", icon: HandCoins },
       { id: "discount", name: "Offer a discount promotion", desc: "Incentivize customers with a tailored % or $ discount.", icon: Percent },

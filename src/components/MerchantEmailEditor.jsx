@@ -5,14 +5,14 @@ export default function MerchantEmailEditor({ merchant, initialHtml, initialSubj
   const [applyToAll, setApplyToAll] = useState(false);
   const editorRef = useRef(null);
 
-  // Parse the subject into two parts: "Store Name" and "| title part"
-  // Format is always: "{merchantName} | {title}"
+  // Parse the subject into two parts: "Store Name" and " | title part"
+  // Format is always: "{merchantName} | {title}" or similar fallback
   let separatorIdx = (initialSubject || "").indexOf(" | ");
   if (separatorIdx === -1) separatorIdx = (initialSubject || "").indexOf(" - ");
   if (separatorIdx === -1) separatorIdx = (initialSubject || "").indexOf(" \u2014 ");
   
   const namePart = separatorIdx !== -1 ? initialSubject.slice(0, separatorIdx) : (merchant?.merchantName || "");
-  const titlePart = separatorIdx !== -1 ? initialSubject.slice(separatorIdx + 3) : (initialSubject || "");
+  const titlePart = separatorIdx !== -1 ? initialSubject.slice(separatorIdx) : (initialSubject ? ` | ${initialSubject}` : "");
 
   // Subject edit modes
   const [subjectMode, setSubjectMode] = useState("title"); // "title" | "full"
@@ -28,20 +28,30 @@ export default function MerchantEmailEditor({ merchant, initialHtml, initialSubj
 
   const execFormat = (command, value = null) => {
     editorRef.current?.focus();
-    document.execCommand(command, false, value);
+    if (command === "insertText") {
+       // execCommand("insertText") works inconsistently if no selection. We ensure focus first.
+       document.execCommand("insertText", false, value);
+    } else {
+       document.execCommand(command, false, value);
+    }
   };
 
-  const buildSubjectFor = (merchantName) => {
+  const buildSubjectFor = (merchantName, forTemplate = false) => {
+    if (forTemplate) {
+      if (subjectMode === "full") return subjectFull;
+      return `{Store Name}${subjectTitle}`;
+    }
     if (subjectMode === "full") return subjectFull;
-    return `${merchantName} | ${subjectTitle}`;
+    return `${merchantName}${subjectTitle}`;
   };
 
   const handleSave = () => {
     const html = editorRef.current?.innerHTML || "";
-    const subject = buildSubjectFor(merchant?.merchantName || namePart);
     if (applyToAll && onSaveAll) {
-      onSaveAll({ html, subjectMode, subjectTitle, subjectFull });
+      const templateSubject = buildSubjectFor("", true);
+      onSaveAll({ html, templateSubject });
     } else {
+      const subject = buildSubjectFor(merchant?.merchantName || namePart, false);
       onSave({ html, subject });
     }
   };
@@ -122,13 +132,13 @@ export default function MerchantEmailEditor({ merchant, initialHtml, initialSubj
                 className="px-3 py-2.5 text-sm text-slate-400 bg-slate-50 border-r border-slate-200 whitespace-nowrap font-medium select-none"
                 title="Store name is always personalized per merchant"
               >
-                {applyToAll ? "{Store Name}" : namePart} |
+                {applyToAll ? "{Store Name}" : namePart}
               </span>
               <input
                 type="text"
                 value={subjectTitle}
                 onChange={e => setSubjectTitle(e.target.value)}
-                placeholder="e.g. Let's grow your sales on DoorDash 🚀"
+                placeholder=" | e.g. Let's grow your sales on DoorDash 🚀"
                 className="flex-1 px-3 py-2.5 text-sm text-slate-800 outline-none bg-white"
               />
             </div>
@@ -145,13 +155,30 @@ export default function MerchantEmailEditor({ merchant, initialHtml, initialSubj
 
           {subjectMode === "title" && applyToAll && (
             <p className="text-xs text-slate-400">
-              Each merchant will get their own store name prepended: <em>"{`{Store Name} | ${subjectTitle || "..."}`}"</em>
+              Each merchant will get their own store name prepended: <em>"{`{Store Name}${subjectTitle || "..."}`}"</em>
             </p>
           )}
           {subjectMode === "full" && applyToAll && (
-            <p className="text-xs text-amber-600">
-              ⚠️ All merchants will receive the exact same subject line as entered above.
-            </p>
+            <div className="mt-2 text-xs text-slate-500 bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex flex-col gap-2.5 shadow-inner">
+               <p className="text-amber-600 font-medium">⚠️ If no variables are used, all merchants will receive the exact identical subject line.</p>
+               <div className="flex items-center gap-2">
+                 <span className="font-bold text-[10px] uppercase text-slate-400 tracking-wider">Insert Variable:</span>
+                 <button 
+                   onClick={() => setSubjectFull(prev => prev + "{Store Name}")} 
+                   className="text-[10px] font-bold bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 px-2 py-1.5 rounded-lg border border-slate-200 transition-colors shadow-sm"
+                   title="Insert Store Name variable"
+                 >
+                   {`{Store Name}`}
+                 </button>
+                 <button 
+                   onClick={() => setSubjectFull(prev => prev + "{DM Name}")} 
+                   className="text-[10px] font-bold bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 px-2 py-1.5 rounded-lg border border-slate-200 transition-colors shadow-sm"
+                   title="Insert Decision Maker Name variable"
+                 >
+                   {`{DM Name}`}
+                 </button>
+               </div>
+            </div>
           )}
         </div>
 
@@ -204,6 +231,23 @@ export default function MerchantEmailEditor({ merchant, initialHtml, initialSubj
             <option value="5">Large</option>
             <option value="7">X-Large</option>
           </select>
+          <div className="w-px h-5 bg-slate-200 mx-1" />
+          <div className="flex items-center gap-1 ml-auto">
+             <button
+               onMouseDown={(e) => { e.preventDefault(); execFormat("insertText", "{Store Name}"); }}
+               className="text-[10px] font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 px-2 py-1.5 rounded-lg border border-slate-200 transition-colors"
+               title="Insert Store Name variable"
+             >
+               {`{Store Name}`}
+             </button>
+             <button
+               onMouseDown={(e) => { e.preventDefault(); execFormat("insertText", "{DM Name}"); }}
+               className="text-[10px] font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 px-2 py-1.5 rounded-lg border border-slate-200 transition-colors"
+               title="Insert Decision Maker Name variable"
+             >
+               {`{DM Name}`}
+             </button>
+          </div>
         </div>
 
         {/* WYSIWYG Body Editor */}

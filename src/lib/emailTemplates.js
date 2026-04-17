@@ -1,5 +1,12 @@
 import { PROMO_CATALOG } from "../components/PromoSelector";
 
+const interpolateVariables = (text, merchant) => {
+  if (!text) return "";
+  return text
+    .replace(/{Store\s*Name}/gi, merchant.merchantName || "Merchant Partner")
+    .replace(/{DM\s*Name}/gi, merchant.dmName || merchant.merchantName || "Merchant Partner");
+};
+
 const getPromoInfo = (promoId) => {
   for (const cat of PROMO_CATALOG) {
     const p = cat.items.find(i => i.id === promoId);
@@ -12,10 +19,14 @@ const buildPromoSummary = (promoId, config) => {
   switch (promoId) {
     case "smart_campaign":
       return "A personalized campaign where DoorDash automatically adjusts discounts in real-time to maximize your ROI.";
-    case "ads_all":
-      return `A targeted ad campaign to reach all DoorDash customers. ${config.budget ? `With a suggested weekly budget of $${config.budget}, ` : ""}You'll be featured prominently on the app homepage.`;
-    case "ads_new":
-      return `An acquisition ad campaign precisely targeting entirely new customers. ${config.budget ? `With a suggested weekly budget of $${config.budget}, ` : ""}This is the best way to bring net-new diners to your store.`;
+    case "ads": {
+      let audienceText = "all DoorDash customers";
+      if (config.audience === "new_to_merchant") audienceText = "entirely new customers";
+      else if (config.audience === "existing_consumers_to_merchant") audienceText = "your existing customers";
+      else if (config.audience === "churned_users") audienceText = "lapsed customers";
+      
+      return `A targeted ad campaign to reach ${audienceText}. ${config.budget ? `With a suggested weekly budget of $${config.budget}, ` : ""}You'll be featured prominently on the app homepage.`;
+    }
     case "bogo":
       return `A promotional "Buy 1, Get 1 Free" offer${config.conditionItem ? ` on your ${config.conditionItem}` : ""}. Customers receive ${config.freeItem ? `a free ${config.freeItem}` : "a free item"} when they purchase the required item.`;
     case "delivery_fee":
@@ -53,8 +64,7 @@ export const generateEmail = ({ merchant, selectedPromos, promoConfigs, repSetti
 
   const mName = merchant.merchantName || "Merchant Partner";
   
-  // Subject - use rep's override if set, otherwise auto-generate
-  let subject = merchant.subjectOverride || "";
+  let subject = merchant.subjectOverride ? interpolateVariables(merchant.subjectOverride, merchant) : "";
   if (!subject) {
     if (selectedPromos.length === 1) {
       const p1 = getPromoInfo(selectedPromos[0]);
@@ -71,12 +81,13 @@ export const generateEmail = ({ merchant, selectedPromos, promoConfigs, repSetti
   const sigText = `\n\nBest regards,\n${firstName} ${lastName}\n${title}\n${phone ? `${phone}\n` : ""}DoorDash Merchant Success`;
   const sigHtml = `<br><br>Best regards,<br><strong>${firstName} ${lastName}</strong><br>${title}<br>${phone ? `${phone}<br>` : ""}DoorDash Merchant Success`;
 
-  // Provide exactly what the user wrote if override exists
+  // Provide exactly what the user wrote if override exists, with variables deployed
   if (isCustom) {
+    const customHtml = interpolateVariables(merchant.emailOverride, merchant);
     return {
       subject,
-      htmlBody: merchant.emailOverride,
-      plainTextBody: merchant.emailOverride.replace(/<[^>]*>?/gm, ''),
+      htmlBody: customHtml,
+      plainTextBody: customHtml.replace(/<[^>]*>?/gm, ''),
       isCustom: true
     };
   }

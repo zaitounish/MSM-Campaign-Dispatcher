@@ -66,7 +66,7 @@ export default function UploadZone({ onDataLoaded }) {
       
     } catch (err) {
       console.error("Error reading Excel file:", err);
-      alert("Failed to read file. Make sure it's a valid Excel or CSV file.");
+      alert("Failed to read file. Make sure it's a valid Excel file.");
       setIsProcessing(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
@@ -143,7 +143,7 @@ export default function UploadZone({ onDataLoaded }) {
 
       <input
         type="file"
-        accept=".xlsx,.xls,.csv"
+        accept=".xlsx,.xls"
         className="hidden"
         ref={fileInputRef}
         onChange={(e) => handleFileUpload(e.target.files)}
@@ -167,7 +167,7 @@ export default function UploadZone({ onDataLoaded }) {
             Drag and drop your Book of Business (BOB)
           </h3>
           <p className="text-slate-500 mb-8 max-w-md mx-auto leading-relaxed">
-            Upload <strong className="text-slate-700">Excel (.xlsx) or CSV</strong> files. We will automatically extract Merchant Names, Store IDs, and Target Emails.
+            Upload <strong className="text-slate-700">Excel (.xlsx)</strong> files. We will automatically extract Merchant Names, Store IDs, and Target Emails.
           </p>
           <button
             onClick={() => fileInputRef.current?.click()}

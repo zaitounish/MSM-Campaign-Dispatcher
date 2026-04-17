@@ -51,70 +51,160 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
                 </div>
               ) : null}
 
-              {(promo.id === "ads_all" || promo.id === "ads_new") && (
-                <div className="max-w-md">
-                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Weekly Budget Recommendation</label>
-                  <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
-                    <DollarSign className="w-4 h-4 text-slate-400 mr-1" />
-                    <input 
-                      type="number" 
-                      placeholder="e.g. 10" 
-                      value={getConfig(promo.id, "budget")}
-                      onChange={e => updateConfig(promo.id, "budget", e.target.value)}
-                      className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
-                    />
-                  </div>
-                  <p className="text-xs text-slate-400 mt-1.5">This will map to the `abv` URL parameter (e.g. 1000 for $10).</p>
-                </div>
-              )}
-
-              {promo.id === "discount" && (
+              {promo.id === "ads" && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">Discount Amount</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">Weekly Budget Recommendation</label>
                     <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
-                      <span className="text-slate-400 mr-1">$</span>
+                      <DollarSign className="w-4 h-4 text-slate-400 mr-1" />
                       <input 
                         type="number" 
-                        placeholder="e.g. 5" 
-                        value={getConfig(promo.id, "discountAmount")}
-                        onChange={e => updateConfig(promo.id, "discountAmount", e.target.value)}
+                        placeholder="e.g. 10" 
+                        value={getConfig(promo.id, "budget")}
+                        onChange={e => updateConfig(promo.id, "budget", e.target.value)}
                         className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
                       />
                     </div>
+                    <p className="text-xs text-slate-400 mt-1.5">This will map to the `abv` URL parameter (e.g. 1000 for $10).</p>
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">Minimum Order (Optional)</label>
-                    <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
-                      <span className="text-slate-400 mr-1">$</span>
-                      <input 
-                        type="number" 
-                        placeholder="e.g. 20" 
-                        value={getConfig(promo.id, "minOrder")}
-                        onChange={e => updateConfig(promo.id, "minOrder", e.target.value)}
-                        className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="sm:col-span-2">
                     <label className="block text-sm font-semibold text-slate-700 mb-1.5">Target Audience</label>
                     <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
                       <Users className="w-4 h-4 text-slate-400 mr-2" />
                       <select 
-                        value={getConfig(promo.id, "audience")}
+                        value={getConfig(promo.id, "audience") || "all"}
                         onChange={e => updateConfig(promo.id, "audience", e.target.value)}
                         className="outline-none bg-transparent w-full text-slate-700 sm:text-sm cursor-pointer"
                       >
-                        <option value="">Select Audience...</option>
                         <option value="all">All Customers</option>
                         <option value="new_to_merchant">New Customers</option>
-                        <option value="existing_consumers_to_merchant">Existing / Lapsed Customers</option>
-                        <option value="churned_users">Churned Customers</option>
+                        <option value="existing_consumers_to_merchant">Existing Customers</option>
+                        <option value="churned_users">Lapsed Customers</option>
                       </select>
                     </div>
                   </div>
                 </div>
               )}
+
+              {promo.id === "discount" && (() => {
+                // discountType defaults to 'percentage' so reps always see a valid state on open
+                const discountType = getConfig(promo.id, "discountType") || "percentage";
+                return (
+                  <div className="space-y-4 max-w-2xl">
+
+                    {/* Mode Toggle — Percentage Off vs Dollar Off */}
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">Discount Type</label>
+                      <div className="inline-flex bg-slate-100 rounded-xl p-1 gap-1">
+                        <button
+                          onClick={() => updateConfig(promo.id, "discountType", "percentage")}
+                          className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                            discountType === "percentage"
+                              ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                              : "text-slate-500 hover:text-slate-700"
+                          }`}
+                        >
+                          % Percentage Off
+                        </button>
+                        <button
+                          onClick={() => updateConfig(promo.id, "discountType", "dollar")}
+                          className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                            discountType === "dollar"
+                              ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                              : "text-slate-500 hover:text-slate-700"
+                          }`}
+                        >
+                          $ Dollar Off
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* ── Mode 1: Percentage Off (pt=pdws) ── */}
+                    {discountType === "percentage" && (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-semibold text-slate-700 mb-1.5">Percentage Amount</label>
+                          <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
+                            <span className="text-slate-400 mr-1 font-bold">%</span>
+                            <input
+                              type="number"
+                              placeholder="e.g. 20"
+                              min="1" max="100"
+                              value={getConfig(promo.id, "percentageAmount")}
+                              onChange={e => updateConfig(promo.id, "percentageAmount", e.target.value)}
+                              className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
+                            />
+                          </div>
+                          <p className="text-xs text-slate-400 mt-1">Maps to <code>cpo</code> (raw integer, not cents)</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-slate-700 mb-1.5">Min Subtotal</label>
+                          <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
+                            <DollarSign className="w-4 h-4 text-slate-400 mr-1" />
+                            <input
+                              type="number"
+                              placeholder="e.g. 30"
+                              value={getConfig(promo.id, "minSubtotal")}
+                              onChange={e => updateConfig(promo.id, "minSubtotal", e.target.value)}
+                              className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
+                            />
+                          </div>
+                          <p className="text-xs text-slate-400 mt-1">Maps to <code>mst</code> (×100 → cents)</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-slate-700 mb-1.5">Max Discount Cap</label>
+                          <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
+                            <DollarSign className="w-4 h-4 text-slate-400 mr-1" />
+                            <input
+                              type="number"
+                              placeholder="e.g. 10"
+                              value={getConfig(promo.id, "maxDiscount")}
+                              onChange={e => updateConfig(promo.id, "maxDiscount", e.target.value)}
+                              className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
+                            />
+                          </div>
+                          <p className="text-xs text-slate-400 mt-1">Maps to <code>cmpv</code> (×100 → cents)</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── Mode 2: Dollar Off (pt=dvdws) ── */}
+                    {discountType === "dollar" && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-semibold text-slate-700 mb-1.5">Discount Amount</label>
+                          <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
+                            <DollarSign className="w-4 h-4 text-slate-400 mr-1" />
+                            <input
+                              type="number"
+                              placeholder="e.g. 6"
+                              value={getConfig(promo.id, "dollarAmount")}
+                              onChange={e => updateConfig(promo.id, "dollarAmount", e.target.value)}
+                              className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
+                            />
+                          </div>
+                          <p className="text-xs text-slate-400 mt-1">Maps to <code>cfo</code> (×100 → cents)</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-slate-700 mb-1.5">Min Subtotal</label>
+                          <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
+                            <DollarSign className="w-4 h-4 text-slate-400 mr-1" />
+                            <input
+                              type="number"
+                              placeholder="e.g. 30"
+                              value={getConfig(promo.id, "minSubtotal")}
+                              onChange={e => updateConfig(promo.id, "minSubtotal", e.target.value)}
+                              className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
+                            />
+                          </div>
+                          <p className="text-xs text-slate-400 mt-1">Maps to <code>mst</code> (×100 → cents). <strong>No cap in this mode.</strong></p>
+                        </div>
+                      </div>
+                    )}
+
+                  </div>
+                );
+              })()}
 
               {promo.id === "bogo" && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl text-sm">
@@ -214,7 +304,7 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
                 </div>
               )}
 
-              {["smart_campaign", "ads_all", "ads_new", "loyalty"].includes(promo.id) && (
+              {["smart_campaign", "ads", "loyalty"].includes(promo.id) && (
                 <div className="mt-6 bg-slate-50 border border-slate-200 rounded-xl p-4 max-w-2xl">
                   <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-700 text-sm mb-1">
                     <input 

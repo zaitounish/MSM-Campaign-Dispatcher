@@ -18,8 +18,13 @@ export const processSheetData = (json) => {
     merchantName: -1,
     storeId: -1,
     businessId: -1,
+    dmName: -1,
     dmEmail: -1,
     storeEmail: -1,
+    slOpp: -1,
+    promoOpp: -1,
+    loyalOpp: -1,
+    slCredit: -1,
   };
 
   rawHeaders.forEach((h, idx) => {
@@ -35,11 +40,26 @@ export const processSheetData = (json) => {
     if (normalized.includes("business id") || normalized === "business_id") {
       if (colMap.businessId === -1) colMap.businessId = idx;
     }
+    if (normalized.includes("dm name") || normalized.includes("contact name") || normalized.includes("decision maker name") || normalized.includes("first name")) {
+      if (colMap.dmName === -1) colMap.dmName = idx;
+    }
     if (normalized.includes("dm email") || normalized.includes("decision maker") || normalized === "dm") {
       if (colMap.dmEmail === -1) colMap.dmEmail = idx;
     }
     if (normalized.includes("store email") || normalized === "email") {
       if (colMap.storeEmail === -1) colMap.storeEmail = idx;
+    }
+    if (normalized.includes("sl opp") || normalized === "sl_opp") {
+      if (colMap.slOpp === -1) colMap.slOpp = idx;
+    }
+    if (normalized.includes("promo opp") || normalized === "promo_opp") {
+      if (colMap.promoOpp === -1) colMap.promoOpp = idx;
+    }
+    if (normalized.includes("loyal opp") || normalized === "loyal_opp" || normalized.includes("loyalty opp")) {
+      if (colMap.loyalOpp === -1) colMap.loyalOpp = idx;
+    }
+    if (normalized.includes("sl credit") || normalized === "sl_credit") {
+      if (colMap.slCredit === -1) colMap.slCredit = idx;
     }
   });
 
@@ -63,8 +83,13 @@ export const processSheetData = (json) => {
       merchantName: getVal(colMap.merchantName) || "Unknown Merchant",
       storeId: sId,
       businessId: getVal(colMap.businessId),
+      dmName: getVal(colMap.dmName),
       dmEmail: getVal(colMap.dmEmail),
       storeEmail: getVal(colMap.storeEmail),
+      slOpp: getVal(colMap.slOpp),
+      promoOpp: getVal(colMap.promoOpp),
+      loyalOpp: getVal(colMap.loyalOpp),
+      slCredit: getVal(colMap.slCredit),
     });
   }
 
@@ -81,9 +106,15 @@ export const processSheetData = (json) => {
         if (!existing.sids.includes(row.storeId)) {
           existing.sids.push(row.storeId);
         }
-        // Supplement missing emails from siblings if needed
+        // Supplement missing emails/names from siblings if needed
+        if (!existing.dmName && row.dmName) existing.dmName = row.dmName;
         if (!existing.dmEmail && row.dmEmail) existing.dmEmail = row.dmEmail;
         if (!existing.storeEmail && row.storeEmail) existing.storeEmail = row.storeEmail;
+        // Logical OR for opportunities
+        if (isTruthy(row.slOpp)) existing.slOpp = "1";
+        if (isTruthy(row.promoOpp)) existing.promoOpp = "1";
+        if (isTruthy(row.loyalOpp)) existing.loyalOpp = "1";
+        if (isTruthy(row.slCredit)) existing.slCredit = "1";
       }
     } else {
       noBizIdRows.push(row);
@@ -103,7 +134,12 @@ export const processSheetData = (json) => {
         if (!existing.sids.includes(row.storeId)) {
           existing.sids.push(row.storeId);
         }
+        if (!existing.dmName && row.dmName) existing.dmName = row.dmName;
         if (!existing.storeEmail && row.storeEmail) existing.storeEmail = row.storeEmail;
+        if (isTruthy(row.slOpp)) existing.slOpp = "1";
+        if (isTruthy(row.promoOpp)) existing.promoOpp = "1";
+        if (isTruthy(row.loyalOpp)) existing.loyalOpp = "1";
+        if (isTruthy(row.slCredit)) existing.slCredit = "1";
       }
     } else {
       // Group by storeEmail if dmEmail is missing
@@ -115,6 +151,10 @@ export const processSheetData = (json) => {
            if (!existing.sids.includes(row.storeId)) {
              existing.sids.push(row.storeId);
            }
+           if (isTruthy(row.slOpp)) existing.slOpp = "1";
+           if (isTruthy(row.promoOpp)) existing.promoOpp = "1";
+           if (isTruthy(row.loyalOpp)) existing.loyalOpp = "1";
+           if (isTruthy(row.slCredit)) existing.slCredit = "1";
         }
       } else {
         // No valid emails to group on, keep isolated
@@ -146,14 +186,27 @@ export const processSheetData = (json) => {
       sids: target.sids.join(","),
       emails: emails,
       locationCount: target.sids.length,
+      originalSids: target.sids.join(","),
+      dmName: target.dmName || "",
       selected: true,
       hasCredits: false,
       creditAmount: "",
       creditExpiry: "",
       emailOverride: null,
+      subjectOverride: null,
+      slOpp: isTruthy(target.slOpp),
+      promoOpp: isTruthy(target.promoOpp),
+      loyalOpp: isTruthy(target.loyalOpp),
+      slCredit: isTruthy(target.slCredit),
     };
   }).filter(t => t.emails.length > 0); // only keep rows that have some email to target
 };
+
+function isTruthy(val) {
+  if (!val) return false;
+  const v = String(val).trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || (parseInt(v) > 0);
+}
 
 function validateEmail(email) {
   return typeof email === 'string' && email.includes('@') && email.includes('.');

@@ -1,9 +1,8 @@
 import React, { useState } from "react";
 import { DownloadCloud, Send, CheckCircle2, Layers, FileText, Loader2, AlertTriangle } from "lucide-react";
 
-export default function DeliveryPanel({ merchants, emailDrafts, repSettings }) {
+export default function DeliveryPanel({ merchants, emailDrafts, repSettings, dispatchMode, setDispatchMode }) {
   const [isSending, setIsSending] = useState(false);
-  const [dispatchMode, setDispatchMode] = useState("cc"); // 'cc', 'separate', 'primary'
   const [sendStatus, setSendStatus] = useState(null); // { type: 'success' | 'error', msg: string }
 
   const selectedMerchants = merchants.filter(m => m.selected);
@@ -11,6 +10,20 @@ export default function DeliveryPanel({ merchants, emailDrafts, repSettings }) {
   const activeDrafts = emailDrafts.filter(d => 
     selectedMerchants.some(m => m.id === d.merchantId)
   );
+
+  const totalEmailsToDispatch = React.useMemo(() => {
+    let count = 0;
+    activeDrafts.forEach(draft => {
+      const merchant = selectedMerchants.find(m => m.id === draft.merchantId);
+      if (!merchant || !merchant.emails || merchant.emails.length === 0) return;
+      if (dispatchMode === "separate") {
+         count += merchant.emails.length;
+      } else {
+         count += 1;
+      }
+    });
+    return count;
+  }, [activeDrafts, dispatchMode, selectedMerchants]);
 
   const handleApiDispatch = async (actionType = "send") => {
     if (!repSettings.gasUrl) {
@@ -152,8 +165,8 @@ export default function DeliveryPanel({ merchants, emailDrafts, repSettings }) {
           <h3 className="text-xl font-bold mb-1 flex items-center gap-2">
             Ready to Dispatch
           </h3>
-          <p className="text-slate-500 text-sm">
-            {activeDrafts.length} customized emails have been generated and are ready to send.
+          <p className="text-slate-500 text-sm flex items-center gap-2">
+            <span className="font-bold text-slate-800 bg-slate-200 px-2.5 py-0.5 rounded-md">{totalEmailsToDispatch}</span> customized emails have been generated and are ready to send.
           </p>
 
           {sendStatus && (

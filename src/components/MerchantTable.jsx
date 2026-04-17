@@ -1,22 +1,49 @@
 import React, { useState, useMemo } from "react";
-import { Search, ChevronDown, ChevronRight, CheckSquare, Square, Store, Mail, DollarSign, Edit3, AlertCircle } from "lucide-react";
+import { Search, ChevronDown, ChevronRight, CheckSquare, Square, Store, Mail, Edit3, AlertCircle, Filter, X, Zap, ArrowRight } from "lucide-react";
 import MerchantEmailManager from "./MerchantEmailManager";
 
-export default function MerchantTable({ merchants, setMerchants }) {
+export default function MerchantTable({ merchants, setMerchants, onContinue, onActiveMerchantsChange }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [editingEmailsId, setEditingEmailsId] = useState(null);
 
+  // Filters
+  const [filterSlOpp, setFilterSlOpp] = useState(false);
+  const [filterPromoOpp, setFilterPromoOpp] = useState(false);
+  const [filterLoyalOpp, setFilterLoyalOpp] = useState(false);
+  const [filterSlCredit, setFilterSlCredit] = useState(false);
+  
+  // Bulk Selection State
+  const [isBulkOpen, setIsBulkOpen] = useState(false);
+  const [pasteData, setPasteData] = useState("");
+  const [bulkFeedback, setBulkFeedback] = useState(null);
+
   const filteredMerchants = useMemo(() => {
-    if (!searchTerm) return merchants;
-    const lower = searchTerm.toLowerCase();
-    return merchants.filter(
-      (m) =>
+    return merchants.filter(m => {
+      // Toggle Chips Intersection
+      if (filterSlOpp && !m.slOpp) return false;
+      if (filterPromoOpp && !m.promoOpp) return false;
+      if (filterLoyalOpp && !m.loyalOpp) return false;
+      if (filterSlCredit && !m.slCredit) return false;
+
+      // Text Search
+      if (!searchTerm) return true;
+      const lower = searchTerm.toLowerCase();
+      return (
         m.merchantName.toLowerCase().includes(lower) ||
         (m.emails && m.emails.some(e => e.address.toLowerCase().includes(lower))) ||
-        (m.businessId && m.businessId.toLowerCase().includes(lower))
-    );
-  }, [merchants, searchTerm]);
+        (m.businessId && m.businessId.toLowerCase().includes(lower)) ||
+        m.sids.split(',').some(sid => sid.toLowerCase().includes(lower))
+      );
+    });
+  }, [merchants, searchTerm, filterSlOpp, filterPromoOpp, filterLoyalOpp, filterSlCredit]);
+
+  React.useEffect(() => {
+    if (onActiveMerchantsChange) {
+      const payloadIds = new Set(filteredMerchants.filter(m => m.selected).map(m => m.id));
+      onActiveMerchantsChange(payloadIds);
+    }
+  }, [filteredMerchants, onActiveMerchantsChange]);
 
   const allSelected = filteredMerchants.length > 0 && filteredMerchants.every((m) => m.selected);
 
@@ -51,6 +78,60 @@ export default function MerchantTable({ merchants, setMerchants }) {
     });
   };
 
+  const handleApplyBulk = () => {
+    const inputIds = new Set(pasteData.split(/[\s,]+/).map(s => s.trim().toLowerCase()).filter(Boolean));
+    if (inputIds.size === 0) return;
+
+    const foundIds = new Set();
+
+    const updatedMerchants = merchants.map(m => {
+      let isMatch = false;
+
+      const bId = m.businessId?.toLowerCase();
+      if (bId && inputIds.has(bId)) {
+        isMatch = true;
+        foundIds.add(bId);
+      } else {
+        const allSids = (m.originalSids || m.sids).split(",");
+        for (const sid of allSids) {
+          const lSid = sid.toLowerCase();
+          if (inputIds.has(lSid)) {
+            isMatch = true;
+            foundIds.add(lSid);
+          }
+        }
+      }
+
+      return { 
+        ...m, 
+        selected: isMatch,
+        sids: m.originalSids || m.sids,
+        locationCount: (m.originalSids || m.sids).split(",").length
+      };
+    });
+
+    setMerchants(updatedMerchants);
+    setBulkFeedback({
+      foundCount: foundIds.size,
+      totalCount: inputIds.size
+    });
+  };
+
+  const hasActiveFilters = filterSlOpp || filterPromoOpp || filterLoyalOpp || filterSlCredit || searchTerm;
+  const clearFilters = () => {
+    setSearchTerm("");
+    setFilterSlOpp(false);
+    setFilterPromoOpp(false);
+    setFilterLoyalOpp(false);
+    setFilterSlCredit(false);
+  };
+
+  const handleContinueClick = () => {
+    if (onContinue) {
+      onContinue();
+    }
+  };
+
   if (merchants.length === 0) return null;
 
   return (
@@ -76,10 +157,80 @@ export default function MerchantTable({ merchants, setMerchants }) {
           </div>
         </div>
         
-        <div className="text-sm font-semibold text-slate-500">
-          Selected: <span className="text-dd-red">{merchants.filter(m => m.selected).length}</span> / {merchants.length}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between w-full mt-4 gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1 flex items-center gap-1">
+              <Filter className="w-3.5 h-3.5" /> Filters:
+            </span>
+            <FilterChip 
+              label="SL Opp" 
+              active={filterSlOpp} 
+              onClick={() => {
+                const nextState = !filterSlOpp;
+                setFilterSlOpp(nextState);
+                if (!nextState) setFilterSlCredit(false);
+              }} 
+            />
+            {filterSlOpp && (
+              <div className="flex items-center gap-1.5 ml-1 mr-1 animate-in fade-in slide-in-from-left-2 duration-200">
+                <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+                <FilterChip label="Has Credit" active={filterSlCredit} onClick={() => setFilterSlCredit(!filterSlCredit)} />
+              </div>
+            )}
+            <FilterChip label="Promo Opp" active={filterPromoOpp} onClick={() => setFilterPromoOpp(!filterPromoOpp)} />
+            <FilterChip label="Loyal Opp" active={filterLoyalOpp} onClick={() => setFilterLoyalOpp(!filterLoyalOpp)} />
+            {hasActiveFilters && (
+              <button onClick={clearFilters} className="text-xs text-slate-500 hover:text-dd-red font-semibold ml-2 flex items-center gap-1 transition-colors">
+                 <X className="w-3.5 h-3.5" /> Clear All
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+             <button
+               onClick={() => { setIsBulkOpen(!isBulkOpen); setBulkFeedback(null); }}
+               className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${
+                 isBulkOpen ? 'bg-slate-800 text-white border-slate-800' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
+               }`}
+             >
+                <Zap className="w-3.5 h-3.5" /> Bulk Select
+             </button>
+             <div className="text-sm font-semibold text-slate-500 bg-white border border-slate-200 px-3 py-1 rounded-lg">
+               Selected: <span className="text-dd-red">{filteredMerchants.filter(m => m.selected).length}</span> / {filteredMerchants.length}
+             </div>
+          </div>
         </div>
       </div>
+
+      {isBulkOpen && (
+        <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 animate-in slide-in-from-top-2">
+           <h4 className="font-bold text-slate-800 text-sm mb-2">Bulk Select by Store/Business IDs</h4>
+           <div className="flex gap-3 items-start">
+              <textarea 
+                value={pasteData}
+                onChange={e => { setPasteData(e.target.value); setBulkFeedback(null); }}
+                placeholder="Paste IDs separated by spaces or commas..."
+                className="flex-1 bg-white border border-slate-300 rounded-xl p-3 text-sm focus:border-dd-red focus:ring-1 focus:ring-dd-red outline-none resize-none h-20"
+              />
+              <div className="flex flex-col gap-2">
+                 <button 
+                   onClick={handleApplyBulk}
+                   disabled={!pasteData.trim()}
+                   className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                 >
+                   Apply Filter
+                 </button>
+                 {bulkFeedback && (
+                   <span className={`text-xs font-bold px-2 py-1 rounded w-full text-center ${bulkFeedback.foundCount === bulkFeedback.totalCount ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                     Found {bulkFeedback.foundCount} of {bulkFeedback.totalCount}
+                   </span>
+                 )}
+              </div>
+           </div>
+           <p className="text-xs text-slate-500 mt-2">
+             Pasting any Store ID or Business ID will select the entire associated merchant and all of its locations. Unmatched merchants will be deselected.
+           </p>
+        </div>
+      )}
 
       <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
         <table className="w-full text-left border-collapse whitespace-nowrap">
@@ -213,6 +364,34 @@ export default function MerchantTable({ merchants, setMerchants }) {
           onClose={() => setEditingEmailsId(null)}
         />
       )}
+
+      {onContinue && (
+        <div className="flex justify-end pt-4 pb-6 px-6 bg-slate-50 border-t border-slate-200">
+          <button
+            onClick={handleContinueClick}
+            disabled={filteredMerchants.filter(m => m.selected).length === 0}
+            className="flex items-center gap-2 px-8 py-3.5 bg-dd-red text-white font-bold rounded-xl shadow-md hover:bg-dd-red-dark hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0 disabled:cursor-not-allowed"
+          >
+            Continue to Configure Promos
+            <ArrowRight className="w-5 h-5" />
+          </button>
+        </div>
+      )}
     </div>
+  );
+}
+
+function FilterChip({ label, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`text-xs font-bold px-2.5 py-1 rounded-full transition-all border ${
+        active 
+          ? "bg-dd-red text-white border-dd-red shadow-sm"
+          : "bg-white text-slate-600 border-slate-300 hover:border-slate-400"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
