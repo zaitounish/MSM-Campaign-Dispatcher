@@ -8,6 +8,7 @@ import PromoCustomizer from "./components/PromoCustomizer";
 import EmailPreview from "./components/EmailPreview";
 import DeliveryPanel from "./components/DeliveryPanel";
 import RepSettingsModal from "./components/RepSettingsModal";
+import BOBDashboard from "./components/BOBDashboard";
 import { ArrowRight, Settings } from "lucide-react";
 import { buildAllDeepLinks } from "./lib/deepLinkBuilder";
 import { generateEmail } from "./lib/emailTemplates";
@@ -51,6 +52,7 @@ function AppInner() {
   const [phase, setPhase] = useState("upload");
   const [merchants, setMerchants] = useState([]);
   const [activeMerchantIds, setActiveMerchantIds] = useState(new Set());
+  const [analyticsPayload, setAnalyticsPayload] = useState(null);  // BOB Intelligence Suite data
   
   // Phase 3 states
   const [selectedPromos, setSelectedPromos] = useState([]);
@@ -99,9 +101,11 @@ function AppInner() {
     })).map((draft, i) => ({ merchantId: targetMerchants[i].id, ...draft }));
   }, [targetMerchants, selectedPromos, promoConfigs, repSettings, deepLinks]);
 
-  const handleDataLoaded = (parsedData) => {
+  const handleDataLoaded = (parsedData, payload) => {
     setMerchants(parsedData);
-    setPhase("select");
+    setAnalyticsPayload(payload || null);
+    // If we have analytics data, go to the dashboard step first
+    setPhase(payload ? "analyze" : "select");
   };
 
   const selectedCount = merchants.filter(m => m.selected).length;
@@ -129,6 +133,16 @@ function AppInner() {
           <UploadZone onDataLoaded={handleDataLoaded} />
         )}
 
+        {phase === "analyze" && analyticsPayload && (
+          <BOBDashboard
+            analyticsPayload={analyticsPayload}
+            merchants={merchants}
+            repSettings={repSettings}
+            onPayloadUpdate={(updated) => setAnalyticsPayload(updated)}
+            onContinue={() => setPhase("select")}
+          />
+        )}
+
         {phase === "select" && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
@@ -142,6 +156,7 @@ function AppInner() {
               merchants={merchants} 
               setMerchants={setMerchants} 
               onActiveMerchantsChange={setActiveMerchantIds}
+              analyticsPayload={analyticsPayload}
               onContinue={(payloadIds) => {
                 if (payloadIds) setActiveMerchantIds(payloadIds);
                 setPhase("build");
@@ -195,6 +210,7 @@ function AppInner() {
                   emailDrafts={emailDrafts} 
                   setMerchants={setMerchants} 
                   dispatchMode={dispatchMode}
+                  repSettings={repSettings}
                 />
                 <DeliveryPanel 
                   merchants={targetMerchants} 

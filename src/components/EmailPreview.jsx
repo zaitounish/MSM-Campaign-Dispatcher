@@ -6,7 +6,8 @@ export default function EmailPreview({
   merchants, 
   emailDrafts, 
   setMerchants,
-  dispatchMode
+  dispatchMode,
+  repSettings,
 }) {
   const selectedMerchants = React.useMemo(() => merchants.filter(m => m.selected), [merchants]);
   
@@ -210,6 +211,7 @@ export default function EmailPreview({
            merchant={currentMerchant}
            initialHtml={draft.htmlBody}
            initialSubject={draft.subject}
+           geminiApiKey={repSettings?.geminiApiKey}
            onSave={handleSaveOverride}
            onSaveAll={handleSaveAllOverride}
            onCancel={() => setIsEditorOpen(false)}

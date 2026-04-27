@@ -1,6 +1,7 @@
 import React, { useState, useRef } from "react";
 import { UploadCloud, Loader2, FileSpreadsheet } from "lucide-react";
 import { processSheetData } from "../lib/bobParser";
+import { analyzeBOB } from "../lib/bobAnalyzer";
 
 export default function UploadZone({ onDataLoaded }) {
   const [isDragging, setIsDragging] = useState(false);
@@ -20,8 +21,13 @@ export default function UploadZone({ onDataLoaded }) {
           raw: false,
         });
 
+        // Run the analytics engine on the raw worksheet + json
+        // Must happen before processSheetData (which deduplicates rows)
+        const analyticsPayload = analyzeBOB(ws, json);
+
         const processed = processSheetData(json);
-        onDataLoaded(processed);
+        // Pass both the merchant list AND the analytics payload up to App
+        onDataLoaded(processed, analyticsPayload);
       } catch (err) {
         console.error("Error processing sheet:", err);
         alert("Failed to parse the selected sheet.");
@@ -54,7 +60,8 @@ export default function UploadZone({ onDataLoaded }) {
       // Briefly yield to the UI thread so the loading overlay appears
       await new Promise(r => setTimeout(r, 50));
 
-      const wb = window.XLSX.read(data, { type: "array" });
+      // cellStyles: true is required for cell fill color extraction in bobAnalyzer
+      const wb = window.XLSX.read(data, { type: "array", cellStyles: true });
       
       if (wb.SheetNames.length === 1) {
         processSheet(wb, wb.SheetNames[0]);

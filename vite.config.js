@@ -8,4 +8,17 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  build: {
+    // Raise the warning threshold — internal tooling, not a public site
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        // Split large vendor libs into their own cached chunks
+        manualChunks: {
+          "vendor-recharts": ["recharts"],
+          "vendor-lucide":   ["lucide-react"],
+        },
+      },
+    },
+  },
 })

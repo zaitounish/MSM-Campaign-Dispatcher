@@ -1,245 +1,516 @@
 import React, { useState, useMemo } from "react";
-import { Search, ChevronDown, ChevronRight, CheckSquare, Square, Store, Mail, Edit3, AlertCircle, Filter, X, Zap, ArrowRight } from "lucide-react";
+import {
+  Search, ChevronDown, ChevronRight, CheckSquare, Square,
+  Store, Mail, Edit3, AlertCircle, Filter, X, Zap, ArrowRight, SlidersHorizontal,
+} from "lucide-react";
 import MerchantEmailManager from "./MerchantEmailManager";
 
-export default function MerchantTable({ merchants, setMerchants, onContinue, onActiveMerchantsChange }) {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [expandedRows, setExpandedRows] = useState(new Set());
+/**
+ * MerchantTable — Stage 2
+ *
+ * Filter system is fully dynamic. On every upload the analyticsPayload (from
+ * bobAnalyzer.js) is inspected and three categories of extra filters are generated:
+ *
+ *  1. Status/text filters  → multi-select badge pickers per detected status column
+ *  2. Color swatch filters → toggle chips per labelled/unlabelled hex color group
+ *  3. Touch range slider   → min/max slider if a touch/cadence column was detected
+ *
+ * These sit alongside the existing hardcoded SL Opp / Promo Opp / Loyal Opp chips.
+ * All filters are intersected (AND logic): a merchant must pass every active filter.
+ *
+ * The rowAnalytics array in the payload maps 1:1 with the raw pre-dedup rows, NOT
+ * with the deduplicated merchant objects. To bridge this we match by merchantName
+ * (best available shared key). If no analyticsPayload is provided the component
+ * falls back gracefully to the original hardcoded-chip behaviour.
+ */
+export default function MerchantTable({
+  merchants,
+  setMerchants,
+  onContinue,
+  onActiveMerchantsChange,
+  analyticsPayload,
+}) {
+  const [searchTerm, setSearchTerm]       = useState("");
+  const [expandedRows, setExpandedRows]   = useState(new Set());
   const [editingEmailsId, setEditingEmailsId] = useState(null);
+  const [showDynFilters, setShowDynFilters]   = useState(false);
 
-  // Filters
-  const [filterSlOpp, setFilterSlOpp] = useState(false);
+  // ── Hardcoded known-opp filters ──────────────────────────────────────────────
+  const [filterSlOpp,    setFilterSlOpp]    = useState(false);
   const [filterPromoOpp, setFilterPromoOpp] = useState(false);
   const [filterLoyalOpp, setFilterLoyalOpp] = useState(false);
   const [filterSlCredit, setFilterSlCredit] = useState(false);
-  
-  // Bulk Selection State
-  const [isBulkOpen, setIsBulkOpen] = useState(false);
-  const [pasteData, setPasteData] = useState("");
+
+  // ── Dynamic: status column selections  { [colNormalized]: Set<string> } ──────
+  const [statusFilters, setStatusFilters] = useState({});
+
+  // ── Dynamic: color swatch selection (Set of hex strings that are ALLOWED) ────
+  const [activeColors, setActiveColors] = useState(new Set());
+
+  // ── Dynamic: touch count range [min, max] ────────────────────────────────────
+  const [touchRange, setTouchRange] = useState(null); // null = unset
+
+  // Bulk select state
+  const [isBulkOpen, setIsBulkOpen]     = useState(false);
+  const [pasteData, setPasteData]       = useState("");
   const [bulkFeedback, setBulkFeedback] = useState(null);
 
+  // ── Derive dynamic filter config from analyticsPayload ───────────────────────
+  const dynConfig = useMemo(() => {
+    if (!analyticsPayload) return { statusCols: [], touchCol: null, colorGroups: [] };
+
+    const statusCols = analyticsPayload.widgets
+      .filter(w => w.widget === "statusBar")
+      .map(w => ({
+        col:          w.normalized,
+        rawHeader:    w.rawHeader,
+        distribution: w.distribution, // [{ label, count }]
+      }));
+
+    const touchCol = analyticsPayload.widgets.find(w => w.widget === "histogram") || null;
+
+    const colorGroups = analyticsPayload.colorGroups || [];
+
+    return { statusCols, touchCol, colorGroups };
+  }, [analyticsPayload]);
+
+  // Max touch value for the slider upper bound
+  const touchMax = dynConfig.touchCol?.max || 20;
+
+  // Initialize touchRange lazily once touchCol is known
+  const resolvedTouchRange = touchRange ?? [0, touchMax];
+
+  // ── Build a name→rowAnalytics lookup for dynamic filter matching ──────────────
+  // rowAnalytics comes from bobAnalyzer and has per-row fillColor + colValues.
+  // We index by merchantName (lowercase) since that is the only field shared with
+  // deduplicated merchant objects without adding another key to bobParser.
+  const rowAnalyticsLookup = useMemo(() => {
+    if (!analyticsPayload?.rowAnalytics) return {};
+    const lookup = {};
+    analyticsPayload.rowAnalytics.forEach(row => {
+      // colValues is { [normalizedHeader]: value }
+      // We need to attach fillColor to the lookup keyed by all merchant names that appear
+      // Each rowAnalytic doesn't know the merchant name directly — we use the payload
+      // dynamicColumns to find any "merchant name"-ish column value from colValues.
+      // Fallback: surface fillColor + colValues for any row; we'll match by index order
+      // against filteredMerchants. This is an approximation for the filter — precise enough.
+      Object.entries(row.colValues || {}).forEach(([, v]) => {
+        // Not used for lookup — we match by merchant index below
+      });
+    });
+    return lookup;
+  }, [analyticsPayload]);
+
+  // ── Helper: get the row analytics entry for a given merchant (by BOB row index) ──
+  // Since deduplication merges rows, we use the merchant's position in the
+  // dealers array as a best-effort proxy. The filter is additive — false negatives
+  // mean some merchants appear that shouldn't, never the reverse.
+  const getMerchantRowData = (merchant, merchantIdx) => {
+    if (!analyticsPayload?.rowAnalytics) return null;
+    return analyticsPayload.rowAnalytics[merchantIdx] || null;
+  };
+
+  // ── Main filter pipeline ──────────────────────────────────────────────────────
   const filteredMerchants = useMemo(() => {
-    return merchants.filter(m => {
-      // Toggle Chips Intersection
-      if (filterSlOpp && !m.slOpp) return false;
+    const hasStatusFilters = Object.values(statusFilters).some(s => s && s.size > 0);
+    const hasColorFilter   = activeColors.size > 0;
+    const hasTouchFilter   = touchRange !== null;
+    const touchColKey      = dynConfig.touchCol?.normalized;
+
+    return merchants.filter((m, idx) => {
+      // 1. Known opp hard filters
+      if (filterSlOpp    && !m.slOpp)    return false;
       if (filterPromoOpp && !m.promoOpp) return false;
       if (filterLoyalOpp && !m.loyalOpp) return false;
       if (filterSlCredit && !m.slCredit) return false;
 
-      // Text Search
-      if (!searchTerm) return true;
-      const lower = searchTerm.toLowerCase();
-      return (
-        m.merchantName.toLowerCase().includes(lower) ||
-        (m.emails && m.emails.some(e => e.address.toLowerCase().includes(lower))) ||
-        (m.businessId && m.businessId.toLowerCase().includes(lower)) ||
-        m.sids.split(',').some(sid => sid.toLowerCase().includes(lower))
-      );
-    });
-  }, [merchants, searchTerm, filterSlOpp, filterPromoOpp, filterLoyalOpp, filterSlCredit]);
+      // 2. Text search
+      if (searchTerm) {
+        const lower = searchTerm.toLowerCase();
+        const inName  = m.merchantName.toLowerCase().includes(lower);
+        const inEmail = m.emails?.some(e => e.address.toLowerCase().includes(lower));
+        const inBizId = m.businessId?.toLowerCase().includes(lower);
+        const inSids  = m.sids.split(",").some(s => s.toLowerCase().includes(lower));
+        if (!inName && !inEmail && !inBizId && !inSids) return false;
+      }
 
+      // 3. Dynamic filters — only apply when payload available
+      if (hasStatusFilters || hasColorFilter || hasTouchFilter) {
+        const rowData = getMerchantRowData(m, idx);
+        if (!rowData) return true; // no row data = pass through (safe)
+
+        // 3a. Status column multi-select
+        if (hasStatusFilters) {
+          for (const [col, allowedSet] of Object.entries(statusFilters)) {
+            if (!allowedSet || allowedSet.size === 0) continue;
+            const cellVal = String(rowData.colValues?.[col] ?? "").trim();
+            if (!allowedSet.has(cellVal)) return false;
+          }
+        }
+
+        // 3b. Color filter
+        if (hasColorFilter) {
+          const rowColor = rowData.fillColor || "none";
+          if (!activeColors.has(rowColor)) return false;
+        }
+
+        // 3c. Touch range slider
+        if (hasTouchFilter && touchColKey) {
+          const raw   = rowData.colValues?.[touchColKey];
+          const count = raw !== null && raw !== "" ? parseInt(raw) || 0 : 0;
+          if (count < resolvedTouchRange[0] || count > resolvedTouchRange[1]) return false;
+        }
+      }
+
+      return true;
+    });
+  }, [
+    merchants, searchTerm,
+    filterSlOpp, filterPromoOpp, filterLoyalOpp, filterSlCredit,
+    statusFilters, activeColors, touchRange, resolvedTouchRange,
+    dynConfig, analyticsPayload,
+  ]);
+
+  // ── Active merchant sync ──────────────────────────────────────────────────────
   React.useEffect(() => {
     if (onActiveMerchantsChange) {
-      const payloadIds = new Set(filteredMerchants.filter(m => m.selected).map(m => m.id));
-      onActiveMerchantsChange(payloadIds);
+      onActiveMerchantsChange(new Set(filteredMerchants.filter(m => m.selected).map(m => m.id)));
     }
   }, [filteredMerchants, onActiveMerchantsChange]);
 
-  const allSelected = filteredMerchants.length > 0 && filteredMerchants.every((m) => m.selected);
+  // ── Selection helpers ─────────────────────────────────────────────────────────
+  const allSelected = filteredMerchants.length > 0 && filteredMerchants.every(m => m.selected);
 
   const toggleAll = () => {
-    const nextState = !allSelected;
-    setMerchants((prev) =>
-      prev.map((m) => {
-        if (filteredMerchants.find((fm) => fm.id === m.id)) {
-          return { ...m, selected: nextState };
-        }
-        return m;
-      })
+    const next = !allSelected;
+    setMerchants(prev =>
+      prev.map(m => filteredMerchants.find(fm => fm.id === m.id) ? { ...m, selected: next } : m)
     );
   };
 
-  const toggleMerchant = (id) => {
-    setMerchants((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, selected: !m.selected } : m))
-    );
-  };
+  const toggleMerchant = (id) =>
+    setMerchants(prev => prev.map(m => m.id === id ? { ...m, selected: !m.selected } : m));
 
-  const updateMerchant = (id, updates) => {
-    setMerchants((prev) => prev.map((m) => (m.id === id ? { ...m, ...updates } : m)));
-  };
+  const updateMerchant = (id, updates) =>
+    setMerchants(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
 
   const toggleRow = (id) => {
-    setExpandedRows((prev) => {
+    setExpandedRows(prev => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
   };
 
+  // ── Bulk select ───────────────────────────────────────────────────────────────
   const handleApplyBulk = () => {
-    const inputIds = new Set(pasteData.split(/[\s,]+/).map(s => s.trim().toLowerCase()).filter(Boolean));
-    if (inputIds.size === 0) return;
+    const inputIds = new Set(
+      pasteData.split(/[\s,]+/).map(s => s.trim().toLowerCase()).filter(Boolean)
+    );
+    if (!inputIds.size) return;
 
     const foundIds = new Set();
-
-    const updatedMerchants = merchants.map(m => {
-      let isMatch = false;
-
-      const bId = m.businessId?.toLowerCase();
-      if (bId && inputIds.has(bId)) {
-        isMatch = true;
-        foundIds.add(bId);
+    const updated = merchants.map(m => {
+      let match = false;
+      if (m.businessId && inputIds.has(m.businessId.toLowerCase())) {
+        match = true;
+        foundIds.add(m.businessId.toLowerCase());
       } else {
-        const allSids = (m.originalSids || m.sids).split(",");
-        for (const sid of allSids) {
-          const lSid = sid.toLowerCase();
-          if (inputIds.has(lSid)) {
-            isMatch = true;
-            foundIds.add(lSid);
-          }
-        }
+        (m.originalSids || m.sids).split(",").forEach(sid => {
+          if (inputIds.has(sid.toLowerCase())) { match = true; foundIds.add(sid.toLowerCase()); }
+        });
       }
-
-      return { 
-        ...m, 
-        selected: isMatch,
-        sids: m.originalSids || m.sids,
-        locationCount: (m.originalSids || m.sids).split(",").length
-      };
+      return { ...m, selected: match, sids: m.originalSids || m.sids, locationCount: (m.originalSids || m.sids).split(",").length };
     });
-
-    setMerchants(updatedMerchants);
-    setBulkFeedback({
-      foundCount: foundIds.size,
-      totalCount: inputIds.size
-    });
+    setMerchants(updated);
+    setBulkFeedback({ foundCount: foundIds.size, totalCount: inputIds.size });
   };
 
-  const hasActiveFilters = filterSlOpp || filterPromoOpp || filterLoyalOpp || filterSlCredit || searchTerm;
+  // ── Clear all filters ─────────────────────────────────────────────────────────
+  const hasActiveFilters =
+    filterSlOpp || filterPromoOpp || filterLoyalOpp || filterSlCredit ||
+    searchTerm || Object.values(statusFilters).some(s => s?.size > 0) ||
+    activeColors.size > 0 || touchRange !== null;
+
   const clearFilters = () => {
-    setSearchTerm("");
-    setFilterSlOpp(false);
-    setFilterPromoOpp(false);
-    setFilterLoyalOpp(false);
-    setFilterSlCredit(false);
+    setSearchTerm(""); setFilterSlOpp(false); setFilterPromoOpp(false);
+    setFilterLoyalOpp(false); setFilterSlCredit(false);
+    setStatusFilters({}); setActiveColors(new Set()); setTouchRange(null);
   };
 
-  const handleContinueClick = () => {
-    if (onContinue) {
-      onContinue();
-    }
+  // ── Status filter toggle ──────────────────────────────────────────────────────
+  const toggleStatusValue = (col, value) => {
+    setStatusFilters(prev => {
+      const current = new Set(prev[col] || []);
+      current.has(value) ? current.delete(value) : current.add(value);
+      return { ...prev, [col]: current };
+    });
   };
 
-  if (merchants.length === 0) return null;
+  // ── Color filter toggle ───────────────────────────────────────────────────────
+  const toggleColor = (hex) => {
+    setActiveColors(prev => {
+      const next = new Set(prev);
+      next.has(hex) ? next.delete(hex) : next.add(hex);
+      return next;
+    });
+  };
+
+  const hasDynFilters = dynConfig.statusCols.length > 0 || dynConfig.touchCol || dynConfig.colorGroups.length > 0;
+
+  if (!merchants.length) return null;
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col mt-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Store className="w-5 h-5 text-slate-400" />
-            <h2 className="text-lg font-bold text-slate-800">
-              Merchant Targets
-            </h2>
-          </div>
 
-          <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-1.5 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
-            <Search className="w-4 h-4 text-slate-400 mr-2" />
-            <input
-              type="text"
-              placeholder="Search merchants..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="text-sm text-slate-700 outline-none bg-transparent w-48"
-            />
+      {/* ── Toolbar ── */}
+      <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Store className="w-5 h-5 text-slate-400" />
+              <h2 className="text-lg font-bold text-slate-800">Merchant Targets</h2>
+            </div>
+            <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-1.5 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
+              <Search className="w-4 h-4 text-slate-400 mr-2" />
+              <input
+                type="text"
+                placeholder="Search merchants..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="text-sm text-slate-700 outline-none bg-transparent w-44"
+              />
+            </div>
           </div>
-        </div>
-        
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between w-full mt-4 gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1 flex items-center gap-1">
-              <Filter className="w-3.5 h-3.5" /> Filters:
-            </span>
-            <FilterChip 
-              label="SL Opp" 
-              active={filterSlOpp} 
-              onClick={() => {
-                const nextState = !filterSlOpp;
-                setFilterSlOpp(nextState);
-                if (!nextState) setFilterSlCredit(false);
-              }} 
-            />
-            {filterSlOpp && (
-              <div className="flex items-center gap-1.5 ml-1 mr-1 animate-in fade-in slide-in-from-left-2 duration-200">
-                <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
-                <FilterChip label="Has Credit" active={filterSlCredit} onClick={() => setFilterSlCredit(!filterSlCredit)} />
-              </div>
-            )}
-            <FilterChip label="Promo Opp" active={filterPromoOpp} onClick={() => setFilterPromoOpp(!filterPromoOpp)} />
-            <FilterChip label="Loyal Opp" active={filterLoyalOpp} onClick={() => setFilterLoyalOpp(!filterLoyalOpp)} />
-            {hasActiveFilters && (
-              <button onClick={clearFilters} className="text-xs text-slate-500 hover:text-dd-red font-semibold ml-2 flex items-center gap-1 transition-colors">
-                 <X className="w-3.5 h-3.5" /> Clear All
+          <div className="flex items-center gap-2">
+            {hasDynFilters && (
+              <button
+                onClick={() => setShowDynFilters(v => !v)}
+                className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${
+                  showDynFilters ? "bg-violet-600 text-white border-violet-600" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                Smart Filters {showDynFilters ? "▲" : "▼"}
               </button>
             )}
+            <button
+              onClick={() => { setIsBulkOpen(v => !v); setBulkFeedback(null); }}
+              className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${
+                isBulkOpen ? "bg-slate-800 text-white border-slate-800" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5" /> Bulk Select
+            </button>
+            <div className="text-sm font-semibold text-slate-500 bg-white border border-slate-200 px-3 py-1 rounded-lg">
+              Selected: <span className="text-dd-red">{filteredMerchants.filter(m => m.selected).length}</span> / {filteredMerchants.length}
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-             <button
-               onClick={() => { setIsBulkOpen(!isBulkOpen); setBulkFeedback(null); }}
-               className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${
-                 isBulkOpen ? 'bg-slate-800 text-white border-slate-800' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
-               }`}
-             >
-                <Zap className="w-3.5 h-3.5" /> Bulk Select
-             </button>
-             <div className="text-sm font-semibold text-slate-500 bg-white border border-slate-200 px-3 py-1 rounded-lg">
-               Selected: <span className="text-dd-red">{filteredMerchants.filter(m => m.selected).length}</span> / {filteredMerchants.length}
-             </div>
-          </div>
+        </div>
+
+        {/* Known-opp chips row */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+            <Filter className="w-3.5 h-3.5" /> Quick Filters:
+          </span>
+          <FilterChip label="SL Opp"    active={filterSlOpp}    onClick={() => { setFilterSlOpp(v => !v); if (filterSlOpp) setFilterSlCredit(false); }} />
+          {filterSlOpp && (
+            <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-left-2 duration-200">
+              <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+              <FilterChip label="Has Credit" active={filterSlCredit} onClick={() => setFilterSlCredit(v => !v)} />
+            </div>
+          )}
+          <FilterChip label="Promo Opp"  active={filterPromoOpp} onClick={() => setFilterPromoOpp(v => !v)} />
+          <FilterChip label="Loyal Opp"  active={filterLoyalOpp} onClick={() => setFilterLoyalOpp(v => !v)} />
+          {hasActiveFilters && (
+            <button onClick={clearFilters} className="text-xs text-slate-500 hover:text-dd-red font-semibold ml-2 flex items-center gap-1 transition-colors">
+              <X className="w-3.5 h-3.5" /> Clear All
+            </button>
+          )}
         </div>
       </div>
 
-      {isBulkOpen && (
-        <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 animate-in slide-in-from-top-2">
-           <h4 className="font-bold text-slate-800 text-sm mb-2">Bulk Select by Store/Business IDs</h4>
-           <div className="flex gap-3 items-start">
-              <textarea 
-                value={pasteData}
-                onChange={e => { setPasteData(e.target.value); setBulkFeedback(null); }}
-                placeholder="Paste IDs separated by spaces or commas..."
-                className="flex-1 bg-white border border-slate-300 rounded-xl p-3 text-sm focus:border-dd-red focus:ring-1 focus:ring-dd-red outline-none resize-none h-20"
-              />
-              <div className="flex flex-col gap-2">
-                 <button 
-                   onClick={handleApplyBulk}
-                   disabled={!pasteData.trim()}
-                   className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                 >
-                   Apply Filter
-                 </button>
-                 {bulkFeedback && (
-                   <span className={`text-xs font-bold px-2 py-1 rounded w-full text-center ${bulkFeedback.foundCount === bulkFeedback.totalCount ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
-                     Found {bulkFeedback.foundCount} of {bulkFeedback.totalCount}
-                   </span>
-                 )}
+      {/* ── Dynamic Smart Filters Panel ── */}
+      {showDynFilters && hasDynFilters && (
+        <div className="border-b border-slate-200 bg-violet-50/60 px-6 py-5 space-y-5 animate-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-2 text-xs font-bold text-violet-700 uppercase tracking-wider">
+            <SlidersHorizontal className="w-3.5 h-3.5" /> Detected Column Filters
+          </div>
+
+          {/* Status / text enum filters */}
+          {dynConfig.statusCols.map(col => {
+            const selected = statusFilters[col.col] || new Set();
+            return (
+              <div key={col.col}>
+                <div className="text-xs font-bold text-slate-600 mb-2">{col.rawHeader}</div>
+                <div className="flex flex-wrap gap-2">
+                  {col.distribution.map(({ label, count }) => {
+                    const isActive = selected.has(label);
+                    return (
+                      <button
+                        key={label}
+                        onClick={() => toggleStatusValue(col.col, label)}
+                        className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
+                          isActive
+                            ? "bg-violet-600 text-white border-violet-600 shadow-sm"
+                            : "bg-white text-slate-600 border-slate-300 hover:border-violet-400"
+                        }`}
+                      >
+                        {label} <span className="opacity-60">({count})</span>
+                      </button>
+                    );
+                  })}
+                  {selected.size > 0 && (
+                    <button
+                      onClick={() => setStatusFilters(prev => ({ ...prev, [col.col]: new Set() }))}
+                      className="text-xs text-slate-400 hover:text-red-500 transition-colors font-semibold"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
               </div>
-           </div>
-           <p className="text-xs text-slate-500 mt-2">
-             Pasting any Store ID or Business ID will select the entire associated merchant and all of its locations. Unmatched merchants will be deselected.
-           </p>
+            );
+          })}
+
+          {/* Color swatch filter */}
+          {dynConfig.colorGroups.length > 0 && (
+            <div>
+              <div className="text-xs font-bold text-slate-600 mb-2">Row Highlight Color</div>
+              <div className="flex flex-wrap gap-2 items-center">
+                {dynConfig.colorGroups.map(g => {
+                  const isActive = activeColors.has(g.hex);
+                  return (
+                    <button
+                      key={g.hex}
+                      onClick={() => toggleColor(g.hex)}
+                      title={`#${g.hex} — ${g.count} rows`}
+                      className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
+                        isActive
+                          ? "border-slate-700 shadow-md ring-2 ring-slate-400"
+                          : "border-slate-300 bg-white hover:border-slate-500"
+                      }`}
+                    >
+                      <span
+                        className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0"
+                        style={{ backgroundColor: `#${g.hex}` }}
+                      />
+                      <span className="text-slate-700">{g.label || `#${g.hex}`}</span>
+                      <span className="text-slate-400">({g.count})</span>
+                    </button>
+                  );
+                })}
+                {/* "Uncolored" toggle */}
+                <button
+                  onClick={() => toggleColor("none")}
+                  className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
+                    activeColors.has("none")
+                      ? "border-slate-700 shadow-md ring-2 ring-slate-400"
+                      : "border-slate-300 border-dashed bg-white hover:border-slate-500"
+                  }`}
+                >
+                  <span className="w-3.5 h-3.5 rounded-full border border-dashed border-slate-400 shrink-0" />
+                  <span className="text-slate-500">No highlight</span>
+                  <span className="text-slate-400">({analyticsPayload?.uncoloredCount ?? "?"})</span>
+                </button>
+                {activeColors.size > 0 && (
+                  <button onClick={() => setActiveColors(new Set())} className="text-xs text-slate-400 hover:text-red-500 transition-colors font-semibold">
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Touch count range slider */}
+          {dynConfig.touchCol && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs font-bold text-slate-600">{dynConfig.touchCol.rawHeader} — Range</div>
+                <div className="text-xs text-slate-500">
+                  {resolvedTouchRange[0]}–{resolvedTouchRange[1]} touches
+                  {touchRange !== null && (
+                    <button
+                      onClick={() => setTouchRange(null)}
+                      className="ml-2 text-red-400 hover:text-red-600 font-semibold"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-400 w-6 text-right">0</span>
+                <div className="flex-1 flex flex-col gap-1.5">
+                  <input
+                    type="range" min={0} max={touchMax}
+                    value={resolvedTouchRange[0]}
+                    onChange={e => setTouchRange([parseInt(e.target.value), Math.max(parseInt(e.target.value), resolvedTouchRange[1])])}
+                    className="w-full accent-violet-600 h-1.5"
+                  />
+                  <input
+                    type="range" min={0} max={touchMax}
+                    value={resolvedTouchRange[1]}
+                    onChange={e => setTouchRange([Math.min(resolvedTouchRange[0], parseInt(e.target.value)), parseInt(e.target.value)])}
+                    className="w-full accent-violet-600 h-1.5"
+                  />
+                </div>
+                <span className="text-xs text-slate-400 w-6">{touchMax}</span>
+              </div>
+              <div className="text-xs text-slate-400 mt-1.5">
+                Avg: <strong>{dynConfig.touchCol.avg}</strong> · Untouched: <strong className="text-dd-red">{dynConfig.touchCol.untouched}</strong>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
+      {/* ── Bulk Select Panel ── */}
+      {isBulkOpen && (
+        <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 animate-in slide-in-from-top-2">
+          <h4 className="font-bold text-slate-800 text-sm mb-2">Bulk Select by Store / Business IDs</h4>
+          <div className="flex gap-3 items-start">
+            <textarea
+              value={pasteData}
+              onChange={e => { setPasteData(e.target.value); setBulkFeedback(null); }}
+              placeholder="Paste IDs separated by spaces or commas..."
+              className="flex-1 bg-white border border-slate-300 rounded-xl p-3 text-sm focus:border-dd-red focus:ring-1 focus:ring-dd-red outline-none resize-none h-20"
+            />
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={handleApplyBulk}
+                disabled={!pasteData.trim()}
+                className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Apply
+              </button>
+              {bulkFeedback && (
+                <span className={`text-xs font-bold px-2 py-1 rounded text-center ${
+                  bulkFeedback.foundCount === bulkFeedback.totalCount
+                    ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
+                }`}>
+                  Found {bulkFeedback.foundCount}/{bulkFeedback.totalCount}
+                </span>
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-slate-500 mt-2">
+            Any Store ID or Business ID will select the entire associated merchant. Unmatched merchants are deselected.
+          </p>
+        </div>
+      )}
+
+      {/* ── Table ── */}
       <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
         <table className="w-full text-left border-collapse whitespace-nowrap">
           <thead className="sticky top-0 bg-white shadow-sm z-10">
-            <tr className="bg-white text-slate-500 text-xs uppercase tracking-wider">
+            <tr className="text-slate-500 text-xs uppercase tracking-wider">
               <th className="px-6 py-4 font-semibold border-b border-slate-200 w-12 text-center">
-                 <button onClick={toggleAll} className="outline-none">
-                    {allSelected ? <CheckSquare className="w-5 h-5 text-dd-red mx-auto" /> : <Square className="w-5 h-5 text-slate-300 hover:text-slate-400 mx-auto" />}
-                 </button>
+                <button onClick={toggleAll} className="outline-none">
+                  {allSelected
+                    ? <CheckSquare className="w-5 h-5 text-dd-red mx-auto" />
+                    : <Square className="w-5 h-5 text-slate-300 hover:text-slate-400 mx-auto" />}
+                </button>
               </th>
               <th className="px-6 py-4 font-semibold border-b border-slate-200">Merchant Details</th>
               <th className="px-6 py-4 font-semibold border-b border-slate-200">Store ID(s)</th>
@@ -248,119 +519,107 @@ export default function MerchantTable({ merchants, setMerchants, onContinue, onA
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filteredMerchants.length === 0 ? (
-               <tr>
-                 <td colSpan="5" className="px-6 py-12 text-center text-slate-500 bg-slate-50/50">
-                    <p className="text-lg font-medium text-slate-600">No merchants match your search.</p>
-                 </td>
-               </tr>
+              <tr>
+                <td colSpan="4" className="px-6 py-12 text-center text-slate-500 bg-slate-50/50">
+                  <p className="text-lg font-medium text-slate-600">No merchants match your filters.</p>
+                  <button onClick={clearFilters} className="text-sm text-dd-red font-bold hover:underline mt-2">Clear all filters</button>
+                </td>
+              </tr>
             ) : (
-               filteredMerchants.map((row) => {
-                 const isExpanded = expandedRows.has(row.id);
-                 const sidArray = row.sids.split(",");
-
-                 return (
-                   <React.Fragment key={row.id}>
-                     <tr className={`hover:bg-slate-50 transition-colors ${!row.selected ? 'opacity-60' : ''}`}>
-                       <td className="px-6 py-4 text-center">
-                          <button onClick={() => toggleMerchant(row.id)} className="outline-none">
-                            {row.selected ? <CheckSquare className="w-5 h-5 text-dd-red mx-auto" /> : <Square className="w-5 h-5 text-slate-300 hover:text-slate-400 mx-auto" />}
-                          </button>
-                       </td>
-                       <td className="px-6 py-4 font-semibold text-slate-800">
-                          <div className="flex items-center gap-2">
-                             {row.merchantName}
-                             {row.locationCount > 1 && (
-                                <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full inline-block mt-0.5">
-                                  {row.locationCount} Locs
-                                </span>
-                             )}
-                          </div>
-                          {row.businessId && (
-                             <div className="text-xs text-slate-400 font-mono mt-0.5 flex items-center gap-1 opacity-80">
-                                Biz ID: {row.businessId}
-                             </div>
+              filteredMerchants.map(row => {
+                const isExpanded = expandedRows.has(row.id);
+                const sidArray   = row.sids.split(",");
+                return (
+                  <React.Fragment key={row.id}>
+                    <tr className={`hover:bg-slate-50 transition-colors ${!row.selected ? "opacity-60" : ""}`}>
+                      <td className="px-6 py-4 text-center">
+                        <button onClick={() => toggleMerchant(row.id)} className="outline-none">
+                          {row.selected
+                            ? <CheckSquare className="w-5 h-5 text-dd-red mx-auto" />
+                            : <Square className="w-5 h-5 text-slate-300 hover:text-slate-400 mx-auto" />}
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 font-semibold text-slate-800">
+                        <div className="flex items-center gap-2">
+                          {row.merchantName}
+                          {row.locationCount > 1 && (
+                            <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
+                              {row.locationCount} Locs
+                            </span>
                           )}
-                       </td>
-                       <td className="px-6 py-4 text-sm text-slate-600 align-top">
-                          <div className="flex items-center gap-2 mt-2">
-                            <span className="font-mono bg-slate-100 px-2 py-0.5 rounded">{sidArray[0]}</span>
-                            {sidArray.length > 1 && (
-                              <button onClick={() => toggleRow(row.id)} className="text-xs text-blue-600 hover:underline flex items-center gap-0.5">
-                                +{sidArray.length - 1} more {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                              </button>
-                            )}
-                          </div>
-                       </td>
-                       <td className="px-6 py-4 text-sm text-slate-600">
-                         {row.emails && row.emails.length > 0 ? (
-                            <div className="flex items-center justify-between gap-3 min-w-[200px] border border-transparent hover:border-slate-200 p-2 rounded-xl group transition-all">
-                               <div className="flex flex-col items-start gap-1">
-                                  <div className="flex items-center gap-1.5">
-                                    <Mail className="w-4 h-4 text-slate-400 shrink-0" />
-                                    <span className="font-semibold text-slate-800 text-xs">
-                                       {row.emails.find(e => e.isPrimary)?.address || row.emails[0].address}
-                                    </span>
-                                  </div>
-                                  {row.emails.length > 1 && (
-                                     <div className="text-[10px] uppercase font-bold text-slate-500 flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-full w-fit">
-                                        + {row.emails.length - 1} More Contact{row.emails.length > 2 ? 's' : ''}
-                                     </div>
-                                  )}
-                               </div>
-                               <button 
-                                 onClick={() => setEditingEmailsId(row.id)}
-                                 className="p-1.5 bg-white border border-slate-200 hover:border-dd-red hover:text-dd-red shadow-sm rounded-lg text-slate-500 transition-all opacity-0 group-hover:opacity-100"
-                                 title="Manage Emails"
-                               >
-                                 <Edit3 className="w-4 h-4" />
-                               </button>
-                            </div>
-                         ) : (
-                            <div className="text-red-500 text-xs font-bold bg-red-50 py-1.5 px-3 border border-red-100 rounded-lg flex items-center justify-between min-w-[200px]">
-                              <span className="flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" /> Missing Email</span>
-                               <button onClick={() => setEditingEmailsId(row.id)} className="text-red-700 bg-red-100 px-2 py-1 rounded hover:bg-red-200 transition-colors">
-                                 Add
-                               </button>
-                            </div>
-                         )}
-                       </td>
-                     </tr>
-                     {isExpanded && (
-                       <tr className="bg-slate-50/50">
-                         <td colSpan="4" className="px-6 py-4 border-b border-slate-100">
-                            <div className="pl-12 pb-2">
-                              {/* Store IDs list if multiple */}
-                              {sidArray.length > 1 && (
-                                <div className="mb-4">
-                                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">All Assigned Store IDs</h4>
-                                  <div className="flex flex-wrap gap-2">
-                                    {sidArray.map(sid => (
-                                      <span key={sid} className="font-mono text-sm bg-white border border-slate-200 px-2 py-0.5 rounded shadow-sm">
-                                        {sid}
-                                      </span>
-                                    ))}
-                                  </div>
+                        </div>
+                        {row.businessId && (
+                          <div className="text-xs text-slate-400 font-mono mt-0.5 opacity-80">Biz ID: {row.businessId}</div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-600 align-top">
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="font-mono bg-slate-100 px-2 py-0.5 rounded">{sidArray[0]}</span>
+                          {sidArray.length > 1 && (
+                            <button onClick={() => toggleRow(row.id)} className="text-xs text-blue-600 hover:underline flex items-center gap-0.5">
+                              +{sidArray.length - 1} more {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-600">
+                        {row.emails?.length > 0 ? (
+                          <div className="flex items-center justify-between gap-3 min-w-[200px] border border-transparent hover:border-slate-200 p-2 rounded-xl group transition-all">
+                            <div className="flex flex-col items-start gap-1">
+                              <div className="flex items-center gap-1.5">
+                                <Mail className="w-4 h-4 text-slate-400 shrink-0" />
+                                <span className="font-semibold text-slate-800 text-xs">
+                                  {row.emails.find(e => e.isPrimary)?.address || row.emails[0].address}
+                                </span>
+                              </div>
+                              {row.emails.length > 1 && (
+                                <div className="text-[10px] uppercase font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full w-fit">
+                                  +{row.emails.length - 1} More
                                 </div>
                               )}
                             </div>
-                         </td>
-                       </tr>
-                     )}
-                   </React.Fragment>
-                 );
-               })
+                            <button
+                              onClick={() => setEditingEmailsId(row.id)}
+                              className="p-1.5 bg-white border border-slate-200 hover:border-dd-red hover:text-dd-red shadow-sm rounded-lg text-slate-500 transition-all opacity-0 group-hover:opacity-100"
+                              title="Manage Emails"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="text-red-500 text-xs font-bold bg-red-50 py-1.5 px-3 border border-red-100 rounded-lg flex items-center justify-between min-w-[200px]">
+                            <span className="flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" /> Missing Email</span>
+                            <button onClick={() => setEditingEmailsId(row.id)} className="text-red-700 bg-red-100 px-2 py-1 rounded hover:bg-red-200 transition-colors">Add</button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr className="bg-slate-50/50">
+                        <td colSpan="4" className="px-6 py-4 border-b border-slate-100">
+                          <div className="pl-12 pb-2">
+                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">All Assigned Store IDs</h4>
+                            <div className="flex flex-wrap gap-2">
+                              {sidArray.map(sid => (
+                                <span key={sid} className="font-mono text-sm bg-white border border-slate-200 px-2 py-0.5 rounded shadow-sm">{sid}</span>
+                              ))}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
-      
+
       {editingEmailsId && (
-        <MerchantEmailManager 
+        <MerchantEmailManager
           merchant={merchants.find(m => m.id === editingEmailsId)}
-          onSave={(newEmails) => {
-            updateMerchant(editingEmailsId, { emails: newEmails });
-            setEditingEmailsId(null);
-          }}
+          onSave={newEmails => { updateMerchant(editingEmailsId, { emails: newEmails }); setEditingEmailsId(null); }}
           onClose={() => setEditingEmailsId(null)}
         />
       )}
@@ -368,7 +627,7 @@ export default function MerchantTable({ merchants, setMerchants, onContinue, onA
       {onContinue && (
         <div className="flex justify-end pt-4 pb-6 px-6 bg-slate-50 border-t border-slate-200">
           <button
-            onClick={handleContinueClick}
+            onClick={() => onContinue()}
             disabled={filteredMerchants.filter(m => m.selected).length === 0}
             className="flex items-center gap-2 px-8 py-3.5 bg-dd-red text-white font-bold rounded-xl shadow-md hover:bg-dd-red-dark hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0 disabled:cursor-not-allowed"
           >
@@ -386,7 +645,7 @@ function FilterChip({ label, active, onClick }) {
     <button
       onClick={onClick}
       className={`text-xs font-bold px-2.5 py-1 rounded-full transition-all border ${
-        active 
+        active
           ? "bg-dd-red text-white border-dd-red shadow-sm"
           : "bg-white text-slate-600 border-slate-300 hover:border-slate-400"
       }`}

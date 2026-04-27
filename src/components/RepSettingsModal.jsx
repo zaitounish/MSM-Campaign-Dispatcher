@@ -1,14 +1,15 @@
 import React, { useState } from "react";
-import { User, Mail, Database, Phone, Settings, Save, AlertCircle } from "lucide-react";
+import { User, Mail, Database, Phone, Settings, Save, AlertCircle, Sparkles } from "lucide-react";
 
 export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepSettings }) {
   const [formData, setFormData] = useState({
-    firstName: repSettings.firstName || "",
-    lastName: repSettings.lastName || "",
-    title: repSettings.title || "Merchant Success",
-    phone: repSettings.phone || "",
-    repId: repSettings.repId || "",
-    gasUrl: repSettings.gasUrl || "",
+    firstName:     repSettings.firstName     || "",
+    lastName:      repSettings.lastName      || "",
+    title:         repSettings.title         || "Merchant Success",
+    phone:         repSettings.phone         || "",
+    repId:         repSettings.repId         || "",
+    gasUrl:        repSettings.gasUrl        || "",
+    geminiApiKey:  repSettings.geminiApiKey  || "",
   });
 
   if (!isOpen) return null;
@@ -137,6 +138,23 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
               />
               <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                 Used exclusively by the "Bulk Send" feature to bypass local mail clients via Google's infrastructure.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-violet-500" /> Gemini API Key (AI Insights)
+              </label>
+              <input
+                type="password"
+                name="geminiApiKey"
+                value={formData.geminiApiKey}
+                onChange={handleChange}
+                placeholder="AIza..."
+                className="w-full bg-slate-50 border border-slate-300 font-mono text-xs rounded-xl px-4 py-2.5 focus:border-violet-500 focus:ring-1 focus:ring-violet-400 outline-none transition-all"
+              />
+              <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                Free key from <strong>ai.google.dev</strong>. Used locally to generate AI pipeline insights. Never sent to our servers.
               </p>
             </div>
           </div>
