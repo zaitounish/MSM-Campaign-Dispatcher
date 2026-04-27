@@ -15,6 +15,13 @@
  *  - assisted_rep_id sourced from repSettings.repId — never hardcoded
  *  - Loyalty: no sids, no dsd, no repId — only business_id
  *  - SpendXGetY: conditional pt=pdws vs pt=dvdws; financials in cents; % as raw int
+ *
+ * REMOVED: iftca ("Is First Time Campaign") parameter.
+ *  Rationale: We do not pull historical campaign data from BOB uploads to verify
+ *  whether a campaign is truly net-new. Passing iftca=false on a first-time campaign
+ *  would force the wrong creation flow on the DoorDash side. Omitting the parameter
+ *  entirely delegates the default resolution to DoorDash's routing layer, which is
+ *  the correct and safer behaviour per the Campaign Deep Link Routing spec.
  */
 
 // ─── Base URLs ────────────────────────────────────────────────────────────────
@@ -76,12 +83,14 @@ export const generateDeepLink = ({ businessId, sidsArray, repId, weeklyBudget, a
   const params = [
     `business_id=${businessId}`,
     `aud=${aud}`,
+    // dsd = Unix timestamp in ms — uniquely identifies this link generation session;
+    // used by DoorDash to deduplicate concurrent campaign creation requests.
     `dsd=${dsd}`,
-    `iftca=false`,
+    // NOTE: iftca omitted intentionally — see file-level comment for rationale.
     `sids=${encodedSids}`,
     `assisted_rep_id=${assistedRepId}`,
-    `abv=${abv}`,
-    `abwv=${abwv}`,
+    `abv=${abv}`,    // Daily budget in cents  (floor(weekly / 7) * 100)
+    `abwv=${abwv}`,  // Weekly budget in cents (weekly * 100)
     `bsao=0`,
     `bscv=500`,
     `bsia=true`,
@@ -113,8 +122,9 @@ export const generateSmartLink = (merchant, repId) => {
   const params = [
     `business_id=${merchant.businessId}`,
     `aud=smart_targeting`,
+    // dsd = Unix timestamp in ms — provides a unique session anchor for this link.
     `dsd=${dsd}`,
-    `iftca=false`,
+    // NOTE: iftca omitted intentionally — see file-level comment for rationale.
     `sids=${encodedSids}`,
     `assisted_rep_id=${repId || ""}`,
     `pt=undefined`,
@@ -171,15 +181,16 @@ export const generateSpendXGetYLink = (merchant, repId, config) => {
   );
   const mstCents = Math.round((parseFloat(config.minSubtotal) || 0) * 100);
 
-  // Base parameters shared by both modes
+  // Base parameters shared by both percentage and dollar modes
   let params = [
     `business_id=${merchant.businessId}`,
     `aud=smart_targeting`,
+    // dsd = Unix timestamp in ms — deduplicates concurrent creation requests.
     `dsd=${dsd}`,
-    `iftca=false`,
+    // NOTE: iftca omitted intentionally — see file-level comment for rationale.
     `sids=${encodedSids}`,
     `assisted_rep_id=${repId || ""}`,
-    `mst=${mstCents}`,
+    `mst=${mstCents}`,   // Minimum subtotal in cents
     `pbv=noBudget`,
     `pbwv=noBudget`,
     `pbic=false`,
