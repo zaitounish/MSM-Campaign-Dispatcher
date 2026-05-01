@@ -6,15 +6,14 @@ import {
 } from "lucide-react";
 
 // ─── Gmail Compose URL builder ────────────────────────────────────────────────
-// Opens Gmail compose with To, CC, Subject AND plain-text body pre-filled.
-// Plain text is used in the URL (safe for all lengths browsers support);
-// HTML is additionally copied to clipboard so Ctrl+V replaces with rich version.
+// Opens Gmail compose with To, CC, Subject pre-filled.
+// Body is NOT included in the URL — we copy the full rich HTML to clipboard
+// instead so the rep presses Ctrl+V to paste formatted content with buttons.
 const buildGmailComposeUrl = ({ to, cc, draft }) => {
   const parts = [
     `to=${encodeURIComponent(to)}`,
     cc ? `cc=${encodeURIComponent(cc)}` : "",
     `su=${encodeURIComponent(draft.subject || "")}`,
-    `body=${encodeURIComponent(draft.plainTextBody || "")}`,
   ].filter(Boolean);
   return `https://mail.google.com/mail/?view=cm&fs=1&${parts.join("&")}`;
 };
