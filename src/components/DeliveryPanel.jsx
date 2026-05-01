@@ -6,15 +6,15 @@ import {
 } from "lucide-react";
 
 // ─── Gmail Compose URL builder ────────────────────────────────────────────────
-// Opens Gmail compose in a new tab with To/CC/Subject pre-filled.
-// Body is intentionally omitted from the URL (URL length limits break it).
-// Instead the caller copies the HTML body to clipboard first;
-// the user just presses Ctrl+V inside the compose window.
+// Opens Gmail compose with To, CC, Subject AND plain-text body pre-filled.
+// Plain text is used in the URL (safe for all lengths browsers support);
+// HTML is additionally copied to clipboard so Ctrl+V replaces with rich version.
 const buildGmailComposeUrl = ({ to, cc, draft }) => {
   const parts = [
     `to=${encodeURIComponent(to)}`,
     cc ? `cc=${encodeURIComponent(cc)}` : "",
     `su=${encodeURIComponent(draft.subject || "")}`,
+    `body=${encodeURIComponent(draft.plainTextBody || "")}`,
   ].filter(Boolean);
   return `https://mail.google.com/mail/?view=cm&fs=1&${parts.join("&")}`;
 };
@@ -115,19 +115,24 @@ export default function DeliveryPanel({
     setClipStatus({});
   };
 
-  // ── Open ALL Gmail tabs at once (synchronous — one user gesture) ─────────────
-  // Browsers allow multiple window.open() calls from a single click handler.
-  // All tabs open immediately; the queue then switches to clipboard-copy mode.
+  // ── Open ALL: opens first tab immediately, queue shows rest for rapid clicking ──
+  // Browsers block window.open() after the first call per user gesture (popup
+  // blocker). We open tab #1 immediately, then show the queue so the user can
+  // rapidly click the remaining ones.
   const handleOpenAllInGmail = () => {
     const items = buildTargets();
-    // Open every tab synchronously inside this same click event
-    items.forEach(item => {
-      window.open(buildGmailComposeUrl(item), "_blank", "noopener,noreferrer");
-    });
-    // Mark all as opened; queue becomes clipboard-copy panel
-    setQueue({ items, opened: new Set(items.map((_, i) => i)), allOpened: true });
+    if (items.length === 0) return;
+    // Open first tab right now (within the user gesture)
+    const firstUrl = buildGmailComposeUrl(items[0]);
+    window.open(firstUrl, "_blank", "noopener,noreferrer");
+    copyHtmlToClipboard(items[0].draft).then(ok =>
+      setClipStatus(p => ({ ...p, 0: ok ? "done" : "error" }))
+    );
+    // Show queue with first marked as opened, all others waiting
+    const opened = new Set([0]);
+    setQueue({ items, opened, allOpened: true, rapidMode: true });
     setSendStatus(null);
-    setClipStatus({});
+    setClipStatus({ 0: "copying" });
   };
 
   const [clipStatus, setClipStatus] = useState({}); // idx -> 'copying'|'done'|'error'
@@ -135,13 +140,12 @@ export default function DeliveryPanel({
   const openOneInGmail = async (idx) => {
     const target = queue.items[idx];
     setClipStatus(prev => ({ ...prev, [idx]: "copying" }));
-
-    const ok = await copyHtmlToClipboard(target.draft);
-    setClipStatus(prev => ({ ...prev, [idx]: ok ? "done" : "error" }));
-
+    // Open Gmail tab with body pre-filled in URL
     const url = buildGmailComposeUrl(target);
     window.open(url, "_blank", "noopener,noreferrer");
-
+    // Also copy HTML to clipboard (bonus: user can Ctrl+V to get rich formatting)
+    const ok = await copyHtmlToClipboard(target.draft);
+    setClipStatus(prev => ({ ...prev, [idx]: ok ? "done" : "error" }));
     setQueue(prev => {
       const opened = new Set(prev.opened);
       opened.add(idx);
@@ -339,9 +343,9 @@ export default function DeliveryPanel({
               <div>
                 <h2 className="text-lg font-bold text-slate-800">Gmail Send Queue</h2>
                 <p className="text-sm text-slate-500 mt-0.5">
-                  {queue.allOpened
-                    ? <>✅ All {queue.items.length} tabs opened. Click <strong>"Copy Email"</strong> for each row, switch to that Gmail tab, and press <kbd className="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-mono">Ctrl+V</kbd>.</>
-                    : <>Click <strong>"Open in Gmail"</strong> — body copies automatically. Press <kbd className="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-mono">Ctrl+V</kbd> inside Gmail.</>
+                  {queue.rapidMode
+                    ? <>Tab 1 opened. Click <strong>"Open in Gmail"</strong> for each remaining row — content is pre-filled automatically.</>
+                    : <>Gmail opens with content pre-filled. Optionally press <kbd className="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-mono">Ctrl+V</kbd> to upgrade to rich HTML formatting.</>
                   }
                 </p>
               </div>
@@ -369,24 +373,18 @@ export default function DeliveryPanel({
                     )}
                   </div>
                   <button
-                    onClick={() => queue.allOpened ? copyHtmlToClipboard(item.draft).then(ok => setClipStatus(p => ({...p, [idx]: ok ? "done" : "error"}))) : openOneInGmail(idx)}
+                    onClick={() => openOneInGmail(idx)}
                     disabled={clipStatus[idx] === "copying"}
                     className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap disabled:opacity-60 ${
-                      clipStatus[idx] === "done"
-                        ? "bg-green-100 text-green-700 hover:bg-green-200"
-                        : queue.allOpened
-                        ? "bg-violet-600 text-white hover:bg-violet-700 shadow-sm"
-                        : isOpened
+                      queue.opened.has(idx)
                         ? "bg-green-100 text-green-700 hover:bg-green-200"
                         : "bg-dd-red text-white hover:bg-[#ff3019] shadow-sm"
                     }`}
                   >
                     <ExternalLink className="w-3.5 h-3.5"/>
-                    {clipStatus[idx] === "copying" ? "Copying…"
-                      : clipStatus[idx] === "done" ? "✓ Copied!"
-                      : queue.allOpened ? "Copy Email"
-                      : isOpened ? "Re-open"
-                      : "Open in Gmail →"}
+                    {clipStatus[idx] === "copying" ? "Opening…"
+                      : queue.opened.has(idx) ? "Re-open"
+                      : "Open in Gmail"}
                   </button>
                   </div>
                 );
