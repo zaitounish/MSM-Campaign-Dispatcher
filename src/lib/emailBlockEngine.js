@@ -257,8 +257,10 @@ const _momentumPromo = (block, url) =>
   `<div style="margin:24px 0;padding-top:16px;border-top:1px solid #eee;font-family:sans-serif">` +
   `<h3 style="margin:0 0 12px;color:#eb1700">━━━ 🚀 ${block.data.title} ━━━</h3>` +
   `<div style="margin:0 0 16px;font-size:14px;color:#444;line-height:1.6">${_outlookLists(block.data.body)}</div>` +
-  `<a href="${url}" style="display:inline-block;background:#eb1700;color:white;padding:10px 20px;` +
-  `text-decoration:none;border-radius:6px;font-weight:bold;font-size:14px">${block.data.buttonText}</a></div>`;
+  `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0"><tr>` +
+  `<td style="background:#eb1700;border-radius:6px;padding:10px 20px">` +
+  `<a href="${url}" style="color:white;text-decoration:none;font-weight:bold;font-size:14px;font-family:sans-serif;display:block;white-space:nowrap">${block.data.buttonText}</a>` +
+  `</td></tr></table></div>`;
 
 // Executive theme renderers
 const _executivePromo = (block, url, idx) =>
@@ -267,8 +269,10 @@ const _executivePromo = (block, url, idx) =>
   `Opportunity ${idx + 1}</p>` +
   `<h3 style="margin:0 0 12px;color:#1e293b;font-size:17px">${block.data.title}</h3>` +
   `<div style="margin:0 0 16px;font-size:14px;color:#475569;line-height:1.6">${_outlookLists(block.data.body)}</div>` +
-  `<a href="${url}" style="display:inline-block;border:2px solid #1e293b;color:#1e293b;padding:9px 20px;` +
-  `text-decoration:none;border-radius:6px;font-weight:bold;font-size:14px">${block.data.buttonText}</a></div>`;
+  `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0"><tr>` +
+  `<td style="border:2px solid #1e293b;border-radius:6px;padding:9px 20px">` +
+  `<a href="${url}" style="color:#1e293b;text-decoration:none;font-weight:bold;font-size:14px;font-family:sans-serif;display:block;white-space:nowrap">${block.data.buttonText}</a>` +
+  `</td></tr></table></div>`;
 
 // Spotlight theme renderers
 const _spotlightPromo = (block, url, isFirst) =>
@@ -277,8 +281,10 @@ const _spotlightPromo = (block, url, isFirst) =>
       `<p style="margin:0 0 8px;font-size:11px;font-weight:bold;color:#94a3b8;text-transform:uppercase;letter-spacing:.1em">Featured Campaign</p>` +
       `<h2 style="margin:0 0 16px;color:white;font-size:24px">${block.data.title}</h2>` +
       `<div style="margin:0 0 24px;font-size:15px;color:#cbd5e1;line-height:1.6">${_outlookLists(block.data.body)}</div>` +
-      `<a href="${url}" style="display:block;background:#eb1700;color:white;padding:14px 24px;` +
-      `text-decoration:none;border-radius:8px;font-weight:bold;font-size:16px;text-align:center">${block.data.buttonText}</a></div>`
+      `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%"><tr>` +
+      `<td style="background:#eb1700;border-radius:8px;padding:14px 24px;text-align:center">` +
+      `<a href="${url}" style="color:white;text-decoration:none;font-weight:bold;font-size:16px;font-family:sans-serif;display:block">${block.data.buttonText}</a>` +
+      `</td></tr></table></div>`
     : _momentumPromo(block, url); // secondary promos use momentum style
 
 // ─── Main compilers ────────────────────────────────────────────────────────────
