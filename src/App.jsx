@@ -11,7 +11,13 @@ import RepSettingsModal from "./components/RepSettingsModal";
 import BOBDashboard from "./components/BOBDashboard";
 import { ArrowRight, Settings } from "lucide-react";
 import { buildAllDeepLinks } from "./lib/deepLinkBuilder";
-import { generateEmail } from "./lib/emailTemplates";
+import {
+  generateInitialBlocks,
+  buildEmailSubject,
+  compileBlocksToHtml,
+  compileBlocksToText,
+  htmlToPlainText,
+} from "./lib/emailBlockEngine";
 
 // Catches any unhandled render crash and shows a message instead of a blank page
 class ErrorBoundary extends React.Component {
@@ -55,9 +61,23 @@ function AppInner() {
   const [analyticsPayload, setAnalyticsPayload] = useState(null);  // BOB Intelligence Suite data
   
   // Phase 3 states
-  const [selectedPromos, setSelectedPromos] = useState([]);
-  const [promoConfigs, setPromoConfigs] = useState({});
-  const [dispatchMode, setDispatchMode] = useState("cc");
+  const [selectedPromos, setSelectedPromos]   = useState([]);
+  const [promoConfigs,   setPromoConfigs]     = useState({});
+  const [dispatchMode,   setDispatchMode]     = useState("cc");
+
+  // Block generation state (blocks → initial HTML only; editing path uses raw HTML override)
+  const [globalBlocks,      setGlobalBlocks]      = useState([]);
+  const [selectedTheme,     setSelectedTheme]     = useState("momentum");
+
+  // Raw HTML override state (written by MerchantEmailEditor save)
+  const [globalHtmlTemplate, setGlobalHtmlTemplate] = useState("");
+
+  // Reset blocks + overrides whenever promo selection changes
+  useEffect(() => {
+    setGlobalBlocks([]);
+    setGlobalHtmlTemplate("");
+    setMerchants(prev => prev.map(m => ({ ...m, emailOverride: null, subjectOverride: undefined })));
+  }, [selectedPromos]); // eslint-disable-line react-hooks/exhaustive-deps
   
   // Scaffolding states for later phases
   const [repSettings, setRepSettings] = useState(() => {
@@ -91,15 +111,44 @@ function AppInner() {
     return buildAllDeepLinks(targetMerchants, selectedPromos, promoConfigs, repSettings.repId);
   }, [targetMerchants, selectedPromos, promoConfigs, repSettings.repId]);
 
+  // Initialize globalBlocks lazily — only when we have promos and no blocks yet.
+  // We do this in a useMemo so it is always in sync with promoConfigs.
+  const resolvedGlobalBlocks = useMemo(() => {
+    if (globalBlocks.length > 0) return globalBlocks;
+    if (selectedPromos.length === 0) return [];
+    return generateInitialBlocks(selectedPromos, promoConfigs, repSettings);
+  }, [globalBlocks, selectedPromos, promoConfigs, repSettings]);
+
   const emailDrafts = useMemo(() => {
-    return targetMerchants.map(m => generateEmail({ 
-      merchant: m, 
-      selectedPromos, 
-      promoConfigs, 
-      repSettings, 
-      deepLinks: deepLinks[m.id] 
-    })).map((draft, i) => ({ merchantId: targetMerchants[i].id, ...draft }));
-  }, [targetMerchants, selectedPromos, promoConfigs, repSettings, deepLinks]);
+    if (resolvedGlobalBlocks.length === 0 && !globalHtmlTemplate) return [];
+    return targetMerchants.map(m => {
+      const subject = m.subjectOverride || buildEmailSubject(m, selectedPromos);
+
+      // Priority: merchant-level override → global HTML template → block compilation
+      if (m.emailOverride) {
+        const html = m.emailOverride
+          .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
+          .replace(/\{DM\s*Name\}/gi,    m.dmName || m.merchantName || "there");
+        return { merchantId: m.id, subject, htmlBody: html, plainTextBody: htmlToPlainText(html) };
+      }
+
+      if (globalHtmlTemplate) {
+        const html = globalHtmlTemplate
+          .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
+          .replace(/\{DM\s*Name\}/gi,    m.dmName || m.merchantName || "there");
+        return { merchantId: m.id, subject, htmlBody: html, plainTextBody: htmlToPlainText(html) };
+      }
+
+      // Default: compile from blocks
+      const dlMap = deepLinks[m.id] || {};
+      return {
+        merchantId:    m.id,
+        subject,
+        htmlBody:      compileBlocksToHtml(resolvedGlobalBlocks, dlMap, m, selectedTheme),
+        plainTextBody: compileBlocksToText(resolvedGlobalBlocks, dlMap, m),
+      };
+    });
+  }, [resolvedGlobalBlocks, globalHtmlTemplate, targetMerchants, merchants, deepLinks, selectedTheme, selectedPromos]);
 
   const handleDataLoaded = (parsedData, payload) => {
     setMerchants(parsedData);
@@ -205,12 +254,13 @@ function AppInner() {
               </div>
             ) : (
               <>
-                <EmailPreview 
-                  merchants={targetMerchants} 
-                  emailDrafts={emailDrafts} 
-                  setMerchants={setMerchants} 
+                <EmailPreview
+                  merchants={targetMerchants}
+                  emailDrafts={emailDrafts}
+                  setMerchants={setMerchants}
                   dispatchMode={dispatchMode}
                   repSettings={repSettings}
+                  setGlobalHtmlTemplate={setGlobalHtmlTemplate}
                 />
                 <DeliveryPanel 
                   merchants={targetMerchants} 

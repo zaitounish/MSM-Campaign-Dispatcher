@@ -2,7 +2,7 @@
  * bobAnalyzer.js
  *
  * Extracts a rich, structured analytics payload from a raw Excel worksheet object.
- * This runs BEFORE deduplication — it operates on full, unmerged row data to preserve
+ * This runs BEFORE deduplication | it operates on full, unmerged row data to preserve
  * all granularity needed for dashboard widgets.
  *
  * Architecture decisions enforced:
@@ -15,7 +15,7 @@
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Columns we already handle in the existing pipeline — skip in dynamic detection */
+/** Columns we already handle in the existing pipeline | skip in dynamic detection */
 const KNOWN_COLS = new Set([
   "merchant name", "store name", "business name",
   "store id", "sid", "business id", "business_id",
@@ -175,7 +175,7 @@ export const analyzeBOB = (ws, json) => {
     if (!h) return;
     const normalized = normalizeHeader(h);
 
-    // Skip known pipeline columns — they already have dedicated widgets
+    // Skip known pipeline columns | they already have dedicated widgets
     const isKnown = [...KNOWN_COLS].some(k => normalized.includes(k));
     if (isKnown) return;
 

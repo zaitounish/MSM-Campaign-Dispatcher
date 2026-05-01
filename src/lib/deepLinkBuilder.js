@@ -12,8 +12,8 @@
  *  - SL $99 fallback: if weeklyBudget is falsy, default to 99 before cents conversion
  *  - dsd = Date.now() injected per link (SL and Smart/SpendXGetY)
  *  - sids encoded: encodeURIComponent(array.join(",")) → %2C separator
- *  - assisted_rep_id sourced from repSettings.repId — never hardcoded
- *  - Loyalty: no sids, no dsd, no repId — only business_id
+ *  - assisted_rep_id sourced from repSettings.repId | never hardcoded
+ *  - Loyalty: no sids, no dsd, no repId | only business_id
  *  - SpendXGetY: conditional pt=pdws vs pt=dvdws; financials in cents; % as raw int
  *
  * REMOVED: iftca ("Is First Time Campaign") parameter.
@@ -63,7 +63,7 @@ const encodeSids = (sidsArray) => encodeURIComponent((sidsArray || []).join(",")
  *
  * @param {string|number} businessId     - Parent Business ID from BOB.
  * @param {string[]}      sidsArray      - Array of Store IDs (multi-location safe).
- * @param {string|number} repId          - repSettings.repId — never hardcoded.
+ * @param {string|number} repId          - repSettings.repId | never hardcoded.
  * @param {number}        weeklyBudget   - Weekly budget in whole dollars.
  * @param {string}        audienceKey    - AUDIENCE_MAP key (e.g., "new_to_merchant").
  * @returns {string} Fully compiled SL URL.
@@ -79,14 +79,14 @@ export const generateDeepLink = ({ businessId, sidsArray, repId, weeklyBudget, a
   const aud            = AUDIENCE_MAP[audienceKey] || "all";
   const assistedRepId  = repId || "";
 
-  // Manual string construction — URLSearchParams would double-encode the %2C in sids
+  // Manual string construction | URLSearchParams would double-encode the %2C in sids
   const params = [
     `business_id=${businessId}`,
     `aud=${aud}`,
-    // dsd = Unix timestamp in ms — uniquely identifies this link generation session;
+    // dsd = Unix timestamp in ms | uniquely identifies this link generation session;
     // used by DoorDash to deduplicate concurrent campaign creation requests.
     `dsd=${dsd}`,
-    // NOTE: iftca omitted intentionally — see file-level comment for rationale.
+    // NOTE: iftca omitted intentionally | see file-level comment for rationale.
     `sids=${encodedSids}`,
     `assisted_rep_id=${assistedRepId}`,
     `abv=${abv}`,    // Daily budget in cents  (floor(weekly / 7) * 100)
@@ -122,9 +122,9 @@ export const generateSmartLink = (merchant, repId) => {
   const params = [
     `business_id=${merchant.businessId}`,
     `aud=smart_targeting`,
-    // dsd = Unix timestamp in ms — provides a unique session anchor for this link.
+    // dsd = Unix timestamp in ms | provides a unique session anchor for this link.
     `dsd=${dsd}`,
-    // NOTE: iftca omitted intentionally — see file-level comment for rationale.
+    // NOTE: iftca omitted intentionally | see file-level comment for rationale.
     `sids=${encodedSids}`,
     `assisted_rep_id=${repId || ""}`,
     `pt=undefined`,
@@ -143,7 +143,7 @@ export const generateSmartLink = (merchant, repId) => {
  * Generates a Loyalty program deep link.
  *
  * Spec §3 rules (simplest routing in the system):
- *  - Only business_id is required — no sids, no dsd, no repId
+ *  - Only business_id is required | no sids, no dsd, no repId
  *  - Uses the /merchant/loyalty base (not /marketing/)
  *
  * @param {object} merchant - Merchant object from Stage 2.
@@ -157,7 +157,7 @@ export const generateLoyaltyLink = (merchant) => {
 /**
  * Generates a conditional Spend X Get Y (discount) deep link.
  *
- * Two modes — determined by config.discountType:
+ * Two modes | determined by config.discountType:
  *
  * Mode 1: "percentage" → pt=pdws
  *   - cpo = raw percentage integer (NOT cents) e.g. 20% → cpo=20
@@ -185,9 +185,9 @@ export const generateSpendXGetYLink = (merchant, repId, config) => {
   let params = [
     `business_id=${merchant.businessId}`,
     `aud=smart_targeting`,
-    // dsd = Unix timestamp in ms — deduplicates concurrent creation requests.
+    // dsd = Unix timestamp in ms | deduplicates concurrent creation requests.
     `dsd=${dsd}`,
-    // NOTE: iftca omitted intentionally — see file-level comment for rationale.
+    // NOTE: iftca omitted intentionally | see file-level comment for rationale.
     `sids=${encodedSids}`,
     `assisted_rep_id=${repId || ""}`,
     `mst=${mstCents}`,   // Minimum subtotal in cents
@@ -198,7 +198,7 @@ export const generateSpendXGetYLink = (merchant, repId, config) => {
   ].join("&");
 
   if (config.discountType === "percentage") {
-    // cpo is the raw percentage — NOT converted to cents
+    // cpo is the raw percentage | NOT converted to cents
     const cpo       = parseInt(config.percentageAmount) || 0;
     const cmpvCents = Math.round((parseFloat(config.maxDiscount) || 0) * 100);
     params += `&pt=pdws&cpo=${cpo}&cmpv=${cmpvCents}`;
@@ -238,7 +238,7 @@ export const buildAllDeepLinks = (merchants, selectedPromos, promoConfigs, repId
       switch (promoId) {
 
         case "ads":
-          // Unified SL advertise link — uses budget & audience from PromoCustomizer
+          // Unified SL advertise link | uses budget & audience from PromoCustomizer
           links[merchant.id][promoId] = generateDeepLink({
             businessId:   merchant.businessId,
             sidsArray,
@@ -249,22 +249,22 @@ export const buildAllDeepLinks = (merchants, selectedPromos, promoConfigs, repId
           break;
 
         case "smart_campaign":
-          // Smart campaign — static params, no rep budget input needed
+          // Smart campaign | static params, no rep budget input needed
           links[merchant.id][promoId] = generateSmartLink(merchant, repId);
           break;
 
         case "loyalty":
-          // Loyalty — simplest link: only business_id, no repId injection
+          // Loyalty | simplest link: only business_id, no repId injection
           links[merchant.id][promoId] = generateLoyaltyLink(merchant);
           break;
 
         case "discount":
-          // Spend X Get Y — conditional percentage vs dollar routing
+          // Spend X Get Y | conditional percentage vs dollar routing
           links[merchant.id][promoId] = generateSpendXGetYLink(merchant, repId, config);
           break;
 
         default:
-          // BOGO, delivery_fee, happy_hour, lunch_specials — no SL deep link
+          // BOGO, delivery_fee, happy_hour, lunch_specials | no SL deep link
           links[merchant.id][promoId] = null;
           break;
       }

@@ -6,7 +6,7 @@ import {
 import MerchantEmailManager from "./MerchantEmailManager";
 
 /**
- * MerchantTable — Stage 2
+ * MerchantTable | Stage 2
  *
  * Filter system is fully dynamic. On every upload the analyticsPayload (from
  * bobAnalyzer.js) is inspected and three categories of extra filters are generated:
@@ -90,12 +90,12 @@ export default function MerchantTable({
     analyticsPayload.rowAnalytics.forEach(row => {
       // colValues is { [normalizedHeader]: value }
       // We need to attach fillColor to the lookup keyed by all merchant names that appear
-      // Each rowAnalytic doesn't know the merchant name directly — we use the payload
+      // Each rowAnalytic doesn't know the merchant name directly | we use the payload
       // dynamicColumns to find any "merchant name"-ish column value from colValues.
       // Fallback: surface fillColor + colValues for any row; we'll match by index order
-      // against filteredMerchants. This is an approximation for the filter — precise enough.
+      // against filteredMerchants. This is an approximation for the filter | precise enough.
       Object.entries(row.colValues || {}).forEach(([, v]) => {
-        // Not used for lookup — we match by merchant index below
+        // Not used for lookup | we match by merchant index below
       });
     });
     return lookup;
@@ -103,7 +103,7 @@ export default function MerchantTable({
 
   // ── Helper: get the row analytics entry for a given merchant (by BOB row index) ──
   // Since deduplication merges rows, we use the merchant's position in the
-  // dealers array as a best-effort proxy. The filter is additive — false negatives
+  // dealers array as a best-effort proxy. The filter is additive | false negatives
   // mean some merchants appear that shouldn't, never the reverse.
   const getMerchantRowData = (merchant, merchantIdx) => {
     if (!analyticsPayload?.rowAnalytics) return null;
@@ -134,7 +134,7 @@ export default function MerchantTable({
         if (!inName && !inEmail && !inBizId && !inSids) return false;
       }
 
-      // 3. Dynamic filters — only apply when payload available
+      // 3. Dynamic filters | only apply when payload available
       if (hasStatusFilters || hasColorFilter || hasTouchFilter) {
         const rowData = getMerchantRowData(m, idx);
         if (!rowData) return true; // no row data = pass through (safe)
@@ -384,7 +384,7 @@ export default function MerchantTable({
                     <button
                       key={g.hex}
                       onClick={() => toggleColor(g.hex)}
-                      title={`#${g.hex} — ${g.count} rows`}
+                      title={`#${g.hex} | ${g.count} rows`}
                       className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
                         isActive
                           ? "border-slate-700 shadow-md ring-2 ring-slate-400"
@@ -426,7 +426,7 @@ export default function MerchantTable({
           {dynConfig.touchCol && (
             <div>
               <div className="flex items-center justify-between mb-2">
-                <div className="text-xs font-bold text-slate-600">{dynConfig.touchCol.rawHeader} — Range</div>
+                <div className="text-xs font-bold text-slate-600">{dynConfig.touchCol.rawHeader} | Range</div>
                 <div className="text-xs text-slate-500">
                   {resolvedTouchRange[0]}–{resolvedTouchRange[1]} touches
                   {touchRange !== null && (

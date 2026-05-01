@@ -142,7 +142,7 @@ function DynamicWidget({ widget }) {
     ].filter(d => d.count > 0);
     return (
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">{widget.rawHeader} — Recency</div>
+        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">{widget.rawHeader} | Recency</div>
         <div className="space-y-2">
           {data.map(({ label, count, color }) => (
             <div key={label} className="flex items-center gap-3">
@@ -255,7 +255,7 @@ function AIInsightsPanel({ payload, merchants, geminiApiKey }) {
       {status === "idle" && (
         <p className="text-sm text-slate-400">
           Click <strong>Analyse Pipeline</strong> to get AI-powered insights on your lead distribution, quick wins, and risk flags.
-          <br /><span className="text-xs text-slate-600 mt-1 block">Note: Only statistical data is sent — all emails and PII are stripped before leaving your browser.</span>
+          <br /><span className="text-xs text-slate-600 mt-1 block">Note: Only statistical data is sent | all emails and PII are stripped before leaving your browser.</span>
         </p>
       )}
 
@@ -333,7 +333,7 @@ function AIInsightsPanel({ payload, merchants, geminiApiKey }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 /**
- * BOBDashboard — Step 1.5
+ * BOBDashboard | Step 1.5
  *
  * Renders the full analytics dashboard after BOB upload.
  * Shows known opportunity stats, dynamic column widgets, color group map,
@@ -343,7 +343,7 @@ function AIInsightsPanel({ payload, merchants, geminiApiKey }) {
  * @param {object[]} merchants       - deduplicated merchant objects from bobParser
  * @param {object} repSettings       - global rep settings (for geminiApiKey)
  * @param {function} onContinue      - advance to Stage 2
- * @param {function} onPayloadUpdate - (updatedPayload) => void — used to save color labels
+ * @param {function} onPayloadUpdate - (updatedPayload) => void | used to save color labels
  */
 export default function BOBDashboard({ analyticsPayload, merchants, repSettings, onContinue, onPayloadUpdate }) {
   const [payload, setPayload]     = useState(analyticsPayload);
@@ -415,7 +415,7 @@ export default function BOBDashboard({ analyticsPayload, merchants, repSettings,
         {oppStats.slCreditAndOpp > 0 && (
           <div className="mt-3 flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5 font-semibold w-fit">
             <CheckCircle2 className="w-4 h-4" />
-            <strong>{oppStats.slCreditAndOpp}</strong> leads have BOTH SL Credit AND SL Opportunity — highest conversion priority.
+            <strong>{oppStats.slCreditAndOpp}</strong> leads have BOTH SL Credit AND SL Opportunity | highest conversion priority.
           </div>
         )}
       </div>

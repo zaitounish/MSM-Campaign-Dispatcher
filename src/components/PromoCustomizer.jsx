@@ -92,7 +92,7 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
                 return (
                   <div className="space-y-4 max-w-2xl">
 
-                    {/* Mode Toggle — Percentage Off vs Dollar Off */}
+                    {/* Mode Toggle | Percentage Off vs Dollar Off */}
                     <div>
                       <label className="block text-sm font-semibold text-slate-700 mb-2">Discount Type</label>
                       <div className="inline-flex bg-slate-100 rounded-xl p-1 gap-1">

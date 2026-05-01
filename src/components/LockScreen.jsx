@@ -3,7 +3,7 @@ import { Lock, Eye, EyeOff, ShieldCheck, AlertCircle } from "lucide-react";
 
 /**
  * SHA-256 hash of the access password.
- * The raw password is NEVER stored — only this digest.
+ * The raw password is NEVER stored | only this digest.
  * Computed via: crypto.createHash('sha256').update('KRGZ@CNX').digest('hex')
  */
 const STORED_HASH = "213f3809dcd4f4f2fe9cc246d32cfe2bce299861ac31a9a5745b064aa8924997";
@@ -160,7 +160,7 @@ export default function LockScreen({ onUnlocked }) {
         </div>
       </div>
 
-      {/* Shake keyframe — injected once */}
+      {/* Shake keyframe | injected once */}
       <style>{`
         @keyframes shake {
           0%,100% { transform: translateX(0); }

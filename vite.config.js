@@ -9,7 +9,7 @@ export default defineConfig({
     tailwindcss(),
   ],
   build: {
-    // Raise the warning threshold — internal tooling, not a public site
+    // Raise the warning threshold | internal tooling, not a public site
     chunkSizeWarningLimit: 800,
     rollupOptions: {
       output: {
