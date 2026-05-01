@@ -107,11 +107,27 @@ export default function DeliveryPanel({
     return targets;
   };
 
-  // ── Open Gmail Queue ─────────────────────────────────────────────────────────
+  // ── Open Gmail Queue (one by one) ──────────────────────────────────────────
   const handleOpenGmailQueue = () => {
     const items = buildTargets();
-    setQueue({ items, opened: new Set() });
+    setQueue({ items, opened: new Set(), allOpened: false });
     setSendStatus(null);
+    setClipStatus({});
+  };
+
+  // ── Open ALL Gmail tabs at once (synchronous — one user gesture) ─────────────
+  // Browsers allow multiple window.open() calls from a single click handler.
+  // All tabs open immediately; the queue then switches to clipboard-copy mode.
+  const handleOpenAllInGmail = () => {
+    const items = buildTargets();
+    // Open every tab synchronously inside this same click event
+    items.forEach(item => {
+      window.open(buildGmailComposeUrl(item), "_blank", "noopener,noreferrer");
+    });
+    // Mark all as opened; queue becomes clipboard-copy panel
+    setQueue({ items, opened: new Set(items.map((_, i) => i)), allOpened: true });
+    setSendStatus(null);
+    setClipStatus({});
   };
 
   const [clipStatus, setClipStatus] = useState({}); // idx -> 'copying'|'done'|'error'
@@ -253,10 +269,16 @@ export default function DeliveryPanel({
               Gmail Drafts (HTML)
             </button>
 
-            {/* Primary: Gmail Compose Queue */}
+            {/* Primary: Gmail Compose — one by one */}
             <button onClick={handleOpenGmailQueue}
-              className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-bold bg-dd-red hover:bg-[#ff3019] text-white transition-all shadow-md text-sm">
-              <Mail className="w-4 h-4"/> Open in Gmail →
+              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-dd-red hover:bg-[#ff3019] text-white transition-all shadow-md text-sm">
+              <Mail className="w-4 h-4"/> Open One by One
+            </button>
+
+            {/* Open all Gmail tabs at once */}
+            <button onClick={handleOpenAllInGmail}
+              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-white transition-all shadow-md text-sm">
+              <ExternalLink className="w-4 h-4"/> Open All ({totalCount})
             </button>
           </div>
         </div>
@@ -317,8 +339,10 @@ export default function DeliveryPanel({
               <div>
                 <h2 className="text-lg font-bold text-slate-800">Gmail Send Queue</h2>
                 <p className="text-sm text-slate-500 mt-0.5">
-                  Click <strong>"Open in Gmail →"</strong> — the email body copies to clipboard automatically.
-                  Just press <kbd className="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-mono">Ctrl+V</kbd> inside Gmail to paste it.
+                  {queue.allOpened
+                    ? <>✅ All {queue.items.length} tabs opened. Click <strong>"Copy Email"</strong> for each row, switch to that Gmail tab, and press <kbd className="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-mono">Ctrl+V</kbd>.</>
+                    : <>Click <strong>"Open in Gmail"</strong> — body copies automatically. Press <kbd className="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-mono">Ctrl+V</kbd> inside Gmail.</>
+                  }
                 </p>
               </div>
               <span className="text-sm font-bold text-slate-500">
@@ -345,16 +369,24 @@ export default function DeliveryPanel({
                     )}
                   </div>
                   <button
-                    onClick={() => openOneInGmail(idx)}
+                    onClick={() => queue.allOpened ? copyHtmlToClipboard(item.draft).then(ok => setClipStatus(p => ({...p, [idx]: ok ? "done" : "error"}))) : openOneInGmail(idx)}
                     disabled={clipStatus[idx] === "copying"}
                     className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap disabled:opacity-60 ${
-                      isOpened
+                      clipStatus[idx] === "done"
+                        ? "bg-green-100 text-green-700 hover:bg-green-200"
+                        : queue.allOpened
+                        ? "bg-violet-600 text-white hover:bg-violet-700 shadow-sm"
+                        : isOpened
                         ? "bg-green-100 text-green-700 hover:bg-green-200"
                         : "bg-dd-red text-white hover:bg-[#ff3019] shadow-sm"
                     }`}
                   >
                     <ExternalLink className="w-3.5 h-3.5"/>
-                    {clipStatus[idx] === "copying" ? "Copying…" : isOpened ? "Re-open" : "Open in Gmail →"}
+                    {clipStatus[idx] === "copying" ? "Copying…"
+                      : clipStatus[idx] === "done" ? "✓ Copied!"
+                      : queue.allOpened ? "Copy Email"
+                      : isOpened ? "Re-open"
+                      : "Open in Gmail →"}
                   </button>
                   </div>
                 );
