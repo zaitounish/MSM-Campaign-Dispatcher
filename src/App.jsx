@@ -122,7 +122,10 @@ function AppInner() {
   const emailDrafts = useMemo(() => {
     if (resolvedGlobalBlocks.length === 0 && !globalHtmlTemplate) return [];
     return targetMerchants.map(m => {
-      const subject = m.subjectOverride || buildEmailSubject(m, selectedPromos);
+      const rawSubject = m.subjectOverride || buildEmailSubject(m, selectedPromos);
+      const subject = rawSubject
+        .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
+        .replace(/\{DM\s*Name\}/gi,    m.dmName || m.merchantName || "there");
 
       // Priority: merchant-level override → global HTML template → block compilation
       if (m.emailOverride) {

@@ -6,23 +6,44 @@ import {
 } from "lucide-react";
 
 // ─── Gmail Compose URL builder ────────────────────────────────────────────────
-// Opens Gmail's web compose window in a new tab. Zero setup, works with any
-// Gmail account already logged in the browser.
-const buildGmailUrl = ({ to, cc, draft }) => {
-  const base   = "https://mail.google.com/mail/?view=cm&fs=1";
-  const body   = draft.plainTextBody || "";
-  const parts  = [
+// Opens Gmail compose in a new tab with To/CC/Subject pre-filled.
+// Body is intentionally omitted from the URL (URL length limits break it).
+// Instead the caller copies the HTML body to clipboard first;
+// the user just presses Ctrl+V inside the compose window.
+const buildGmailComposeUrl = ({ to, cc, draft }) => {
+  const parts = [
     `to=${encodeURIComponent(to)}`,
     cc ? `cc=${encodeURIComponent(cc)}` : "",
     `su=${encodeURIComponent(draft.subject || "")}`,
-    `body=${encodeURIComponent(body)}`,
   ].filter(Boolean);
-  return `${base}&${parts.join("&")}`;
+  return `https://mail.google.com/mail/?view=cm&fs=1&${parts.join("&")}`;
+};
+
+// Copy the email's HTML to clipboard so Ctrl+V in Gmail pastes rich content
+const copyHtmlToClipboard = async (draft) => {
+  const html = draft.htmlBody || "";
+  const text = draft.plainTextBody || "";
+  try {
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        "text/html":  new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([text], { type: "text/plain" }),
+      }),
+    ]);
+    return true;
+  } catch {
+    // Fallback: plain text only
+    try { await navigator.clipboard.writeText(text); return "text"; } catch { return false; }
+  }
 };
 
 // GAS script the user deploys once to enable rich HTML drafts
-const GAS_SCRIPT = `// Paste this into script.google.com → New Project → Deploy as Web App
-// Permissions: Run as → Me | Access → Anyone (even anonymous)
+const GAS_SCRIPT = `// 1. Go to script.google.com → New Project
+// 2. Paste this code, replacing any existing content
+// 3. Click Deploy → New Deployment → Web App
+//    - Execute as: Me
+//    - Who has access: Anyone within DoorDash  ← (your Google Workspace domain)
+// 4. Click Deploy → authorize → copy the Web App URL → paste into Settings
 function doPost(e) {
   const { action, emails } = JSON.parse(e.postData.contents);
   emails.forEach(function(email) {
@@ -93,10 +114,18 @@ export default function DeliveryPanel({
     setSendStatus(null);
   };
 
-  const openOneInGmail = (idx) => {
+  const [clipStatus, setClipStatus] = useState({}); // idx -> 'copying'|'done'|'error'
+
+  const openOneInGmail = async (idx) => {
     const target = queue.items[idx];
-    const url    = buildGmailUrl(target);
-    window.open(url, "_blank", "noopener");
+    setClipStatus(prev => ({ ...prev, [idx]: "copying" }));
+
+    const ok = await copyHtmlToClipboard(target.draft);
+    setClipStatus(prev => ({ ...prev, [idx]: ok ? "done" : "error" }));
+
+    const url = buildGmailComposeUrl(target);
+    window.open(url, "_blank", "noopener,noreferrer");
+
     setQueue(prev => {
       const opened = new Set(prev.opened);
       opened.add(idx);
@@ -236,8 +265,8 @@ export default function DeliveryPanel({
         <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-5 py-4 text-xs text-blue-800">
           <ExternalLink className="w-4 h-4 text-blue-500 mt-0.5 shrink-0"/>
           <div className="space-y-1">
-            <p><strong>Open in Gmail →</strong> opens each email as a Gmail compose window in your browser — pre-filled with recipient, subject, and body. You review and click Send in Gmail.</p>
-            <p><strong>Gmail Drafts (HTML)</strong> creates fully-formatted rich HTML drafts directly in your Gmail Drafts folder via Google Apps Script. Requires one-time setup below.</p>
+            <p><strong>Open in Gmail →</strong> copies the full rich email to your clipboard, then opens Gmail compose pre-filled with recipient &amp; subject. Just press <strong>Ctrl+V</strong> inside Gmail to paste the formatted email with all links intact.</p>
+            <p><strong>Gmail Drafts (HTML)</strong> creates fully-formatted rich HTML drafts in your Gmail Drafts folder via Google Apps Script — no paste needed. Requires one-time setup below.</p>
           </div>
         </div>
 
@@ -288,7 +317,8 @@ export default function DeliveryPanel({
               <div>
                 <h2 className="text-lg font-bold text-slate-800">Gmail Send Queue</h2>
                 <p className="text-sm text-slate-500 mt-0.5">
-                  Click <strong>"Open in Gmail →"</strong> for each email. Review it and hit Send inside Gmail.
+                  Click <strong>"Open in Gmail →"</strong> — the email body copies to clipboard automatically.
+                  Just press <kbd className="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-mono">Ctrl+V</kbd> inside Gmail to paste it.
                 </p>
               </div>
               <span className="text-sm font-bold text-slate-500">
@@ -304,21 +334,28 @@ export default function DeliveryPanel({
                     <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${isOpened ? "bg-green-500 text-white" : "bg-slate-100 text-slate-500"}`}>
                       {isOpened ? <CheckCircle2 className="w-4 h-4"/> : idx + 1}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-slate-800 text-sm truncate">{item.label}</p>
-                      <p className="text-xs text-slate-500 truncate">{item.to}{item.cc ? ` · CC: ${item.cc}` : ""}</p>
-                    </div>
-                    <button
-                      onClick={() => openOneInGmail(idx)}
-                      className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                        isOpened
-                          ? "bg-green-100 text-green-700 hover:bg-green-200"
-                          : "bg-dd-red text-white hover:bg-[#ff3019] shadow-sm"
-                      }`}
-                    >
-                      <ExternalLink className="w-3.5 h-3.5"/>
-                      {isOpened ? "Re-open" : "Open in Gmail →"}
-                    </button>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-slate-800 text-sm truncate">{item.label}</p>
+                    <p className="text-xs text-slate-500 truncate">{item.to}{item.cc ? ` · CC: ${item.cc}` : ""}</p>
+                    {clipStatus[idx] === "done" && (
+                      <p className="text-[10px] text-emerald-600 font-bold mt-0.5">✓ Copied — press Ctrl+V in Gmail</p>
+                    )}
+                    {clipStatus[idx] === "error" && (
+                      <p className="text-[10px] text-amber-600 font-bold mt-0.5">⚠ Clipboard unavailable — paste manually</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => openOneInGmail(idx)}
+                    disabled={clipStatus[idx] === "copying"}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap disabled:opacity-60 ${
+                      isOpened
+                        ? "bg-green-100 text-green-700 hover:bg-green-200"
+                        : "bg-dd-red text-white hover:bg-[#ff3019] shadow-sm"
+                    }`}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5"/>
+                    {clipStatus[idx] === "copying" ? "Copying…" : isOpened ? "Re-open" : "Open in Gmail →"}
+                  </button>
                   </div>
                 );
               })}
