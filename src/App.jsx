@@ -70,12 +70,16 @@ function AppInner() {
   const [selectedTheme,     setSelectedTheme]     = useState("momentum");
 
   // Raw HTML override state (written by MerchantEmailEditor save)
-  const [globalHtmlTemplate, setGlobalHtmlTemplate] = useState("");
+  const [globalHtmlTemplate,  setGlobalHtmlTemplate]  = useState("");
+  // Maps each encoded deep-link URL in the template → promoId so we can
+  // swap in per-merchant links at compile time instead of using APC's links
+  const [globalLinkMapping,   setGlobalLinkMapping]   = useState({});
 
   // Reset blocks + overrides whenever promo selection changes
   useEffect(() => {
     setGlobalBlocks([]);
     setGlobalHtmlTemplate("");
+    setGlobalLinkMapping({});
     setMerchants(prev => prev.map(m => ({ ...m, emailOverride: null, subjectOverride: undefined })));
   }, [selectedPromos]); // eslint-disable-line react-hooks/exhaustive-deps
   
@@ -129,6 +133,7 @@ function AppInner() {
 
       // Priority: merchant-level override → global HTML template → block compilation
       if (m.emailOverride) {
+        // Per-merchant override already has this merchant's own deep links — safe
         const html = m.emailOverride
           .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
           .replace(/\{DM\s*Name\}/gi,    m.dmName || m.merchantName || "there");
@@ -136,22 +141,41 @@ function AppInner() {
       }
 
       if (globalHtmlTemplate) {
-        const html = globalHtmlTemplate
+        const dlMap   = deepLinks[m.id] || {};
+        let html      = globalHtmlTemplate;
+
+        // ━━ Re-inject per-merchant deep links ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // The template was saved from merchant X. globalLinkMapping records
+        // which URL belonged to which promoId. We replace each source URL
+        // with the same promoId’s URL for THIS merchant.
+        if (Object.keys(globalLinkMapping).length > 0) {
+          Object.entries(globalLinkMapping).forEach(([encodedSourceUrl, promoId]) => {
+            const targetRaw = dlMap[promoId];
+            if (targetRaw) {
+              // HTML serialiser encodes & → &amp; in href values
+              const encodedTarget = targetRaw.replace(/&/g, "&amp;");
+              const escaped       = encodedSourceUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+              html = html.replace(new RegExp(escaped, "g"), encodedTarget);
+            }
+          });
+        }
+
+        html = html
           .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
           .replace(/\{DM\s*Name\}/gi,    m.dmName || m.merchantName || "there");
         return { merchantId: m.id, subject, htmlBody: html, plainTextBody: htmlToPlainText(html) };
       }
 
       // Default: compile from blocks
-      const dlMap = deepLinks[m.id] || {};
+      const blockDlMap = deepLinks[m.id] || {};
       return {
         merchantId:    m.id,
         subject,
-        htmlBody:      compileBlocksToHtml(resolvedGlobalBlocks, dlMap, m, selectedTheme),
-        plainTextBody: compileBlocksToText(resolvedGlobalBlocks, dlMap, m),
+        htmlBody:      compileBlocksToHtml(resolvedGlobalBlocks, blockDlMap, m, selectedTheme),
+        plainTextBody: compileBlocksToText(resolvedGlobalBlocks, blockDlMap, m),
       };
     });
-  }, [resolvedGlobalBlocks, globalHtmlTemplate, targetMerchants, merchants, deepLinks, selectedTheme, selectedPromos]);
+  }, [resolvedGlobalBlocks, globalHtmlTemplate, globalLinkMapping, targetMerchants, merchants, deepLinks, selectedTheme, selectedPromos]);
 
   const handleDataLoaded = (parsedData, payload) => {
     setMerchants(parsedData);
@@ -264,6 +288,8 @@ function AppInner() {
                   dispatchMode={dispatchMode}
                   repSettings={repSettings}
                   setGlobalHtmlTemplate={setGlobalHtmlTemplate}
+                  deepLinksMap={deepLinks}
+                  setGlobalLinkMapping={setGlobalLinkMapping}
                 />
                 <DeliveryPanel 
                   merchants={targetMerchants} 

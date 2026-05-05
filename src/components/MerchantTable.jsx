@@ -36,10 +36,11 @@ export default function MerchantTable({
   const [showDynFilters, setShowDynFilters]   = useState(false);
 
   // ── Hardcoded known-opp filters ──────────────────────────────────────────────
-  const [filterSlOpp,    setFilterSlOpp]    = useState(false);
-  const [filterPromoOpp, setFilterPromoOpp] = useState(false);
-  const [filterLoyalOpp, setFilterLoyalOpp] = useState(false);
-  const [filterSlCredit, setFilterSlCredit] = useState(false);
+  const [filterSlOpp,      setFilterSlOpp]      = useState(false);
+  const [filterPromoOpp,   setFilterPromoOpp]   = useState(false);
+  const [filterLoyalOpp,   setFilterLoyalOpp]   = useState(false);
+  const [filterSlCredit,   setFilterSlCredit]   = useState(false);
+  const [filterEmailIssues, setFilterEmailIssues] = useState(false); // show only merchants with bad/missing email
 
   // ── Dynamic: status column selections  { [colNormalized]: Set<string> } ──────
   const [statusFilters, setStatusFilters] = useState({});
@@ -123,6 +124,7 @@ export default function MerchantTable({
       if (filterPromoOpp && !m.promoOpp) return false;
       if (filterLoyalOpp && !m.loyalOpp) return false;
       if (filterSlCredit && !m.slCredit) return false;
+      if (filterEmailIssues && m.emailStatus === "valid") return false;
 
       // 2. Text search
       if (searchTerm) {
@@ -228,15 +230,21 @@ export default function MerchantTable({
 
   // ── Clear all filters ─────────────────────────────────────────────────────────
   const hasActiveFilters =
-    filterSlOpp || filterPromoOpp || filterLoyalOpp || filterSlCredit ||
+    filterSlOpp || filterPromoOpp || filterLoyalOpp || filterSlCredit || filterEmailIssues ||
     searchTerm || Object.values(statusFilters).some(s => s?.size > 0) ||
     activeColors.size > 0 || touchRange !== null;
 
   const clearFilters = () => {
     setSearchTerm(""); setFilterSlOpp(false); setFilterPromoOpp(false);
-    setFilterLoyalOpp(false); setFilterSlCredit(false);
+    setFilterLoyalOpp(false); setFilterSlCredit(false); setFilterEmailIssues(false);
     setStatusFilters({}); setActiveColors(new Set()); setTouchRange(null);
   };
+
+  // Count email issues across all merchants for the warning banner
+  const emailIssueCount = useMemo(
+    () => merchants.filter(m => m.emailStatus === "invalid" || m.emailStatus === "missing").length,
+    [merchants]
+  );
 
   // ── Status filter toggle ──────────────────────────────────────────────────────
   const toggleStatusValue = (col, value) => {
@@ -322,6 +330,14 @@ export default function MerchantTable({
           )}
           <FilterChip label="Promo Opp"  active={filterPromoOpp} onClick={() => setFilterPromoOpp(v => !v)} />
           <FilterChip label="Loyal Opp"  active={filterLoyalOpp} onClick={() => setFilterLoyalOpp(v => !v)} />
+          {emailIssueCount > 0 && (
+            <FilterChip
+              label={`⚠️ Email Issues (${emailIssueCount})`}
+              active={filterEmailIssues}
+              onClick={() => setFilterEmailIssues(v => !v)}
+              variant="warning"
+            />
+          )}
           {hasActiveFilters && (
             <button onClick={clearFilters} className="text-xs text-slate-500 hover:text-dd-red font-semibold ml-2 flex items-center gap-1 transition-colors">
               <X className="w-3.5 h-3.5" /> Clear All
@@ -329,6 +345,23 @@ export default function MerchantTable({
           )}
         </div>
       </div>
+
+      {/* ── Email Issues Banner ── */}
+      {emailIssueCount > 0 && (
+        <div className="mx-6 my-3 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm">
+          <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+          <div className="flex-1">
+            <span className="font-bold text-amber-800">{emailIssueCount} merchant{emailIssueCount > 1 ? "s" : ""} have email issues</span>
+            <span className="text-amber-700"> and were auto-deselected. Fix or add their emails before sending.</span>
+          </div>
+          <button
+            onClick={() => setFilterEmailIssues(true)}
+            className="text-xs font-bold text-amber-700 hover:text-amber-900 underline whitespace-nowrap transition-colors"
+          >
+            View affected
+          </button>
+        </div>
+      )}
 
       {/* ── Dynamic Smart Filters Panel ── */}
       {showDynFilters && hasDynFilters && (
@@ -587,9 +620,22 @@ export default function MerchantTable({
                             </button>
                           </div>
                         ) : (
-                          <div className="text-red-500 text-xs font-bold bg-red-50 py-1.5 px-3 border border-red-100 rounded-lg flex items-center justify-between min-w-[200px]">
-                            <span className="flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" /> Missing Email</span>
-                            <button onClick={() => setEditingEmailsId(row.id)} className="text-red-700 bg-red-100 px-2 py-1 rounded hover:bg-red-200 transition-colors">Add</button>
+                          <div className="text-xs font-bold bg-amber-50 border border-amber-200 rounded-lg flex flex-col gap-1 py-1.5 px-3 min-w-[200px]">
+                            <span className="flex items-center gap-1 text-amber-700">
+                              <AlertCircle className="w-3.5 h-3.5" />
+                              {row.emailStatus === "invalid" ? "Invalid email" : "Missing email"}
+                            </span>
+                            {row.rawEmailIssue && (
+                              <span className="font-mono text-[10px] text-amber-600 truncate max-w-[180px]" title={row.rawEmailIssue}>
+                                {row.rawEmailIssue}
+                              </span>
+                            )}
+                            <button
+                              onClick={() => setEditingEmailsId(row.id)}
+                              className="self-start text-amber-700 hover:text-amber-900 underline text-[10px] font-bold mt-0.5 transition-colors"
+                            >
+                              {row.emailStatus === "invalid" ? "Fix" : "Add email"}
+                            </button>
                           </div>
                         )}
                       </td>
@@ -640,13 +686,16 @@ export default function MerchantTable({
   );
 }
 
-function FilterChip({ label, active, onClick }) {
+function FilterChip({ label, active, onClick, variant }) {
+  const activeClass = variant === "warning"
+    ? "bg-amber-500 text-white border-amber-500 shadow-sm"
+    : "bg-dd-red text-white border-dd-red shadow-sm";
   return (
     <button
       onClick={onClick}
       className={`text-xs font-bold px-2.5 py-1 rounded-full transition-all border ${
         active
-          ? "bg-dd-red text-white border-dd-red shadow-sm"
+          ? activeClass
           : "bg-white text-slate-600 border-slate-300 hover:border-slate-400"
       }`}
     >

@@ -167,28 +167,40 @@ export const processSheetData = (json) => {
 
   // Formatting final targets schema
   return finalResults.map((target) => {
-    // Collect all possible emails from dm and store
-    const rawEmails = [target.dmEmail, target.storeEmail].filter(Boolean);
-    // Split by comma/space to handle multiple emails in a single cell, then filter valid ones
-    const uniqueEmails = [...new Set(
-      rawEmails.flatMap(e => e.split(/[,\s]+/).map(ex => ex.trim()).filter(validateEmail))
-    )];
+    // Collect all raw email candidates
+    const rawCandidates = [target.dmEmail, target.storeEmail]
+      .filter(Boolean)
+      .flatMap(e => e.split(/[,\s]+/).map(ex => ex.trim()).filter(Boolean));
 
-    const emails = uniqueEmails.map((email, i) => ({
-      address: email,
-      isPrimary: i === 0
-    }));
-    
+    // Separate valid from invalid so we can surface bad ones to the rep
+    const validEmails   = rawCandidates.filter(validateEmail);
+    const invalidEmails = rawCandidates.filter(e => !validateEmail(e));
+
+    const uniqueValid = [...new Set(validEmails)];
+    const emails = uniqueValid.map((email, i) => ({ address: email, isPrimary: i === 0 }));
+
+    // Determine email health for the UI
+    let emailStatus;   // "valid" | "invalid" | "missing"
+    let rawEmailIssue; // the bad address string, for display
+    if (emails.length > 0) {
+      emailStatus = "valid";
+    } else if (invalidEmails.length > 0) {
+      emailStatus  = "invalid";
+      rawEmailIssue = invalidEmails[0]; // show the first bad one
+    } else {
+      emailStatus = "missing";
+    }
+
     return {
       id: crypto.randomUUID(),
       merchantName: target.merchantName,
       businessId: target.businessId || "",
       sids: target.sids.join(","),
-      emails: emails,
+      emails,
       locationCount: target.sids.length,
       originalSids: target.sids.join(","),
       dmName: target.dmName || "",
-      selected: true,
+      selected: emailStatus === "valid", // auto-deselect merchants with bad/missing email
       hasCredits: false,
       creditAmount: "",
       creditExpiry: "",
@@ -198,8 +210,11 @@ export const processSheetData = (json) => {
       promoOpp: isTruthy(target.promoOpp),
       loyalOpp: isTruthy(target.loyalOpp),
       slCredit: isTruthy(target.slCredit),
+      // Email validation metadata
+      emailStatus,
+      rawEmailIssue: rawEmailIssue || null,
     };
-  }).filter(t => t.emails.length > 0); // only keep rows that have some email to target
+  }); // keep ALL rows — UI handles invalid/missing display
 };
 
 function isTruthy(val) {
@@ -208,6 +223,11 @@ function isTruthy(val) {
   return v === "1" || v === "true" || v === "yes" || (parseInt(v) > 0);
 }
 
-function validateEmail(email) {
-  return typeof email === 'string' && email.includes('@') && email.includes('.');
+// RFC-5321 inspired regex — catches the common malformed patterns
+// (missing TLD, double @, no local part, spaces, etc.) without being
+// so strict it rejects valid corporate addresses.
+const EMAIL_RE = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
+
+export function validateEmail(email) {
+  return typeof email === "string" && EMAIL_RE.test(email.trim());
 }

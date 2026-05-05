@@ -10,6 +10,8 @@ export default function EmailPreview({
   repSettings,
   // HTML override props (raw save path)
   setGlobalHtmlTemplate,
+  deepLinksMap,         // full { [merchantId]: { [promoId]: url } } from App
+  setGlobalLinkMapping, // stores { encodedUrl: promoId } for link re-injection
 }) {
   const selectedMerchants = React.useMemo(
     () => merchants.filter(m => m.selected),
@@ -51,11 +53,23 @@ export default function EmailPreview({
 
   const hasOverride = !!currentMerchant.emailOverride;
 
-  // Save: HTML override path — no more block state
+  // Save: HTML override path
   const handleSave = ({ html, subject, applyToAll }) => {
     if (applyToAll) {
-      // Store as global template; wipe per-merchant overrides
+      // Build linkMapping: for each promoId in the current merchant's deep links,
+      // check if that URL appears in the saved HTML (browser encodes & → &amp; in hrefs).
+      // This lets us re-inject per-merchant links at compile time.
+      const currentDlMap = (deepLinksMap || {})[currentMerchant.id] || {};
+      const linkMapping  = {};
+      Object.entries(currentDlMap).forEach(([promoId, rawUrl]) => {
+        const encodedUrl = rawUrl.replace(/&/g, "&amp;");
+        if (html.includes(encodedUrl)) {
+          linkMapping[encodedUrl] = promoId;
+        }
+      });
+
       setGlobalHtmlTemplate(html);
+      if (setGlobalLinkMapping) setGlobalLinkMapping(linkMapping);
       setMerchants(prev => prev.map(m =>
         m.selected
           ? { ...m, emailOverride: null, subjectOverride: subject || undefined }
