@@ -10,8 +10,6 @@ export default function EmailPreview({
   repSettings,
   // HTML override props (raw save path)
   setGlobalHtmlTemplate,
-  deepLinksMap,         // full { [merchantId]: { [promoId]: url } } from App
-  setGlobalLinkMapping, // stores { encodedUrl: promoId } for link re-injection
 }) {
   const selectedMerchants = React.useMemo(
     () => merchants.filter(m => m.selected),
@@ -56,20 +54,7 @@ export default function EmailPreview({
   // Save: HTML override path
   const handleSave = ({ html, subject, applyToAll }) => {
     if (applyToAll) {
-      // Build linkMapping: for each promoId in the current merchant's deep links,
-      // check if that URL appears in the saved HTML (browser encodes & → &amp; in hrefs).
-      // This lets us re-inject per-merchant links at compile time.
-      const currentDlMap = (deepLinksMap || {})[currentMerchant.id] || {};
-      const linkMapping  = {};
-      Object.entries(currentDlMap).forEach(([promoId, rawUrl]) => {
-        const encodedUrl = rawUrl.replace(/&/g, "&amp;");
-        if (html.includes(encodedUrl)) {
-          linkMapping[encodedUrl] = promoId;
-        }
-      });
-
       setGlobalHtmlTemplate(html);
-      if (setGlobalLinkMapping) setGlobalLinkMapping(linkMapping);
       setMerchants(prev => prev.map(m =>
         m.selected
           ? { ...m, emailOverride: null, subjectOverride: subject || undefined }
@@ -92,6 +77,9 @@ export default function EmailPreview({
         : m
     ));
   };
+
+  // draft.htmlBody is already fully resolved (tokens injected by App.jsx emailDrafts memo)
+
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500 mt-8">
 
@@ -133,7 +121,7 @@ export default function EmailPreview({
           <div className="space-y-4">
             <MetaField label="To"      value={targetDisplay} mono />
             {ccDisplay && <MetaField label="Cc" value={ccDisplay} mono />}
-            <MetaField label="Subject" value={draft.subject} />
+            <MetaField label="Subject" value={currentMerchant.subjectOverride || draft.subject} />
             {currentMerchant.businessId && (
               <MetaField label="Business ID" value={currentMerchant.businessId} mono />
             )}
@@ -175,8 +163,8 @@ export default function EmailPreview({
       {isEditorOpen && (
         <MerchantEmailEditor
           merchant={currentMerchant}
-          initialHtml={draft.htmlBody}
-          initialSubject={draft.subject}
+          initialHtml={currentMerchant.emailOverride || draft.htmlBody}
+          initialSubject={currentMerchant.subjectOverride || draft.subject}
           onSave={handleSave}
           onCancel={() => setIsEditorOpen(false)}
           geminiApiKey={repSettings?.geminiApiKey}

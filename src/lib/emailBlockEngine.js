@@ -16,9 +16,47 @@
  *
  * Outlook compatibility: <ul>/<ol> are compiled to <table>-based HTML
  * automatically — the editor keeps native list elements internally.
+ *
+ * ─── DEEP LINK TOKEN SYSTEM ───────────────────────────────────────────────────
+ * CTA button hrefs are written as stable placeholder tokens:
+ *   %%DD_LINK_<PROMOID>%%
+ * The final per-merchant HTML is produced by injectDeepLinks(), which
+ * replaces each token with the correct per-merchant URL at render time.
+ * This completely eliminates the "Nature Valley bug" where Merchant A's
+ * timestamped deep link URL was regex-matched against Merchant B's HTML
+ * (which had a different dsd= timestamp and thus never matched).
  */
 
 import { PROMO_CATALOG } from "../components/PromoSelector";
+
+// ─── Token helpers ─────────────────────────────────────────────────────────────
+/** Returns the stable placeholder token for a given promoId */
+export const deepLinkToken = (promoId) => `%%DD_LINK_${promoId}%%`;
+
+/**
+ * Replaces all deep-link tokens in an HTML string with real URLs from dlMap.
+ * Falls back to "#" for any token whose promoId has no URL.
+ *
+ * @param {string} html    - HTML containing %%DD_LINK_<promoId>%% tokens
+ * @param {object} dlMap   - { [promoId]: urlString } for the current merchant
+ * @returns {string}
+ */
+export const injectDeepLinks = (html, dlMap = {}) => {
+  if (!html) return "";
+  return html.replace(/%%DD_LINK_([^%]+)%%/g, (_, promoId) => {
+    const url = dlMap[promoId];
+    return url ? url.replace(/&/g, "&amp;") : "#";
+  });
+};
+
+/**
+ * Strips deep-link tokens from HTML, replacing them with "#".
+ * Used for preview/edit contexts where no real URL is needed yet.
+ */
+export const stripDeepLinkTokens = (html) => {
+  if (!html) return "";
+  return html.replace(/%%DD_LINK_[^%]+%%/g, "#");
+};
 
 // ─── Block type enum ───────────────────────────────────────────────────────────
 export const BLOCK_TYPES = {
@@ -152,7 +190,7 @@ export const generateInitialBlocks = (selectedPromos, promoConfigs, repSettings)
       title:      info.name,
       body:       `<p>${buildPromoBody(promoId, config)}</p>${creditLine}`,
       buttonText: `Activate ${info.name} →`,
-      customUrl:  null, // null = use auto-generated deep link
+      customUrl:  null, // null = use token → resolved at compile time per merchant
     }));
   });
 
@@ -170,6 +208,7 @@ export const generateInitialBlocks = (selectedPromos, promoConfigs, repSettings)
 
 // ─── Subject line builder ──────────────────────────────────────────────────────
 export const buildEmailSubject = (merchant, selectedPromos) => {
+  // Apply token interpolation to any override before returning
   if (merchant.subjectOverride) return _interpolate(merchant.subjectOverride, merchant);
   const mName = merchant.merchantName || "Merchant Partner";
   if (selectedPromos.length === 1) {
@@ -191,10 +230,14 @@ const _interpolate = (html, merchant) => {
 };
 
 // ─── Resolve deep link for a PROMO block ──────────────────────────────────────
-const _resolveUrl = (block, deepLinks) => {
+// Returns a token instead of a live URL. Live URL injection happens in
+// injectDeepLinks() at render time, keyed per merchant.
+const _resolveUrl = (block) => {
+  // If rep manually set a custom URL in the block editor, use it verbatim
   if (block.data.customUrl) return block.data.customUrl;
+  // Otherwise return a stable token — resolved per merchant at compile time
   const id = block.data.promoId;
-  return (id && deepLinks?.[id]) ? deepLinks[id] : "#";
+  return id ? deepLinkToken(id) : "#";
 };
 
 // ─── Outlook list compatibility ────────────────────────────────────────────────
@@ -231,7 +274,13 @@ export const htmlToPlainText = (html) => {
     .replace(/<\/h[1-6]>/gi, "\n")
     .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, "• $1\n")
     .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ")
+    // Decode HTML entities
+    .replace(/&amp;/g,  "&")
+    .replace(/&lt;/g,   "<")
+    .replace(/&gt;/g,   ">")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g,  "'")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 };
@@ -242,8 +291,9 @@ const _toPlainText = htmlToPlainText;
 
 const _renderSignatureHtml = (block) => {
   const { firstName = "", lastName = "", title = "Merchant Success", phone = "" } = block.data.repSettings || {};
+  const name = [firstName, lastName].filter(Boolean).join(" ") || "DoorDash Merchant Success";
   return `<p style="font-family:sans-serif;font-size:14px;color:#333;margin-top:28px">` +
-    `Best regards,<br><strong>${firstName} ${lastName}</strong><br>${title}` +
+    `Best regards,<br><strong>${name}</strong><br>${title}` +
     `${phone ? `<br>${phone}` : ""}<br>DoorDash Merchant Success</p>`;
 };
 
@@ -291,15 +341,21 @@ const _spotlightPromo = (block, url, isFirst) =>
 
 /**
  * Compiles a block array → final HTML for email dispatch.
+ *
+ * IMPORTANT: The output HTML contains %%DD_LINK_<promoId>%% tokens for CTA
+ * buttons. Call injectDeepLinks(html, dlMap) afterwards to resolve them
+ * per-merchant. This is handled by compileBlocksToHtml's dlMap parameter
+ * AND by App.jsx's emailDrafts memo for the globalHtmlTemplate path.
+ *
  * @param {object[]} blocks
- * @param {object}   deepLinks   { [promoId]: urlString }
+ * @param {object}   deepLinks   { [promoId]: urlString } — may be empty for editor preview
  * @param {object}   merchant
  * @param {string}   themeId     "momentum" | "executive" | "spotlight"
- * @returns {string} compiled HTML
+ * @returns {string} compiled HTML with deep links resolved
  */
 export const compileBlocksToHtml = (blocks, deepLinks, merchant, themeId = "momentum") => {
   let promoIndex = 0;
-  return blocks.map(block => {
+  const tokenHtml = blocks.map(block => {
     switch (block.type) {
       case BLOCK_TYPES.TEXT:
       case BLOCK_TYPES.CTA:
@@ -310,15 +366,16 @@ export const compileBlocksToHtml = (blocks, deepLinks, merchant, themeId = "mome
         return _renderCreditHtml(block);
 
       case BLOCK_TYPES.PROMO: {
-        const url  = _resolveUrl(block, deepLinks);
-        const body = { ...block, data: { ...block.data, body: _interpolate(block.data.body, merchant) } };
+        // _resolveUrl returns the stable token (%%DD_LINK_ads%% etc.)
+        const token = _resolveUrl(block);
+        const body  = { ...block, data: { ...block.data, body: _interpolate(block.data.body, merchant) } };
         let html;
         if (themeId === "executive") {
-          html = _executivePromo(body, url, promoIndex);
+          html = _executivePromo(body, token, promoIndex);
         } else if (themeId === "spotlight") {
-          html = _spotlightPromo(body, url, promoIndex === 0);
+          html = _spotlightPromo(body, token, promoIndex === 0);
         } else {
-          html = _momentumPromo(body, url);
+          html = _momentumPromo(body, token);
         }
         promoIndex++;
         return html;
@@ -334,6 +391,9 @@ export const compileBlocksToHtml = (blocks, deepLinks, merchant, themeId = "mome
         return "";
     }
   }).join("\n");
+
+  // Resolve tokens with this merchant's real deep links
+  return injectDeepLinks(tokenHtml, deepLinks);
 };
 
 /**
@@ -355,14 +415,16 @@ export const compileBlocksToText = (blocks, deepLinks, merchant) => {
         return `💳 UNLOCK EXCLUSIVE DOORDASH CREDITS\n${block.data.body || ""}\n`;
 
       case BLOCK_TYPES.PROMO: {
-        const url  = _resolveUrl(block, deepLinks);
-        const body = _toPlainText(_interpolate(block.data.body, merchant));
+        const promoId = block.data.promoId;
+        const url     = (promoId && deepLinks?.[promoId]) ? deepLinks[promoId] : "#";
+        const body    = _toPlainText(_interpolate(block.data.body, merchant));
         return `━━━ 🚀 ${block.data.title} ━━━\n${body}\n→ ${block.data.buttonText}: ${url}\n`;
       }
 
       case BLOCK_TYPES.SIGNATURE: {
         const { firstName = "", lastName = "", title = "Merchant Success", phone = "" } = block.data.repSettings || {};
-        return `\nBest regards,\n${firstName} ${lastName}\n${title}${phone ? `\n${phone}` : ""}\nDoorDash Merchant Success`;
+        const name = [firstName, lastName].filter(Boolean).join(" ") || "DoorDash Merchant Success";
+        return `\nBest regards,\n${name}\n${title}${phone ? `\n${phone}` : ""}\nDoorDash Merchant Success`;
       }
 
       case BLOCK_TYPES.DIVIDER:

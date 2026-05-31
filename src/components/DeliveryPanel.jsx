@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { logEmailSend } from "../lib/supabase";
 import {
   DownloadCloud, CheckCircle2, Layers, FileText,
   Loader2, AlertTriangle, Mail, ExternalLink, ChevronDown,
@@ -64,6 +65,8 @@ function doPost(e) {
 
 export default function DeliveryPanel({
   merchants, emailDrafts, repSettings, dispatchMode, setDispatchMode,
+  emailFormat = "html", setEmailFormat,
+  userProfile, selectedPromos = [],
 }) {
   const [queue,       setQueue]       = useState(null);  // { items[], opened: Set }
   const [isSending,   setIsSending]   = useState(false);
@@ -139,16 +142,34 @@ export default function DeliveryPanel({
   const openOneInGmail = async (idx) => {
     const target = queue.items[idx];
     setClipStatus(prev => ({ ...prev, [idx]: "copying" }));
-    // Open Gmail tab with body pre-filled in URL
+    // Open Gmail tab with subject pre-filled in URL
     const url = buildGmailComposeUrl(target);
     window.open(url, "_blank", "noopener,noreferrer");
-    // Also copy HTML to clipboard (bonus: user can Ctrl+V to get rich formatting)
-    const ok = await copyHtmlToClipboard(target.draft);
+    // Copy to clipboard — HTML or plain text based on format toggle
+    let ok;
+    if (emailFormat === "plain") {
+      ok = await navigator.clipboard.writeText(target.draft.plainTextBody || "").then(() => "text").catch(() => false);
+    } else {
+      ok = await copyHtmlToClipboard(target.draft);
+    }
     setClipStatus(prev => ({ ...prev, [idx]: ok ? "done" : "error" }));
     setQueue(prev => {
       const opened = new Set(prev.opened);
       opened.add(idx);
       return { ...prev, opened };
+    });
+    // Fire-and-forget send log
+    logEmailSend({
+      repEmail:       userProfile?.email || repSettings?.email || "",
+      repName:        userProfile?.full_name || `${repSettings?.firstName || ""} ${repSettings?.lastName || ""}`.trim() || "",
+      merchantName:   target.merchant?.merchantName || "",
+      merchantId:     target.merchant?.businessId   || target.merchant?.id || "",
+      toEmail:        target.to,
+      ccEmails:       target.cc || "",
+      subject:        target.draft.subject,
+      promoTypes:     selectedPromos,
+      deliveryMethod: "gmail_tab",
+      emailFormat,
     });
   };
 
@@ -172,13 +193,15 @@ export default function DeliveryPanel({
     }
     setIsSending(true);
     setSendStatus(null);
-    const payloads = buildTargets().map(t => ({
+    const senderName = `${repSettings.firstName || ""} ${repSettings.lastName || ""}`.trim() || "DoorDash Merchant Success";
+    const targets = buildTargets();
+    const payloads = targets.map(t => ({
       to:            t.to,
       cc:            t.cc,
       subject:       t.draft.subject,
-      htmlBody:      t.draft.htmlBody,
+      htmlBody:      emailFormat === "plain" ? undefined : t.draft.htmlBody,
       plainTextBody: t.draft.plainTextBody,
-      name:          `${repSettings.firstName || ""} ${repSettings.lastName || ""}`.trim() || "DoorDash Merchant Success",
+      name:          senderName,
     }));
     try {
       await fetch(repSettings.gasUrl, {
@@ -186,7 +209,22 @@ export default function DeliveryPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "draft", emails: payloads }),
       });
-      setSendStatus({ type: "success", msg: `Pushed ${payloads.length} rich HTML draft${payloads.length > 1 ? "s" : ""} to your Gmail Drafts folder. Open Gmail to review and send.` });
+      setSendStatus({ type: "success", msg: `Pushed ${payloads.length} ${emailFormat === "plain" ? "plain-text" : "rich HTML"} draft${payloads.length > 1 ? "s" : ""} to your Gmail Drafts folder.` });
+      // Log each send event (fire-and-forget)
+      targets.forEach(t => {
+        logEmailSend({
+          repEmail:       userProfile?.email || repSettings?.email || "",
+          repName:        userProfile?.full_name || senderName,
+          merchantName:   t.merchant?.merchantName || "",
+          merchantId:     t.merchant?.businessId   || t.merchant?.id || "",
+          toEmail:        t.to,
+          ccEmails:       t.cc || "",
+          subject:        t.draft.subject,
+          promoTypes:     selectedPromos,
+          deliveryMethod: "gas_draft",
+          emailFormat,
+        });
+      });
     } catch (err) {
       setSendStatus({ type: "error", msg: err.message || "Network error." });
     } finally {
@@ -218,8 +256,9 @@ export default function DeliveryPanel({
   return (
     <div className="bg-white border-t border-slate-200 p-8 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.05)] mt-12 mb-16 rounded-3xl mx-6">
 
-      {/* Dispatch mode */}
-      <div className="max-w-4xl mx-auto mb-6 bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4">
+      {/* Dispatch mode + Format toggle */}
+      <div className="max-w-4xl mx-auto mb-6 bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 space-y-4">
+        {/* Routing mode row */}
         <div className="flex items-center justify-between gap-4 flex-col md:flex-row">
           <div className="flex items-center gap-3">
             <Layers className="w-5 h-5 text-slate-500" />
@@ -232,6 +271,25 @@ export default function DeliveryPanel({
             {[["cc","CC Mode"],["separate","Separate"],["primary","Primary Only"]].map(([v,l]) => (
               <button key={v} onClick={() => setDispatchMode(v)}
                 className={`flex-1 md:flex-none px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${dispatchMode===v ? "bg-white shadow-sm text-slate-800" : "text-slate-500 hover:text-slate-700"}`}>
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Email format toggle row */}
+        <div className="flex items-center justify-between gap-4 flex-col md:flex-row border-t border-slate-200 pt-4">
+          <div className="flex items-center gap-3">
+            <FileText className="w-5 h-5 text-slate-500" />
+            <div>
+              <p className="text-sm font-bold text-slate-800">Email Format</p>
+              <p className="text-xs text-slate-500">HTML sends rich formatting; Plain Text is simpler and universally compatible.</p>
+            </div>
+          </div>
+          <div className="flex items-center bg-slate-200/60 p-1 rounded-xl gap-1 w-full md:w-auto">
+            {[["html","HTML (Rich)"],["plain","Plain Text"]].map(([v,l]) => (
+              <button key={v} onClick={() => setEmailFormat && setEmailFormat(v)}
+                className={`flex-1 md:flex-none px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${emailFormat===v ? "bg-white shadow-sm text-slate-800" : "text-slate-500 hover:text-slate-700"}`}>
                 {l}
               </button>
             ))}

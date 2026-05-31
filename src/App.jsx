@@ -9,6 +9,8 @@ import EmailPreview from "./components/EmailPreview";
 import DeliveryPanel from "./components/DeliveryPanel";
 import RepSettingsModal from "./components/RepSettingsModal";
 import BOBDashboard from "./components/BOBDashboard";
+import SendLogDashboard from "./components/SendLogDashboard";
+import AdminPanel from "./components/AdminPanel";
 import { ArrowRight, Settings } from "lucide-react";
 import { buildAllDeepLinks } from "./lib/deepLinkBuilder";
 import {
@@ -17,6 +19,7 @@ import {
   compileBlocksToHtml,
   compileBlocksToText,
   htmlToPlainText,
+  injectDeepLinks,
 } from "./lib/emailBlockEngine";
 
 // Catches any unhandled render crash and shows a message instead of a blank page
@@ -46,15 +49,15 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-export default function App() {
+export default function App({ userProfile, onSignOut }) {
   return (
     <ErrorBoundary>
-      <AppInner />
+      <AppInner userProfile={userProfile} onSignOut={onSignOut} />
     </ErrorBoundary>
   );
 }
 
-function AppInner() {
+function AppInner({ userProfile, onSignOut }) {
   const [phase, setPhase] = useState("upload");
   const [merchants, setMerchants] = useState([]);
   const [activeMerchantIds, setActiveMerchantIds] = useState(new Set());
@@ -64,22 +67,20 @@ function AppInner() {
   const [selectedPromos, setSelectedPromos]   = useState([]);
   const [promoConfigs,   setPromoConfigs]     = useState({});
   const [dispatchMode,   setDispatchMode]     = useState("cc");
+  const [emailFormat,    setEmailFormat]      = useState("html");  // "html" | "plain"
 
   // Block generation state (blocks → initial HTML only; editing path uses raw HTML override)
   const [globalBlocks,      setGlobalBlocks]      = useState([]);
   const [selectedTheme,     setSelectedTheme]     = useState("momentum");
 
-  // Raw HTML override state (written by MerchantEmailEditor save)
-  const [globalHtmlTemplate,  setGlobalHtmlTemplate]  = useState("");
-  // Maps each encoded deep-link URL in the template → promoId so we can
-  // swap in per-merchant links at compile time instead of using APC's links
-  const [globalLinkMapping,   setGlobalLinkMapping]   = useState({});
+  // Raw HTML override state (written by MerchantEmailEditor "Apply to All" save)
+  // Contains %%DD_LINK_<promoId>%% tokens — resolved per merchant at render time
+  const [globalHtmlTemplate, setGlobalHtmlTemplate] = useState("");
 
   // Reset blocks + overrides whenever promo selection changes
   useEffect(() => {
     setGlobalBlocks([]);
     setGlobalHtmlTemplate("");
-    setGlobalLinkMapping({});
     setMerchants(prev => prev.map(m => ({ ...m, emailOverride: null, subjectOverride: undefined })));
   }, [selectedPromos]); // eslint-disable-line react-hooks/exhaustive-deps
   
@@ -93,7 +94,9 @@ function AppInner() {
     }
   });
   
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSettingsOpen,   setIsSettingsOpen]   = useState(false);
+  const [isDashboardOpen,  setIsDashboardOpen]  = useState(false);
+  const [isAdminOpen,      setIsAdminOpen]      = useState(false);
 
   // Auto-open settings if repId is missing on App mount
   useEffect(() => {
@@ -126,56 +129,41 @@ function AppInner() {
   const emailDrafts = useMemo(() => {
     if (resolvedGlobalBlocks.length === 0 && !globalHtmlTemplate) return [];
     return targetMerchants.map(m => {
-      const rawSubject = m.subjectOverride || buildEmailSubject(m, selectedPromos);
+      const rawSubject = buildEmailSubject(m, selectedPromos);
       const subject = rawSubject
         .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
         .replace(/\{DM\s*Name\}/gi,    m.dmName || m.merchantName || "there");
 
-      // Priority: merchant-level override → global HTML template → block compilation
+      const dlMap = deepLinks[m.id] || {};
+
+      // Priority 1: per-merchant override (saved from MerchantEmailEditor for this merchant only)
+      // The override HTML may contain %%DD_LINK_%% tokens or live links — resolve tokens.
       if (m.emailOverride) {
-        // Per-merchant override already has this merchant's own deep links — safe
-        const html = m.emailOverride
+        let html = injectDeepLinks(m.emailOverride, dlMap)
           .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
           .replace(/\{DM\s*Name\}/gi,    m.dmName || m.merchantName || "there");
         return { merchantId: m.id, subject, htmlBody: html, plainTextBody: htmlToPlainText(html) };
       }
 
+      // Priority 2: global HTML template ("Apply to All" save)
+      // Template contains %%DD_LINK_%% tokens — injectDeepLinks resolves them per merchant.
       if (globalHtmlTemplate) {
-        const dlMap   = deepLinks[m.id] || {};
-        let html      = globalHtmlTemplate;
-
-        // ━━ Re-inject per-merchant deep links ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // The template was saved from merchant X. globalLinkMapping records
-        // which URL belonged to which promoId. We replace each source URL
-        // with the same promoId’s URL for THIS merchant.
-        if (Object.keys(globalLinkMapping).length > 0) {
-          Object.entries(globalLinkMapping).forEach(([encodedSourceUrl, promoId]) => {
-            const targetRaw = dlMap[promoId];
-            if (targetRaw) {
-              // HTML serialiser encodes & → &amp; in href values
-              const encodedTarget = targetRaw.replace(/&/g, "&amp;");
-              const escaped       = encodedSourceUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-              html = html.replace(new RegExp(escaped, "g"), encodedTarget);
-            }
-          });
-        }
-
-        html = html
+        let html = injectDeepLinks(globalHtmlTemplate, dlMap)
           .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
           .replace(/\{DM\s*Name\}/gi,    m.dmName || m.merchantName || "there");
         return { merchantId: m.id, subject, htmlBody: html, plainTextBody: htmlToPlainText(html) };
       }
 
-      // Default: compile from blocks
-      const blockDlMap = deepLinks[m.id] || {};
+      // Priority 3: compile from blocks (default path)
+      // compileBlocksToHtml internally calls injectDeepLinks — tokens resolved inside.
       return {
         merchantId:    m.id,
         subject,
-        htmlBody:      compileBlocksToHtml(resolvedGlobalBlocks, blockDlMap, m, selectedTheme),
-        plainTextBody: compileBlocksToText(resolvedGlobalBlocks, blockDlMap, m),
+        htmlBody:      compileBlocksToHtml(resolvedGlobalBlocks, dlMap, m, selectedTheme),
+        plainTextBody: compileBlocksToText(resolvedGlobalBlocks, dlMap, m),
       };
     });
-  }, [resolvedGlobalBlocks, globalHtmlTemplate, globalLinkMapping, targetMerchants, merchants, deepLinks, selectedTheme, selectedPromos]);
+  }, [resolvedGlobalBlocks, globalHtmlTemplate, targetMerchants, deepLinks, selectedTheme, selectedPromos]);
 
   const handleDataLoaded = (parsedData, payload) => {
     setMerchants(parsedData);
@@ -188,7 +176,13 @@ function AppInner() {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
-      <Header onOpenSettings={() => setIsSettingsOpen(true)} />
+      <Header
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenDashboard={() => setIsDashboardOpen(true)}
+        onOpenAdmin={() => setIsAdminOpen(true)}
+        userProfile={userProfile}
+        onSignOut={onSignOut}
+      />
       
       <RepSettingsModal 
         isOpen={isSettingsOpen} 
@@ -288,8 +282,7 @@ function AppInner() {
                   dispatchMode={dispatchMode}
                   repSettings={repSettings}
                   setGlobalHtmlTemplate={setGlobalHtmlTemplate}
-                  deepLinksMap={deepLinks}
-                  setGlobalLinkMapping={setGlobalLinkMapping}
+                  selectedPromos={selectedPromos}
                 />
                 <DeliveryPanel 
                   merchants={targetMerchants} 
@@ -297,12 +290,25 @@ function AppInner() {
                   repSettings={repSettings} 
                   dispatchMode={dispatchMode}
                   setDispatchMode={setDispatchMode}
+                  emailFormat={emailFormat}
+                  setEmailFormat={setEmailFormat}
+                  userProfile={userProfile}
+                  selectedPromos={selectedPromos}
                 />
               </>
             )}
           </div>
         )}
       </main>
+      {isDashboardOpen && (
+        <SendLogDashboard
+          userProfile={userProfile}
+          onClose={() => setIsDashboardOpen(false)}
+        />
+      )}
+      {isAdminOpen && userProfile?.role === "ultimate" && (
+        <AdminPanel onClose={() => setIsAdminOpen(false)} />
+      )}
     </div>
   );
 }

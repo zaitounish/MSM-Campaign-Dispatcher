@@ -1,21 +1,24 @@
 import React, { useState, useRef } from "react";
-import { UploadCloud, Loader2, FileSpreadsheet } from "lucide-react";
+import { UploadCloud, Loader2, FileSpreadsheet, AlertTriangle, RefreshCw } from "lucide-react";
+import * as XLSX from "xlsx";
 import { processSheetData } from "../lib/bobParser";
 import { analyzeBOB } from "../lib/bobAnalyzer";
 
 export default function UploadZone({ onDataLoaded }) {
-  const [isDragging, setIsDragging] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [pendingWorkbook, setPendingWorkbook] = useState(null);
-  const [availableSheets, setAvailableSheets] = useState([]);
+  const [isDragging,       setIsDragging]       = useState(false);
+  const [isProcessing,     setIsProcessing]     = useState(false);
+  const [pendingWorkbook,  setPendingWorkbook]  = useState(null);
+  const [availableSheets,  setAvailableSheets]  = useState([]);
+  const [uploadError,      setUploadError]      = useState("");
   const fileInputRef = useRef(null);
 
   const processSheet = (wb, sheetName) => {
     setIsProcessing(true);
+    setUploadError("");
     setTimeout(() => {
       try {
         const ws = wb.Sheets[sheetName];
-        const json = window.XLSX.utils.sheet_to_json(ws, {
+        const json = XLSX.utils.sheet_to_json(ws, {
           header: 1,
           defval: null,
           raw: false,
@@ -26,11 +29,16 @@ export default function UploadZone({ onDataLoaded }) {
         const analyticsPayload = analyzeBOB(ws, json);
 
         const processed = processSheetData(json);
+        if (!processed || processed.length === 0) {
+          setUploadError("No valid merchant rows found in this sheet. Check that your file has Store ID and Merchant Name columns.");
+          setIsProcessing(false);
+          return;
+        }
         // Pass both the merchant list AND the analytics payload up to App
         onDataLoaded(processed, analyticsPayload);
       } catch (err) {
         console.error("Error processing sheet:", err);
-        alert("Failed to parse the selected sheet.");
+        setUploadError(`Could not parse this sheet: ${err.message || "Unknown error"}. Try a different sheet or re-export the file.`);
       } finally {
         setIsProcessing(false);
         setPendingWorkbook(null);
@@ -42,18 +50,15 @@ export default function UploadZone({ onDataLoaded }) {
 
   const handleFileUpload = async (files) => {
     if (!files || files.length === 0) return;
-    if (!window.XLSX) {
-      alert("Excel engine is still loading. Please wait a moment.");
-      return;
-    }
-
+    setUploadError("");
     setIsProcessing(true);
-    const file = files[0]; // Assuming one BOB file processed at a time
+    const file = files[0]; // One BOB file at a time
 
     try {
-      const data = await new Promise((resolve) => {
+      const data = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (e) => resolve(new Uint8Array(e.target.result));
+        reader.onerror = () => reject(new Error("File could not be read"));
         reader.readAsArrayBuffer(file);
       });
 
@@ -61,7 +66,7 @@ export default function UploadZone({ onDataLoaded }) {
       await new Promise(r => setTimeout(r, 50));
 
       // cellStyles: true is required for cell fill color extraction in bobAnalyzer
-      const wb = window.XLSX.read(data, { type: "array", cellStyles: true });
+      const wb = XLSX.read(data, { type: "array", cellStyles: true });
       
       if (wb.SheetNames.length === 1) {
         processSheet(wb, wb.SheetNames[0]);
@@ -72,8 +77,8 @@ export default function UploadZone({ onDataLoaded }) {
       }
       
     } catch (err) {
-      console.error("Error reading Excel file:", err);
-      alert("Failed to read file. Make sure it's a valid Excel file.");
+      console.error("Error reading file:", err);
+      setUploadError(`Could not read this file: ${err.message || "Unknown error"}. Make sure it's a valid Excel or CSV file.`);
       setIsProcessing(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
@@ -150,11 +155,28 @@ export default function UploadZone({ onDataLoaded }) {
 
       <input
         type="file"
-        accept=".xlsx,.xls"
+        accept=".xlsx,.xls,.xlsm,.xlsb,.csv,.tsv,.ods,.xltx,.xltm"
         className="hidden"
         ref={fileInputRef}
         onChange={(e) => handleFileUpload(e.target.files)}
       />
+
+      {/* Inline error card */}
+      {uploadError && !isProcessing && (
+        <div className="w-full max-w-3xl mb-4 flex items-start gap-3 bg-red-50 border border-red-200 rounded-2xl px-6 py-4 animate-in fade-in duration-300">
+          <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-red-800 mb-1">Upload failed</p>
+            <p className="text-xs text-red-600 leading-relaxed">{uploadError}</p>
+          </div>
+          <button
+            onClick={() => { setUploadError(""); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 transition-colors shrink-0"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Try Again
+          </button>
+        </div>
+      )}
 
       {availableSheets.length === 0 && !isProcessing && (
         <div
