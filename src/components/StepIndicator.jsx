@@ -1,34 +1,54 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Check, ChevronRight } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
 
-export default function StepIndicator({ currentPhase, setPhase, hasMerchants, hasPromos }) {
-  const steps = [
-    { id: "upload", label: "Upload BOB" },
-    { id: "select", label: "Select Merchants", disabled: !hasMerchants },
-    { id: "build", label: "Configure Promos", disabled: !hasMerchants },
-    { id: "deliver", label: "Preview & Send", disabled: !hasMerchants || !hasPromos }
-  ];
+const STEPS = [
+  { id: "upload",  label: "Upload BOB",        title: "Upload Book of Business" },
+  { id: "select",  label: "Select Merchants",  title: "Select Merchants"        },
+  { id: "build",   label: "Configure Promos",  title: "Configure Promotions"    },
+  { id: "deliver", label: "Preview & Send",    title: "Preview & Send Emails"   },
+];
 
-  const currentIndex = steps.findIndex(s => s.id === currentPhase);
+export default function StepIndicator({ hasMerchants, hasPromos }) {
+  const navigate  = useNavigate();
+  const location  = useLocation();
+  const phase     = location.pathname.replace(/^\//, "") || "upload";
+  const currentIndex = STEPS.findIndex(s => s.id === phase);
+
+  // Update browser tab title per step
+  useEffect(() => {
+    const step = STEPS.find(s => s.id === phase);
+    document.title = step
+      ? `${step.title} · MSM Campaign Dispatcher`
+      : "MSM Campaign Dispatcher";
+  }, [phase]);
+
+  const goTo = (stepId) => {
+    navigate(`/${stepId === "upload" ? "" : stepId}`);
+  };
 
   return (
     <div className="w-full max-w-4xl mx-auto my-8 px-4 flex items-center justify-between">
-      {steps.map((step, index) => {
+      {STEPS.map((step, index) => {
         const isCompleted = index < currentIndex;
-        const isCurrent = index === currentIndex;
-        const isDisabled = step.disabled;
+        const isCurrent   = index === currentIndex;
+        const isDisabled  =
+          (step.id === "select"  && !hasMerchants) ||
+          (step.id === "build"   && !hasMerchants) ||
+          (step.id === "deliver" && (!hasMerchants || !hasPromos));
 
         return (
           <React.Fragment key={step.id}>
             <div className="flex flex-col items-center gap-2 relative z-10 group">
               <button
-                onClick={() => !isDisabled && setPhase(step.id)}
+                onClick={() => !isDisabled && goTo(step.id)}
                 disabled={isDisabled}
+                aria-current={isCurrent ? "step" : undefined}
                 className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all duration-300 ${
-                  isCompleted 
-                    ? "bg-green-500 text-white shadow-md shadow-green-200" 
-                    : isCurrent 
-                      ? "bg-dd-red text-white shadow-md shadow-red-200 ring-4 ring-red-50" 
+                  isCompleted
+                    ? "bg-green-500 text-white shadow-md shadow-green-200"
+                    : isCurrent
+                      ? "bg-dd-red text-white shadow-md shadow-red-200 ring-4 ring-red-50"
                       : isDisabled
                         ? "bg-slate-100 text-slate-400 cursor-not-allowed"
                         : "bg-white text-slate-500 border border-slate-300 hover:border-dd-red cursor-pointer"
@@ -43,9 +63,9 @@ export default function StepIndicator({ currentPhase, setPhase, hasMerchants, ha
               </span>
             </div>
 
-            {index < steps.length - 1 && (
+            {index < STEPS.length - 1 && (
               <div className="flex-1 h-0.5 mx-2 bg-slate-200 relative mb-5">
-                <div 
+                <div
                   className={`absolute top-0 left-0 h-full transition-all duration-500 ${isCompleted ? "bg-green-500 w-full" : "bg-transparent w-0"}`}
                 />
               </div>

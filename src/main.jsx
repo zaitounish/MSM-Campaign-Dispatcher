@@ -1,21 +1,24 @@
 import { StrictMode, useState, useEffect } from 'react'
 import { Analytics } from "@vercel/analytics/react"
 import { createRoot } from 'react-dom/client'
+import { RouterProvider } from 'react-router-dom'
 import './index.css'
 import App from './App.jsx'
 import OTPLoginScreen from './components/OTPLoginScreen.jsx'
 import { supabase, getWhitelistProfile } from './lib/supabase.js'
+import { createHashRouter } from 'react-router-dom'
 
 /**
- * Root — authentication gate
+ * Root — authentication gate + router provider
  *
  * Auth state machine:
- *   "loading"       → checking existing Supabase session
- *   "unauthenticated" → show OTPLoginScreen
- *   "authenticated" → show App (with userProfile in context)
+ *   "loading"         → checking existing Supabase session
+ *   "unauthenticated" → show OTPLoginScreen (no router needed)
+ *   "authenticated"   → RouterProvider wraps App (enables back/forward)
  *
- * The userProfile contains: { id, email, full_name, rep_id, role, is_active }
- * role can be: "ultimate" | "manager" | "rep"
+ * We create the router INSIDE Root so we can pass userProfile + onSignOut
+ * as props to App without needing a React context. The router is memoized
+ * by creating it once after authentication succeeds.
  */
 function Root() {
   const [authState,   setAuthState]   = useState("loading");
@@ -41,7 +44,7 @@ function Root() {
 
     checkSession();
 
-    // Listen for auth changes (e.g. session expiry)
+    // Listen for auth state changes (session expiry, sign-out)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === "SIGNED_OUT") {
         setUserProfile(null);
@@ -75,15 +78,32 @@ function Root() {
     );
   }
 
-  // ── Not logged in → OTP screen ──────────────────────────────────────────
+  // ── Not logged in → OTP screen (no router wrapping needed) ─────────────
   if (authState === "unauthenticated") {
     return <OTPLoginScreen onAuthenticated={handleAuthenticated} />;
   }
 
-  // ── Authenticated → full app ────────────────────────────────────────────
+  // ── Authenticated → App wrapped in RouterProvider ──────────────────────
+  // Router is created here so App receives userProfile/onSignOut as props.
+  // Hash routing (#/upload, #/select…) works on Vercel without rewrites.
+  const router = createHashRouter([
+    {
+      path:    "/",
+      element: <App userProfile={userProfile} onSignOut={handleSignOut} />,
+    },
+    {
+      path:    "/:phase",
+      element: <App userProfile={userProfile} onSignOut={handleSignOut} />,
+    },
+    {
+      path:    "*",
+      element: <App userProfile={userProfile} onSignOut={handleSignOut} />,
+    },
+  ]);
+
   return (
     <>
-      <App userProfile={userProfile} onSignOut={handleSignOut} />
+      <RouterProvider router={router} />
       <Analytics />
     </>
   );

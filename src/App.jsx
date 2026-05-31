@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import Header from "./components/Header";
 import StepIndicator from "./components/StepIndicator";
 import UploadZone from "./components/UploadZone";
@@ -58,7 +59,13 @@ export default function App({ userProfile, onSignOut }) {
 }
 
 function AppInner({ userProfile, onSignOut }) {
-  const [phase, setPhase] = useState("upload");
+  // ── Navigation: phase is the URL path segment (e.g. /select, /build) ──────
+  // This gives browser back/forward button support for free.
+  const navigate = useNavigate();
+  const location = useLocation();
+  // Derive phase from URL: '/' and '' → 'upload', '/select' → 'select', etc.
+  const phase = location.pathname.replace(/^\//, "") || "upload";
+  const setPhase = (p) => navigate(`/${p === "upload" ? "" : p}`, { replace: false });
   const [merchants, setMerchants] = useState([]);
   const [activeMerchantIds, setActiveMerchantIds] = useState(new Set());
   const [analyticsPayload, setAnalyticsPayload] = useState(null);  // BOB Intelligence Suite data
@@ -168,7 +175,7 @@ function AppInner({ userProfile, onSignOut }) {
   const handleDataLoaded = (parsedData, payload) => {
     setMerchants(parsedData);
     setAnalyticsPayload(payload || null);
-    // If we have analytics data, go to the dashboard step first
+    // Navigate to analyze if we have analytics data, otherwise straight to select
     setPhase(payload ? "analyze" : "select");
   };
 
@@ -193,8 +200,6 @@ function AppInner({ userProfile, onSignOut }) {
       
       <main className="max-w-7xl mx-auto px-4 sm:px-8">
         <StepIndicator 
-          currentPhase={phase} 
-          setPhase={setPhase} 
           hasMerchants={merchants.length > 0}
           hasPromos={selectedPromos.length > 0}
         />
@@ -203,7 +208,7 @@ function AppInner({ userProfile, onSignOut }) {
           <UploadZone onDataLoaded={handleDataLoaded} />
         )}
 
-        {phase === "analyze" && analyticsPayload && (
+        {phase === "analyze" && (
           <BOBDashboard
             analyticsPayload={analyticsPayload}
             merchants={merchants}
