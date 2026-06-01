@@ -1,5 +1,5 @@
 /**
- * router.jsx — App routing configuration
+ * router.jsx | App routing configuration
  *
  * Uses hash-based routing (#/upload, #/select, etc.) so the app
  * continues to work on Vercel without any server-side rewrite rules.
@@ -9,17 +9,17 @@
 import { createHashRouter } from "react-router-dom";
 import App from "./App.jsx";
 
-// The router has a single root route — App handles all internal
+// The router has a single root route | App handles all internal
 // phase switching via useNavigate/useLocation. Sub-routes are not
 // needed because the tool is a linear wizard, not a multi-page app.
 export const router = createHashRouter([
   {
-    path:    "/",
+    path: "/",
     element: <App />,
   },
   {
     // Catch-all: redirect unknown hashes back to root
-    path:    "*",
+    path: "*",
     element: <App />,
   },
 ]);

@@ -30,7 +30,7 @@ export const processSheetData = (json) => {
   rawHeaders.forEach((h, idx) => {
     if (!h) return;
     const normalized = String(h).toLowerCase().replace(/_/g, " ").trim().replace(/\s+/g, " ");
-    
+
     if (normalized.includes("merchant name") || normalized.includes("store name") || normalized.includes("business name")) {
       if (colMap.merchantName === -1) colMap.merchantName = idx;
     }
@@ -64,7 +64,7 @@ export const processSheetData = (json) => {
   });
 
   const parsedRows = [];
-  
+
   for (let i = headerRowIdx + 1; i < json.length; i++) {
     const row = json[i];
     if (!row || row.length === 0) continue;
@@ -147,14 +147,14 @@ export const processSheetData = (json) => {
         if (!pass2Map.has(row.storeEmail)) {
           pass2Map.set(row.storeEmail, { ...row, sids: [row.storeId] });
         } else {
-           const existing = pass2Map.get(row.storeEmail);
-           if (!existing.sids.includes(row.storeId)) {
-             existing.sids.push(row.storeId);
-           }
-           if (isTruthy(row.slOpp)) existing.slOpp = "1";
-           if (isTruthy(row.promoOpp)) existing.promoOpp = "1";
-           if (isTruthy(row.loyalOpp)) existing.loyalOpp = "1";
-           if (isTruthy(row.slCredit)) existing.slCredit = "1";
+          const existing = pass2Map.get(row.storeEmail);
+          if (!existing.sids.includes(row.storeId)) {
+            existing.sids.push(row.storeId);
+          }
+          if (isTruthy(row.slOpp)) existing.slOpp = "1";
+          if (isTruthy(row.promoOpp)) existing.promoOpp = "1";
+          if (isTruthy(row.loyalOpp)) existing.loyalOpp = "1";
+          if (isTruthy(row.slCredit)) existing.slCredit = "1";
         }
       } else {
         // No valid emails to group on, keep isolated
@@ -173,7 +173,7 @@ export const processSheetData = (json) => {
       .flatMap(e => e.split(/[,\s]+/).map(ex => ex.trim()).filter(Boolean));
 
     // Separate valid from invalid so we can surface bad ones to the rep
-    const validEmails   = rawCandidates.filter(validateEmail);
+    const validEmails = rawCandidates.filter(validateEmail);
     const invalidEmails = rawCandidates.filter(e => !validateEmail(e));
 
     const uniqueValid = [...new Set(validEmails)];
@@ -185,7 +185,7 @@ export const processSheetData = (json) => {
     if (emails.length > 0) {
       emailStatus = "valid";
     } else if (invalidEmails.length > 0) {
-      emailStatus  = "invalid";
+      emailStatus = "invalid";
       rawEmailIssue = invalidEmails[0]; // show the first bad one
     } else {
       emailStatus = "missing";
@@ -214,7 +214,7 @@ export const processSheetData = (json) => {
       emailStatus,
       rawEmailIssue: rawEmailIssue || null,
     };
-  }); // keep ALL rows — UI handles invalid/missing display
+  }); // keep ALL rows | UI handles invalid/missing display
 };
 
 function isTruthy(val) {
@@ -223,7 +223,7 @@ function isTruthy(val) {
   return v === "1" || v === "true" || v === "yes" || (parseInt(v) > 0);
 }
 
-// RFC-5321 inspired regex — catches the common malformed patterns
+// RFC-5321 inspired regex | catches the common malformed patterns
 // (missing TLD, double @, no local part, spaces, etc.) without being
 // so strict it rejects valid corporate addresses.
 const EMAIL_RE = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;

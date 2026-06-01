@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
 import Header from "./components/Header";
 import StepIndicator from "./components/StepIndicator";
 import UploadZone from "./components/UploadZone";
@@ -19,6 +18,8 @@ import {
   buildEmailSubject,
   compileBlocksToHtml,
   compileBlocksToText,
+  compileBlocksToCleanHtml,
+  wrapForRichEmail,
   htmlToPlainText,
   injectDeepLinks,
 } from "./lib/emailBlockEngine";
@@ -59,29 +60,27 @@ export default function App({ userProfile, onSignOut }) {
 }
 
 function AppInner({ userProfile, onSignOut }) {
-  // ── Navigation: phase is the URL path segment (e.g. /select, /build) ──────
-  // This gives browser back/forward button support for free.
-  const navigate = useNavigate();
-  const location = useLocation();
-  // Derive phase from URL: '/' and '' → 'upload', '/select' → 'select', etc.
-  const phase = location.pathname.replace(/^\//, "") || "upload";
-  const setPhase = (p) => navigate(`/${p === "upload" ? "" : p}`, { replace: false });
+  // ── Phase: plain state | no router dependency ─────────────────────────
+  // Using useState instead of useNavigate/useLocation keeps navigation
+  // simple and reliable. The router context is still available for any
+  // component that needs it, but phase transitions are instant state updates.
+  const [phase, setPhase] = useState("upload");
   const [merchants, setMerchants] = useState([]);
   const [activeMerchantIds, setActiveMerchantIds] = useState(new Set());
   const [analyticsPayload, setAnalyticsPayload] = useState(null);  // BOB Intelligence Suite data
-  
+
   // Phase 3 states
-  const [selectedPromos, setSelectedPromos]   = useState([]);
-  const [promoConfigs,   setPromoConfigs]     = useState({});
-  const [dispatchMode,   setDispatchMode]     = useState("cc");
-  const [emailFormat,    setEmailFormat]      = useState("html");  // "html" | "plain"
+  const [selectedPromos, setSelectedPromos] = useState([]);
+  const [promoConfigs, setPromoConfigs] = useState({});
+  const [dispatchMode, setDispatchMode] = useState("cc");
+  const [emailFormat, setEmailFormat] = useState("html");  // "html" | "plain"
 
   // Block generation state (blocks → initial HTML only; editing path uses raw HTML override)
-  const [globalBlocks,      setGlobalBlocks]      = useState([]);
-  const [selectedTheme,     setSelectedTheme]     = useState("momentum");
+  const [globalBlocks, setGlobalBlocks] = useState([]);
+  const [selectedTheme, setSelectedTheme] = useState("momentum");
 
   // Raw HTML override state (written by MerchantEmailEditor "Apply to All" save)
-  // Contains %%DD_LINK_<promoId>%% tokens — resolved per merchant at render time
+  // Contains %%DD_LINK_<promoId>%% tokens | resolved per merchant at render time
   const [globalHtmlTemplate, setGlobalHtmlTemplate] = useState("");
 
   // Reset blocks + overrides whenever promo selection changes
@@ -90,7 +89,7 @@ function AppInner({ userProfile, onSignOut }) {
     setGlobalHtmlTemplate("");
     setMerchants(prev => prev.map(m => ({ ...m, emailOverride: null, subjectOverride: undefined })));
   }, [selectedPromos]); // eslint-disable-line react-hooks/exhaustive-deps
-  
+
   // Scaffolding states for later phases
   const [repSettings, setRepSettings] = useState(() => {
     try {
@@ -100,10 +99,10 @@ function AppInner({ userProfile, onSignOut }) {
       return {};
     }
   });
-  
-  const [isSettingsOpen,   setIsSettingsOpen]   = useState(false);
-  const [isDashboardOpen,  setIsDashboardOpen]  = useState(false);
-  const [isAdminOpen,      setIsAdminOpen]      = useState(false);
+
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
 
   // Auto-open settings if repId is missing on App mount
   useEffect(() => {
@@ -125,7 +124,7 @@ function AppInner({ userProfile, onSignOut }) {
     return buildAllDeepLinks(targetMerchants, selectedPromos, promoConfigs, repSettings.repId);
   }, [targetMerchants, selectedPromos, promoConfigs, repSettings.repId]);
 
-  // Initialize globalBlocks lazily — only when we have promos and no blocks yet.
+  // Initialize globalBlocks lazily | only when we have promos and no blocks yet.
   // We do this in a useMemo so it is always in sync with promoConfigs.
   const resolvedGlobalBlocks = useMemo(() => {
     if (globalBlocks.length > 0) return globalBlocks;
@@ -139,34 +138,62 @@ function AppInner({ userProfile, onSignOut }) {
       const rawSubject = buildEmailSubject(m, selectedPromos);
       const subject = rawSubject
         .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
-        .replace(/\{DM\s*Name\}/gi,    m.dmName || m.merchantName || "there");
+        .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there");
 
       const dlMap = deepLinks[m.id] || {};
 
-      // Priority 1: per-merchant override (saved from MerchantEmailEditor for this merchant only)
-      // The override HTML may contain %%DD_LINK_%% tokens or live links — resolve tokens.
+      // Priority 1: per-merchant HTML override
       if (m.emailOverride) {
         let html = injectDeepLinks(m.emailOverride, dlMap)
           .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
-          .replace(/\{DM\s*Name\}/gi,    m.dmName || m.merchantName || "there");
-        return { merchantId: m.id, subject, htmlBody: html, plainTextBody: htmlToPlainText(html) };
+          .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there");
+        // Use independent clean override if set, otherwise fall back to same HTML
+        const cleanHtml = m.cleanOverride
+          ? injectDeepLinks(m.cleanOverride, dlMap)
+              .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
+              .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there")
+          : html;
+        return {
+          merchantId: m.id, subject,
+          htmlBody:      html,
+          richBody:      wrapForRichEmail(html),
+          cleanBody:     cleanHtml,
+          plainTextBody: htmlToPlainText(html),
+        };
       }
 
-      // Priority 2: global HTML template ("Apply to All" save)
-      // Template contains %%DD_LINK_%% tokens — injectDeepLinks resolves them per merchant.
+      // Priority 2: global HTML template
       if (globalHtmlTemplate) {
         let html = injectDeepLinks(globalHtmlTemplate, dlMap)
           .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
-          .replace(/\{DM\s*Name\}/gi,    m.dmName || m.merchantName || "there");
-        return { merchantId: m.id, subject, htmlBody: html, plainTextBody: htmlToPlainText(html) };
+          .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there");
+        const cleanHtml = m.cleanOverride
+          ? injectDeepLinks(m.cleanOverride, dlMap)
+              .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
+              .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there")
+          : html;
+        return {
+          merchantId: m.id, subject,
+          htmlBody:      html,
+          richBody:      wrapForRichEmail(html),
+          cleanBody:     cleanHtml,
+          plainTextBody: htmlToPlainText(html),
+        };
       }
 
       // Priority 3: compile from blocks (default path)
-      // compileBlocksToHtml internally calls injectDeepLinks — tokens resolved inside.
+      const rawHtml = compileBlocksToHtml(resolvedGlobalBlocks, dlMap, m, selectedTheme);
       return {
-        merchantId:    m.id,
+        merchantId: m.id,
         subject,
-        htmlBody:      compileBlocksToHtml(resolvedGlobalBlocks, dlMap, m, selectedTheme),
+        htmlBody:      rawHtml,
+        richBody:      wrapForRichEmail(rawHtml),
+        // Use independent clean override if the rep edited Clean separately
+        cleanBody:     m.cleanOverride
+          ? injectDeepLinks(m.cleanOverride, dlMap)
+              .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
+              .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there")
+          : compileBlocksToCleanHtml(resolvedGlobalBlocks, dlMap, m),
         plainTextBody: compileBlocksToText(resolvedGlobalBlocks, dlMap, m),
       };
     });
@@ -190,16 +217,18 @@ function AppInner({ userProfile, onSignOut }) {
         userProfile={userProfile}
         onSignOut={onSignOut}
       />
-      
-      <RepSettingsModal 
-        isOpen={isSettingsOpen} 
-        onClose={() => setIsSettingsOpen(false)} 
-        repSettings={repSettings} 
-        setRepSettings={setRepSettings} 
+
+      <RepSettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        repSettings={repSettings}
+        setRepSettings={setRepSettings}
       />
-      
+
       <main className="max-w-7xl mx-auto px-4 sm:px-8">
-        <StepIndicator 
+        <StepIndicator
+          phase={phase}
+          setPhase={setPhase}
           hasMerchants={merchants.length > 0}
           hasPromos={selectedPromos.length > 0}
         />
@@ -221,47 +250,47 @@ function AppInner({ userProfile, onSignOut }) {
         {phase === "select" && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-               <h3 className="text-xl font-bold text-slate-800 mb-2">Review Your Book of Business</h3>
-               <p className="text-slate-500 max-w-3xl">
-                 We've automatically consolidated multiple locations under the same business ID and extracted the best target email for each franchise. Check the merchants you want to pitch campaigns to today.
-               </p>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Review Your Book of Business</h3>
+              <p className="text-slate-500 max-w-3xl">
+                We've automatically consolidated multiple locations under the same business ID and extracted the best target email for each franchise. Check the merchants you want to pitch campaigns to today.
+              </p>
             </div>
-            
-            <MerchantTable 
-              merchants={merchants} 
-              setMerchants={setMerchants} 
+
+            <MerchantTable
+              merchants={merchants}
+              setMerchants={setMerchants}
               onActiveMerchantsChange={setActiveMerchantIds}
               analyticsPayload={analyticsPayload}
               onContinue={(payloadIds) => {
                 if (payloadIds) setActiveMerchantIds(payloadIds);
                 setPhase("build");
-              }} 
+              }}
             />
           </div>
         )}
 
         {phase === "build" && (
           <div className="space-y-4">
-             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-6">
-                <h3 className="text-xl font-bold text-slate-800 mb-2">Configure Promotions</h3>
-                <p className="text-slate-500">
-                  Select one or more marketing campaigns. We will generate specific deep links mapped perfectly to your choices below.
-                </p>
-             </div>
-             
-             <PromoSelector selectedPromos={selectedPromos} setSelectedPromos={setSelectedPromos} />
-             <PromoCustomizer selectedPromos={selectedPromos} promoConfigs={promoConfigs} setPromoConfigs={setPromoConfigs} />
-             
-             <div className="flex justify-end pt-8">
-               <button
-                 onClick={() => setPhase("deliver")}
-                 disabled={selectedPromos.length === 0}
-                 className="flex items-center gap-2 px-8 py-3.5 bg-dd-red text-white font-bold rounded-xl shadow-md hover:bg-dd-red-dark hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0 disabled:cursor-not-allowed"
-               >
-                 Preview & Send Emails
-                 <ArrowRight className="w-5 h-5" />
-               </button>
-             </div>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-6">
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Configure Promotions</h3>
+              <p className="text-slate-500">
+                Select one or more marketing campaigns. We will generate specific deep links mapped perfectly to your choices below.
+              </p>
+            </div>
+
+            <PromoSelector selectedPromos={selectedPromos} setSelectedPromos={setSelectedPromos} />
+            <PromoCustomizer selectedPromos={selectedPromos} promoConfigs={promoConfigs} setPromoConfigs={setPromoConfigs} />
+
+            <div className="flex justify-end pt-8">
+              <button
+                onClick={() => setPhase("deliver")}
+                disabled={selectedPromos.length === 0}
+                className="flex items-center gap-2 px-8 py-3.5 bg-dd-red text-white font-bold rounded-xl shadow-md hover:bg-dd-red-dark hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0 disabled:cursor-not-allowed"
+              >
+                Preview & Send Emails
+                <ArrowRight className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         )}
 
@@ -288,11 +317,14 @@ function AppInner({ userProfile, onSignOut }) {
                   repSettings={repSettings}
                   setGlobalHtmlTemplate={setGlobalHtmlTemplate}
                   selectedPromos={selectedPromos}
+                  emailFormat={emailFormat}
+                  setEmailFormat={setEmailFormat}
+                  userProfile={userProfile}
                 />
-                <DeliveryPanel 
-                  merchants={targetMerchants} 
-                  emailDrafts={emailDrafts} 
-                  repSettings={repSettings} 
+                <DeliveryPanel
+                  merchants={targetMerchants}
+                  emailDrafts={emailDrafts}
+                  repSettings={repSettings}
                   dispatchMode={dispatchMode}
                   setDispatchMode={setDispatchMode}
                   emailFormat={emailFormat}
@@ -311,8 +343,12 @@ function AppInner({ userProfile, onSignOut }) {
           onClose={() => setIsDashboardOpen(false)}
         />
       )}
-      {isAdminOpen && userProfile?.role === "ultimate" && (
-        <AdminPanel onClose={() => setIsAdminOpen(false)} />
+      {isAdminOpen && (userProfile?.role === "ultimate" || userProfile?.role === "manager") && (
+        <AdminPanel
+          onClose={() => setIsAdminOpen(false)}
+          userProfile={userProfile}
+          repSettings={repSettings}
+        />
       )}
     </div>
   );

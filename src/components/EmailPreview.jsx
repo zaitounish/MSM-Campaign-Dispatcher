@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { ChevronLeft, ChevronRight, Edit, Undo2, Wand2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Edit, Undo2, Wand2, Sparkles, UserCircle } from "lucide-react";
 import MerchantEmailEditor from "./MerchantEmailEditor";
 
 export default function EmailPreview({
@@ -8,8 +8,10 @@ export default function EmailPreview({
   setMerchants,
   dispatchMode,
   repSettings,
-  // HTML override props (raw save path)
   setGlobalHtmlTemplate,
+  emailFormat = "html",
+  setEmailFormat,
+  userProfile,
 }) {
   const selectedMerchants = React.useMemo(
     () => merchants.filter(m => m.selected),
@@ -49,21 +51,22 @@ export default function EmailPreview({
 
   const { merchant: currentMerchant, draft, targetDisplay, ccDisplay } = currentItem;
 
-  const hasOverride = !!currentMerchant.emailOverride;
+  const hasOverride = !!(currentMerchant.emailOverride || currentMerchant.cleanOverride);
 
-  // Save: HTML override path
-  const handleSave = ({ html, subject, applyToAll }) => {
+  // Save: persists Rich override, Clean override, and subject independently
+  const handleSave = ({ html, cleanHtml, subject, applyToAll }) => {
     if (applyToAll) {
+      // Rich: push to global template; Clean: save override on every selected merchant
       setGlobalHtmlTemplate(html);
       setMerchants(prev => prev.map(m =>
         m.selected
-          ? { ...m, emailOverride: null, subjectOverride: subject || undefined }
+          ? { ...m, emailOverride: null, cleanOverride: cleanHtml || null, subjectOverride: subject || undefined }
           : m
       ));
     } else {
       setMerchants(prev => prev.map(m =>
         m.id === currentMerchant.id
-          ? { ...m, emailOverride: html, subjectOverride: subject || undefined }
+          ? { ...m, emailOverride: html || null, cleanOverride: cleanHtml || null, subjectOverride: subject || undefined }
           : m
       ));
     }
@@ -73,7 +76,7 @@ export default function EmailPreview({
   const handleClearOverride = () => {
     setMerchants(prev => prev.map(m =>
       m.id === currentMerchant.id
-        ? { ...m, emailOverride: null, subjectOverride: undefined }
+        ? { ...m, emailOverride: null, cleanOverride: null, subjectOverride: undefined }
         : m
     ));
   };
@@ -97,7 +100,35 @@ export default function EmailPreview({
           <p className="text-sm text-slate-500">Live preview of exactly what will be sent.</p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap justify-end">
+          {/* Format toggle — Rich (branded) vs Clean (personal) */}
+          {setEmailFormat && (
+            <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm gap-0.5">
+              <button
+                onClick={() => setEmailFormat("html")}
+                title="Rich — DoorDash branded design"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all ${
+                  emailFormat === "html"
+                    ? "bg-dd-red text-white shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" /> Rich
+              </button>
+              <button
+                onClick={() => setEmailFormat("plain")}
+                title="Clean — professional personal email style"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all ${
+                  emailFormat === "plain"
+                    ? "bg-slate-700 text-white shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                <UserCircle className="w-3.5 h-3.5" /> Clean
+              </button>
+            </div>
+          )}
+
           <span className="text-sm font-semibold text-slate-500 flex items-center gap-2">
             Email <span className="bg-white border shadow-sm px-2 py-0.5 rounded-md text-slate-800">{safeIndex + 1}</span> of {expandedDrafts.length}
           </span>
@@ -146,28 +177,45 @@ export default function EmailPreview({
           </div>
         </div>
 
-        {/* Right: iframe preview */}
-        <div className="w-full lg:w-2/3 p-0 md:p-8 bg-slate-100 flex items-center justify-center">
-          <div className="bg-white w-full max-w-2xl min-h-[400px] shadow-sm border border-slate-200 rounded-xl overflow-hidden">
-            <iframe
-              srcDoc={`<!DOCTYPE html><html><body style="font-family:sans-serif;padding:24px;margin:0">${draft.htmlBody}</body></html>`}
-              sandbox=""
-              className="w-full min-h-[400px] border-0"
-              title="Email Preview"
-              style={{ height: "500px" }}
-            />
-          </div>
+        {/* Right: email preview — Rich (branded) or Clean (personal) */}
+        <div className="w-full lg:w-2/3 bg-slate-100 flex items-start justify-center overflow-y-auto" style={{ minHeight: 500 }}>
+          {emailFormat === "plain" ? (
+            // Clean mode: white background, generous padding — reads like Gmail
+            <div className="w-full h-full bg-white">
+              <iframe
+                srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:32px;background:#fff;">${draft.cleanBody || draft.htmlBody}</body></html>`}
+                sandbox=""
+                className="w-full border-0"
+                title="Clean Email Preview"
+                style={{ height: 540, minHeight: 400 }}
+              />
+            </div>
+          ) : (
+            // Rich mode: full branded DoorDash design in a light grey container
+            <div className="w-full h-full">
+              <iframe
+                srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0;background:#f1f5f9;">${draft.richBody || draft.htmlBody}</body></html>`}
+                sandbox=""
+                className="w-full border-0"
+                title="Rich Email Preview"
+                style={{ height: 540, minHeight: 400 }}
+              />
+            </div>
+          )}
         </div>
       </div>
 
       {isEditorOpen && (
         <MerchantEmailEditor
           merchant={currentMerchant}
-          initialHtml={currentMerchant.emailOverride || draft.htmlBody}
+          initialRichHtml={currentMerchant.emailOverride || draft.htmlBody}
+          initialCleanHtml={currentMerchant.cleanOverride || draft.cleanBody}
           initialSubject={currentMerchant.subjectOverride || draft.subject}
           onSave={handleSave}
           onCancel={() => setIsEditorOpen(false)}
           geminiApiKey={repSettings?.geminiApiKey}
+          emailFormat={emailFormat}
+          setEmailFormat={setEmailFormat}
         />
       )}
     </div>

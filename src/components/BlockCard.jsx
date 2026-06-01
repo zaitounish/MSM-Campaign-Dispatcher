@@ -7,9 +7,9 @@ import BlockTextEditor from "./BlockTextEditor";
 import { BLOCK_TYPES } from "../lib/emailBlockEngine";
 
 /**
- * BlockCard (v2 — Visual Email Editor)
+ * BlockCard (v2 | Visual Email Editor)
  *
- * Renders each block as the ACTUAL email section it represents — not an
+ * Renders each block as the ACTUAL email section it represents | not an
  * abstract card strip. The rep sees the email being composed in real time.
  *
  * Interaction model:
@@ -36,7 +36,7 @@ export default function BlockCard({
       {/* ── Floating control bar (appears on hover) ── */}
       {!isLocked && (
         <div className="absolute top-2 right-2 z-20 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 bg-white border border-slate-200 rounded-xl shadow-md p-1">
-          <CtrlBtn onClick={onMoveUp}   disabled={!canMoveUp}   title="Move up">
+          <CtrlBtn onClick={onMoveUp} disabled={!canMoveUp} title="Move up">
             <ChevronUp className="w-3.5 h-3.5" />
           </CtrlBtn>
           <CtrlBtn onClick={onMoveDown} disabled={!canMoveDown} title="Move down">
@@ -287,11 +287,11 @@ function BlockEditPanel({ block, onUpdate }) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const blockLabel = (type) => ({
-  [BLOCK_TYPES.TEXT]:      "Text Block",
-  [BLOCK_TYPES.CTA]:       "Call to Action",
-  [BLOCK_TYPES.PROMO]:     "Promo Section",
-  [BLOCK_TYPES.CREDIT]:    "Credit Banner",
-  [BLOCK_TYPES.DIVIDER]:   "Divider",
+  [BLOCK_TYPES.TEXT]: "Text Block",
+  [BLOCK_TYPES.CTA]: "Call to Action",
+  [BLOCK_TYPES.PROMO]: "Promo Section",
+  [BLOCK_TYPES.CREDIT]: "Credit Banner",
+  [BLOCK_TYPES.DIVIDER]: "Divider",
   [BLOCK_TYPES.SIGNATURE]: "Signature",
 }[type] ?? type);
 
@@ -302,8 +302,8 @@ function CtrlBtn({ onClick, disabled, title, children, active, danger }) {
       disabled={disabled}
       title={title}
       className={`p-1.5 rounded-lg transition-colors disabled:opacity-30 disabled:pointer-events-none
-        ${active  ? "bg-violet-100 text-violet-700"                              : ""}
-        ${danger  ? "text-slate-400 hover:bg-red-50 hover:text-red-500"          : ""}
+        ${active ? "bg-violet-100 text-violet-700" : ""}
+        ${danger ? "text-slate-400 hover:bg-red-50 hover:text-red-500" : ""}
         ${!active && !danger ? "text-slate-500 hover:bg-slate-100 hover:text-slate-800" : ""}
       `}
     >

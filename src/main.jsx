@@ -1,27 +1,22 @@
-import { StrictMode, useState, useEffect } from 'react'
+import { StrictMode, useState, useEffect, useMemo } from 'react'
 import { Analytics } from "@vercel/analytics/react"
 import { createRoot } from 'react-dom/client'
-import { RouterProvider } from 'react-router-dom'
+import { RouterProvider, createHashRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.jsx'
 import OTPLoginScreen from './components/OTPLoginScreen.jsx'
 import { supabase, getWhitelistProfile } from './lib/supabase.js'
-import { createHashRouter } from 'react-router-dom'
 
 /**
- * Root — authentication gate + router provider
+ * Root | authentication gate + router provider
  *
- * Auth state machine:
- *   "loading"         → checking existing Supabase session
- *   "unauthenticated" → show OTPLoginScreen (no router needed)
- *   "authenticated"   → RouterProvider wraps App (enables back/forward)
- *
- * We create the router INSIDE Root so we can pass userProfile + onSignOut
- * as props to App without needing a React context. The router is memoized
- * by creating it once after authentication succeeds.
+ * CRITICAL: The router must be created with useMemo so it is only
+ * instantiated ONCE after login | never recreated on re-renders.
+ * Creating it inside the render body causes App to fully remount
+ * on every navigation, wiping all merchant/promo/selection state.
  */
 function Root() {
-  const [authState,   setAuthState]   = useState("loading");
+  const [authState, setAuthState] = useState("loading");
   const [userProfile, setUserProfile] = useState(null);
 
   // ── On mount: check for existing valid session ──────────────────────────
@@ -36,7 +31,7 @@ function Root() {
           setAuthState("authenticated");
           return;
         }
-        // Session exists but user is not whitelisted — sign out silently
+        // Session exists but user is not whitelisted | sign out silently
         await supabase.auth.signOut();
       }
       setAuthState("unauthenticated");
@@ -45,7 +40,7 @@ function Root() {
     checkSession();
 
     // Listen for auth state changes (session expiry, sign-out)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event) => {
       if (event === "SIGNED_OUT") {
         setUserProfile(null);
         setAuthState("unauthenticated");
@@ -66,7 +61,21 @@ function Root() {
     setAuthState("unauthenticated");
   };
 
-  // ── Loading spinner ─────────────────────────────────────────────────────
+  // ── Router: ONE catch-all route so App never remounts between phases ───
+  // Previously had separate routes (/ and /:phase) which caused React Router
+  // to unmount+remount App when switching | wiping all merchant/promo state.
+  // With a single "/*" route, App is always the same mounted instance.
+  // Phase logic lives entirely in App via useLocation() | nothing changes there.
+  const router = useMemo(() => {
+    if (!userProfile) return null;
+    const appEl = <App userProfile={userProfile} onSignOut={handleSignOut} />;
+    return createHashRouter([
+      { path: "/*", element: appEl },
+    ]);
+  }, [userProfile]); // eslint-disable-line react-hooks/exhaustive-deps
+
+
+  // ── Loading ─────────────────────────────────────────────────────────────
   if (authState === "loading") {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
@@ -78,32 +87,15 @@ function Root() {
     );
   }
 
-  // ── Not logged in → OTP screen (no router wrapping needed) ─────────────
+  // ── Not logged in ───────────────────────────────────────────────────────
   if (authState === "unauthenticated") {
     return <OTPLoginScreen onAuthenticated={handleAuthenticated} />;
   }
 
-  // ── Authenticated → App wrapped in RouterProvider ──────────────────────
-  // Router is created here so App receives userProfile/onSignOut as props.
-  // Hash routing (#/upload, #/select…) works on Vercel without rewrites.
-  const router = createHashRouter([
-    {
-      path:    "/",
-      element: <App userProfile={userProfile} onSignOut={handleSignOut} />,
-    },
-    {
-      path:    "/:phase",
-      element: <App userProfile={userProfile} onSignOut={handleSignOut} />,
-    },
-    {
-      path:    "*",
-      element: <App userProfile={userProfile} onSignOut={handleSignOut} />,
-    },
-  ]);
-
+  // ── Authenticated → stable router → App never remounts on navigation ────
   return (
     <>
-      <RouterProvider router={router} />
+      {router && <RouterProvider router={router} />}
       <Analytics />
     </>
   );

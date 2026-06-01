@@ -6,24 +6,26 @@ import { supabase, getWhitelistProfile } from "../lib/supabase";
  * OTPLoginScreen
  *
  * Two-step authentication flow:
- *   Step 1 — Enter email → Supabase sends 6-digit OTP
- *   Step 2 — Enter OTP  → Verify → Check whitelist → Grant access
+ *   Step 1 | Enter email → Supabase sends OTP
+ *   Step 2 | Enter OTP  → Verify → Check whitelist → Grant access
  *
- * Replaces the old shared-password LockScreen entirely.
- *
- * Props:
- *   onAuthenticated(profile) — called with the whitelist profile on success
+ * OTP_LENGTH must match Supabase Auth → Settings → "OTP length".
+ * Change this one constant if you ever change the Supabase setting.
  */
+const OTP_LENGTH = 8; // ← change to 6 here AND in Supabase to use 6-digit codes
+
 export default function OTPLoginScreen({ onAuthenticated }) {
-  const [step,        setStep]        = useState("email");   // "email" | "otp"
-  const [email,       setEmail]       = useState("");
-  const [otp,         setOtp]         = useState(["", "", "", "", "", ""]);
-  const [loading,     setLoading]     = useState(false);
-  const [error,       setError]       = useState("");
-  const [cooldown,    setCooldown]    = useState(0);
-  const [shaking,     setShaking]     = useState(false);
-  const otpRefs      = useRef([]);
-  const timerRef     = useRef(null);
+  const emptyOtp = () => Array(OTP_LENGTH).fill("");
+
+  const [step, setStep] = useState("email");
+  const [email, setEmail] = useState("");
+  const [otp, setOtp] = useState(emptyOtp);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [cooldown, setCooldown] = useState(0);
+  const [shaking, setShaking] = useState(false);
+  const otpRefs = useRef([]);
+  const timerRef = useRef(null);
 
   // Cooldown countdown for resend button
   useEffect(() => {
@@ -37,6 +39,8 @@ export default function OTPLoginScreen({ onAuthenticated }) {
     setShaking(true);
     setTimeout(() => setShaking(false), 500);
   };
+
+  const resetOtp = () => setOtp(emptyOtp());
 
   // ── Step 1: Send OTP ──────────────────────────────────────────────────────
   const handleSendOtp = async (e) => {
@@ -67,14 +71,13 @@ export default function OTPLoginScreen({ onAuthenticated }) {
 
     setStep("otp");
     setCooldown(60);
-    // Focus first OTP box after render
     setTimeout(() => otpRefs.current[0]?.focus(), 100);
   };
 
   // ── Step 2: Verify OTP ────────────────────────────────────────────────────
   const handleVerifyOtp = async () => {
     const code = otp.join("");
-    if (code.length !== 6 || loading) return;
+    if (code.length !== OTP_LENGTH || loading) return;
 
     setLoading(true);
     setError("");
@@ -82,13 +85,13 @@ export default function OTPLoginScreen({ onAuthenticated }) {
     const { data, error: verifyError } = await supabase.auth.verifyOtp({
       email: email.trim().toLowerCase(),
       token: code,
-      type:  "email",
+      type: "email",
     });
 
     if (verifyError || !data?.user) {
       setLoading(false);
       setError("Incorrect or expired code. Check your inbox and try again.");
-      setOtp(["", "", "", "", "", ""]);
+      resetOtp();
       shake();
       setTimeout(() => otpRefs.current[0]?.focus(), 100);
       return;
@@ -102,31 +105,29 @@ export default function OTPLoginScreen({ onAuthenticated }) {
       await supabase.auth.signOut();
       setError(
         "Your email is not on the approved access list. " +
-        "Contact Mohamed Taher to request access."
+        "Contact your ASM to request access."
       );
       shake();
       setStep("email");
-      setOtp(["", "", "", "", "", ""]);
+      resetOtp();
       return;
     }
 
-    // All good — pass profile up
     onAuthenticated(profile);
   };
 
   // ── OTP input handling ────────────────────────────────────────────────────
   const handleOtpChange = (idx, val) => {
-    // Only allow digits
     const digit = val.replace(/\D/g, "").slice(-1);
-    const next  = [...otp];
-    next[idx]   = digit;
+    const next = [...otp];
+    next[idx] = digit;
     setOtp(next);
-    if (digit && idx < 5) {
+    // Advance focus
+    if (digit && idx < OTP_LENGTH - 1) {
       otpRefs.current[idx + 1]?.focus();
     }
-    // Auto-verify when all 6 digits are entered
-    if (digit && idx === 5 && next.every(d => d !== "")) {
-      // Small delay so state updates first
+    // Auto-verify when all digits filled
+    if (digit && idx === OTP_LENGTH - 1 && next.every(d => d !== "")) {
       setTimeout(() => handleVerifyOtp(), 50);
     }
   };
@@ -138,25 +139,21 @@ export default function OTPLoginScreen({ onAuthenticated }) {
       } else if (idx > 0) {
         otpRefs.current[idx - 1]?.focus();
       }
-    } else if (e.key === "ArrowLeft" && idx > 0) {
-      otpRefs.current[idx - 1]?.focus();
-    } else if (e.key === "ArrowRight" && idx < 5) {
-      otpRefs.current[idx + 1]?.focus();
-    } else if (e.key === "Enter" && otp.every(d => d !== "")) {
-      handleVerifyOtp();
-    }
+    } else if (e.key === "ArrowLeft" && idx > 0) otpRefs.current[idx - 1]?.focus();
+    else if (e.key === "ArrowRight" && idx < OTP_LENGTH - 1) otpRefs.current[idx + 1]?.focus();
+    else if (e.key === "Enter" && otp.every(d => d !== "")) handleVerifyOtp();
   };
 
   const handleOtpPaste = (e) => {
     e.preventDefault();
-    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, OTP_LENGTH);
     if (!pasted) return;
-    const next = ["", "", "", "", "", ""];
+    const next = emptyOtp();
     for (let i = 0; i < pasted.length; i++) next[i] = pasted[i];
     setOtp(next);
-    const focusIdx = Math.min(pasted.length, 5);
+    const focusIdx = Math.min(pasted.length, OTP_LENGTH - 1);
     otpRefs.current[focusIdx]?.focus();
-    if (pasted.length === 6) setTimeout(() => handleVerifyOtp(), 50);
+    if (pasted.length === OTP_LENGTH) setTimeout(() => handleVerifyOtp(), 50);
   };
 
   const filledCount = otp.filter(d => d !== "").length;
@@ -174,16 +171,14 @@ export default function OTPLoginScreen({ onAuthenticated }) {
         className="relative w-full max-w-sm"
         style={shaking ? { animation: "shake 0.45s ease-in-out" } : {}}
       >
-        {/* Card */}
         <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
 
           {/* Logo + branding */}
           <div className="flex flex-col items-center mb-8">
-            <div className={`p-4 rounded-2xl mb-4 transition-all duration-500 ${
-              step === "otp"
-                ? "bg-green-500/10 border border-green-500/20"
-                : "bg-red-600/10 border border-red-600/20"
-            }`}>
+            <div className={`p-4 rounded-2xl mb-4 transition-all duration-500 ${step === "otp"
+              ? "bg-green-500/10 border border-green-500/20"
+              : "bg-red-600/10 border border-red-600/20"
+              }`}>
               {step === "otp"
                 ? <ShieldCheck className="w-8 h-8 text-green-400" />
                 : <Shield className="w-8 h-8 text-red-400" />
@@ -193,7 +188,7 @@ export default function OTPLoginScreen({ onAuthenticated }) {
             <p className="text-slate-400 text-sm mt-1 text-center">
               {step === "email"
                 ? "Enter your email to receive a one-time access code"
-                : `We sent a 6-digit code to`
+                : `We sent a ${OTP_LENGTH}-digit code to`
               }
             </p>
             {step === "otp" && (
@@ -246,12 +241,12 @@ export default function OTPLoginScreen({ onAuthenticated }) {
           {/* ── Step 2: OTP entry ── */}
           {step === "otp" && (
             <div className="space-y-6">
-              {/* 6-digit boxes */}
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 text-center">
-                  Enter your 6-digit code
+                  Enter your {OTP_LENGTH}-digit code
                 </label>
-                <div className="flex gap-2 justify-center" onPaste={handleOtpPaste}>
+                {/* OTP boxes | dynamically renders OTP_LENGTH boxes */}
+                <div className="flex gap-1.5 justify-center" onPaste={handleOtpPaste}>
                   {otp.map((digit, idx) => (
                     <input
                       key={idx}
@@ -263,7 +258,7 @@ export default function OTPLoginScreen({ onAuthenticated }) {
                       onChange={e => handleOtpChange(idx, e.target.value)}
                       onKeyDown={e => handleOtpKeyDown(idx, e)}
                       disabled={loading}
-                      className={`w-11 h-13 text-center text-xl font-bold rounded-xl border transition-all outline-none
+                      className={`w-10 text-center text-xl font-bold rounded-xl border transition-all outline-none
                         bg-white/10 text-white
                         ${digit
                           ? "border-red-500 bg-red-500/10 shadow-[0_0_0_1px_rgba(239,68,68,0.4)]"
@@ -271,13 +266,13 @@ export default function OTPLoginScreen({ onAuthenticated }) {
                         }
                         disabled:opacity-40
                       `}
-                      style={{ padding: "12px 0" }}
+                      style={{ height: "48px", padding: "0" }}
                     />
                   ))}
                 </div>
                 <p className="text-center text-xs text-slate-500 mt-2">
-                  {filledCount < 6
-                    ? `${6 - filledCount} digit${6 - filledCount !== 1 ? "s" : ""} remaining`
+                  {filledCount < OTP_LENGTH
+                    ? `${OTP_LENGTH - filledCount} digit${OTP_LENGTH - filledCount !== 1 ? "s" : ""} remaining`
                     : "Verifying…"}
                 </p>
               </div>
@@ -291,20 +286,20 @@ export default function OTPLoginScreen({ onAuthenticated }) {
 
               <button
                 onClick={handleVerifyOtp}
-                disabled={loading || filledCount < 6}
+                disabled={loading || filledCount < OTP_LENGTH}
                 className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-red-900/30 hover:-translate-y-0.5 active:translate-y-0"
               >
                 {loading ? (
                   <><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</>
                 ) : (
-                  <><ShieldCheck className="w-4 h-4" /> Verify & Enter</>
+                  <><ShieldCheck className="w-4 h-4" /> Verify &amp; Enter</>
                 )}
               </button>
 
               {/* Resend / change email */}
               <div className="flex items-center justify-between pt-1">
                 <button
-                  onClick={() => { setStep("email"); setOtp(["","","","","",""]); setError(""); }}
+                  onClick={() => { setStep("email"); resetOtp(); setError(""); }}
                   className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
                 >
                   ← Change email
@@ -328,7 +323,6 @@ export default function OTPLoginScreen({ onAuthenticated }) {
         </div>
       </div>
 
-      {/* Shake keyframe */}
       <style>{`
         @keyframes shake {
           0%,100% { transform: translateX(0); }

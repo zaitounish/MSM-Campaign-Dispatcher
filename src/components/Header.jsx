@@ -36,14 +36,18 @@ export default function Header({ onOpenSettings, onOpenDashboard, onOpenAdmin, u
 
       {/* Right: actions + user menu */}
       <div className="flex items-center gap-2">
-        {/* Admin button (ultimate only) */}
-        {role === "ultimate" && onOpenAdmin && (
+        {/* Admin button (ultimate = gold, manager = violet) */}
+        {(role === "ultimate" || role === "manager") && onOpenAdmin && (
           <button
             onClick={onOpenAdmin}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors border border-amber-200"
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors border ${
+              role === "ultimate"
+                ? "text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200"
+                : "text-violet-700 bg-violet-50 hover:bg-violet-100 border-violet-200"
+            }`}
             title="Manage Access"
           >
-            <ShieldCheck className="w-4 h-4" /> Admin
+            <ShieldCheck className="w-4 h-4" /> {role === "ultimate" ? "Admin" : "Manage Reps"}
           </button>
         )}
 

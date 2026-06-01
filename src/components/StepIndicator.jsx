@@ -1,6 +1,5 @@
 import React, { useEffect } from "react";
 import { Check, ChevronRight } from "lucide-react";
-import { useNavigate, useLocation } from "react-router-dom";
 
 const STEPS = [
   { id: "upload",  label: "Upload BOB",        title: "Upload Book of Business" },
@@ -9,10 +8,7 @@ const STEPS = [
   { id: "deliver", label: "Preview & Send",    title: "Preview & Send Emails"   },
 ];
 
-export default function StepIndicator({ hasMerchants, hasPromos }) {
-  const navigate  = useNavigate();
-  const location  = useLocation();
-  const phase     = location.pathname.replace(/^\//, "") || "upload";
+export default function StepIndicator({ phase, setPhase, hasMerchants, hasPromos }) {
   const currentIndex = STEPS.findIndex(s => s.id === phase);
 
   // Update browser tab title per step
@@ -22,10 +18,6 @@ export default function StepIndicator({ hasMerchants, hasPromos }) {
       ? `${step.title} · MSM Campaign Dispatcher`
       : "MSM Campaign Dispatcher";
   }, [phase]);
-
-  const goTo = (stepId) => {
-    navigate(`/${stepId === "upload" ? "" : stepId}`);
-  };
 
   return (
     <div className="w-full max-w-4xl mx-auto my-8 px-4 flex items-center justify-between">
@@ -41,7 +33,7 @@ export default function StepIndicator({ hasMerchants, hasPromos }) {
           <React.Fragment key={step.id}>
             <div className="flex flex-col items-center gap-2 relative z-10 group">
               <button
-                onClick={() => !isDisabled && goTo(step.id)}
+                onClick={() => !isDisabled && setPhase(step.id)}
                 disabled={isDisabled}
                 aria-current={isCurrent ? "step" : undefined}
                 className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all duration-300 ${

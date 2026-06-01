@@ -20,14 +20,14 @@ import { Bold, Italic, Underline, List, Link, X, Check } from "lucide-react";
  *   Ctrl/Cmd + U → Underline
  */
 export default function BlockTextEditor({ html, onChange, minHeight = 100 }) {
-  const editorRef  = useRef(null);
-  const linkRef    = useRef(null);
+  const editorRef = useRef(null);
+  const linkRef = useRef(null);
   const savedRange = useRef(null); // saved Selection before link bar opens
 
   const [linkOpen, setLinkOpen] = useState(false);
-  const [linkUrl,  setLinkUrl]  = useState("https://");
+  const [linkUrl, setLinkUrl] = useState("https://");
 
-  // Set initial HTML once — never sync from props after mount
+  // Set initial HTML once | never sync from props after mount
   useEffect(() => {
     if (editorRef.current) editorRef.current.innerHTML = html || "";
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -48,10 +48,10 @@ export default function BlockTextEditor({ html, onChange, minHeight = 100 }) {
     const mod = e.ctrlKey || e.metaKey;
     if (!mod) return;
     switch (e.key.toLowerCase()) {
-      case "b": e.preventDefault(); exec("bold");      break;
-      case "i": e.preventDefault(); exec("italic");    break;
+      case "b": e.preventDefault(); exec("bold"); break;
+      case "i": e.preventDefault(); exec("italic"); break;
       case "u": e.preventDefault(); exec("underline"); break;
-      default:  break;
+      default: break;
     }
   };
 
@@ -105,10 +105,10 @@ export default function BlockTextEditor({ html, onChange, minHeight = 100 }) {
       {/* ── Toolbar ── */}
       <div className="flex items-center gap-0.5 px-2 py-1.5 bg-slate-50 border-b border-slate-200 flex-wrap">
 
-        <Btn onCmd={() => exec("bold")}      title="Bold (Ctrl+B)">
+        <Btn onCmd={() => exec("bold")} title="Bold (Ctrl+B)">
           <Bold className="w-3.5 h-3.5" />
         </Btn>
-        <Btn onCmd={() => exec("italic")}    title="Italic (Ctrl+I)">
+        <Btn onCmd={() => exec("italic")} title="Italic (Ctrl+I)">
           <Italic className="w-3.5 h-3.5" />
         </Btn>
         <Btn onCmd={() => exec("underline")} title="Underline (Ctrl+U)">
@@ -137,7 +137,7 @@ export default function BlockTextEditor({ html, onChange, minHeight = 100 }) {
 
         <div className="w-px h-4 bg-slate-200 mx-1" />
 
-        {/* Link button — opens inline URL bar */}
+        {/* Link button | opens inline URL bar */}
         <Btn
           onCmd={openLinkBar}
           title="Insert link"
@@ -216,9 +216,8 @@ function Btn({ onCmd, title, children, className = "", active = false }) {
       type="button"
       title={title}
       onMouseDown={e => { e.preventDefault(); onCmd(); }}
-      className={`p-1.5 rounded text-slate-600 hover:bg-slate-200 hover:text-slate-900 transition-colors ${
-        active ? "bg-slate-200 text-slate-900" : ""
-      } ${className}`}
+      className={`p-1.5 rounded text-slate-600 hover:bg-slate-200 hover:text-slate-900 transition-colors ${active ? "bg-slate-200 text-slate-900" : ""
+        } ${className}`}
     >
       {children}
     </button>
