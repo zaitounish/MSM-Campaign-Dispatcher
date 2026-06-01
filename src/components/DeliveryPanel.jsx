@@ -101,11 +101,11 @@ export default function DeliveryPanel({
       const secondaries = m.emails.filter(e => !e.isPrimary).map(e => e.address);
 
       if (dispatchMode === "separate") {
-        m.emails.forEach(e => targets.push({ to: e.address, cc: "", draft, label: m.merchantName }));
+        m.emails.forEach(e => targets.push({ to: e.address, cc: "", draft, label: m.merchantName, merchant: m }));
       } else if (dispatchMode === "primary") {
-        targets.push({ to: primary.address, cc: "", draft, label: m.merchantName });
+        targets.push({ to: primary.address, cc: "", draft, label: m.merchantName, merchant: m });
       } else {
-        targets.push({ to: primary.address, cc: secondaries.join(", "), draft, label: m.merchantName });
+        targets.push({ to: primary.address, cc: secondaries.join(", "), draft, label: m.merchantName, merchant: m });
       }
     });
     return targets;
@@ -151,12 +151,12 @@ export default function DeliveryPanel({
     let ok;
     if (emailFormat === "plain") {
       // Clean mode: copy personal HTML (Gmail will render it cleanly when pasted)
-      const cleanHtml  = target.draft.cleanBody || target.draft.htmlBody || "";
-      const plainFall  = target.draft.plainTextBody || "";
+      const cleanHtml = target.draft.cleanBody || target.draft.htmlBody || "";
+      const plainFall = target.draft.plainTextBody || "";
       try {
         await navigator.clipboard.write([
           new ClipboardItem({
-            "text/html":  new Blob([cleanHtml],  { type: "text/html" }),
+            "text/html": new Blob([cleanHtml], { type: "text/html" }),
             "text/plain": new Blob([plainFall], { type: "text/plain" }),
           }),
         ]);
@@ -217,7 +217,7 @@ export default function DeliveryPanel({
       // Rich mode sends fully-wrapped branded HTML; Clean sends personal-email HTML
       htmlBody: emailFormat === "plain"
         ? (t.draft.cleanBody || t.draft.htmlBody)
-        : (t.draft.richBody  || t.draft.htmlBody),
+        : (t.draft.richBody || t.draft.htmlBody),
       plainTextBody: t.draft.plainTextBody,
       name: senderName,
     }));
@@ -441,8 +441,8 @@ export default function DeliveryPanel({
                       onClick={() => openOneInGmail(idx)}
                       disabled={clipStatus[idx] === "copying"}
                       className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap disabled:opacity-60 ${queue.opened.has(idx)
-                          ? "bg-green-100 text-green-700 hover:bg-green-200"
-                          : "bg-dd-red text-white hover:bg-[#ff3019] shadow-sm"
+                        ? "bg-green-100 text-green-700 hover:bg-green-200"
+                        : "bg-dd-red text-white hover:bg-[#ff3019] shadow-sm"
                         }`}
                     >
                       <ExternalLink className="w-3.5 h-3.5" />

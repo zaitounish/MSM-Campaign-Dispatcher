@@ -145,7 +145,11 @@ export default function MerchantTable({
         if (hasStatusFilters) {
           for (const [col, allowedSet] of Object.entries(statusFilters)) {
             if (!allowedSet || allowedSet.size === 0) continue;
-            const cellVal = String(rowData.colValues?.[col] ?? "").trim();
+            // Mirror the "(blank)" sentinel used in bobAnalyzer distribution
+            const rawVal = rowData.colValues?.[col];
+            const cellVal = (rawVal !== null && rawVal !== undefined && rawVal !== "")
+              ? String(rawVal).trim()
+              : "(blank)";
             if (!allowedSet.has(cellVal)) return false;
           }
         }

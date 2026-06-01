@@ -531,9 +531,9 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
           </div>
 
           {/* Ultimate protection notice */}
-          <p className="text-xs text-slate-400 text-center">
+          {/* <p className="text-xs text-slate-400 text-center">
             🔒 Ultimate accounts are protected | they can only be added or removed directly in Supabase.
-          </p>
+          </p> */}
         </div>
       </div>
     </div>
