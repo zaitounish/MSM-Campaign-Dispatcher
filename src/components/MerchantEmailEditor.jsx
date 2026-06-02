@@ -4,7 +4,7 @@ import {
   List, Link, Check, Sparkles, Loader2, Wand2, RefreshCw,
   ChevronDown, Minus, UserCircle,
 } from "lucide-react";
-import { wrapForRichEmail, stripDeepLinkTokens, deInjectDeepLinks } from "../lib/emailBlockEngine";
+import { wrapForRichEmail, deInjectDeepLinks } from "../lib/emailBlockEngine";
 
 /**
  * MerchantEmailEditor (v4 | Dual-Mode WYSIWYG)
@@ -46,10 +46,6 @@ export default function MerchantEmailEditor({
   // when the user switches between Rich and Clean.
   const richContentRef = useRef(initialRichHtml || "");
   const cleanContentRef = useRef(initialCleanHtml || "");
-
-  // Backup of per-merchant content so we can restore it when leaving "All Merchants" mode
-  const merchantRichRef = useRef(initialRichHtml || "");
-  const merchantCleanRef = useRef(initialCleanHtml || "");
 
   // Which mode is currently loaded in the editor
   const [editMode, setEditMode] = useState(emailFormat || "html");
@@ -113,42 +109,10 @@ export default function MerchantEmailEditor({
     setEmailFormat?.(newMode);
   };
 
-  // ── Apply-to-all toggle: swap between per-merchant and global template ─────
-  const handleApplyToAllToggle = (newVal) => {
-    if (newVal === applyToAll) return;
-    const currentHtml = editorRef.current?.innerHTML || "";
-
-    if (newVal) {
-      // Switching TO "All Merchants" — back up per-merchant content and load token template
-      if (editMode === "plain") merchantCleanRef.current = currentHtml;
-      else merchantRichRef.current = currentHtml;
-
-      if (initialTokenHtml) {
-        // Load global token template for both modes
-        richContentRef.current = initialTokenHtml;
-        cleanContentRef.current = initialTokenHtml;
-        const loaded = editMode === "plain" ? initialTokenHtml : initialTokenHtml;
-        if (editorRef.current) {
-          editorRef.current.innerHTML = loaded;
-          setLiveHtml(loaded);
-        }
-      }
-      // If no tokenHtml available (e.g. override-only path), keep current content as-is
-    } else {
-      // Switching BACK to "This Merchant" — restore per-merchant content
-      const merchantRich = merchantRichRef.current;
-      const merchantClean = merchantCleanRef.current;
-      richContentRef.current = merchantRich;
-      cleanContentRef.current = merchantClean;
-      const nextContent = editMode === "plain" ? merchantClean : merchantRich;
-      if (editorRef.current) {
-        editorRef.current.innerHTML = nextContent;
-        setLiveHtml(nextContent);
-      }
-    }
-
-    setApplyToAll(newVal);
-  };
+  // ── Apply-to-all toggle: just flips the flag — editor keeps showing current edits.
+  // deep links are de-injected at save time via deInjectDeepLinks(), so no content
+  // swap is needed here. The rep sees exactly what they wrote in either mode.
+  const handleApplyToAllToggle = (newVal) => setApplyToAll(newVal);
 
   // Focus link input when bar opens
   useEffect(() => {
@@ -275,12 +239,10 @@ Rules:
     }
   };
 
-  // Preview srcDoc — strips deep-link tokens when in "All Merchants" mode
-  // so buttons display with href="#" instead of raw %%DD_LINK_xxx%% strings.
-  const displayHtml = applyToAll ? stripDeepLinkTokens(liveHtml) : liveHtml;
+  // Preview srcDoc — always shows the live editor content with real URLs
   const previewSrcDoc = editMode === "plain"
-    ? `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:32px;background:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">${displayHtml}</body></html>`
-    : `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0;background:#f1f5f9">${wrapForRichEmail(displayHtml)}</body></html>`;
+    ? `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:32px;background:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">${liveHtml}</body></html>`
+    : `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0;background:#f1f5f9">${wrapForRichEmail(liveHtml)}</body></html>`;
 
   return (
     <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -328,11 +290,6 @@ Rules:
                   All Merchants
                 </ToggleBtn>
               </div>
-              {/* {applyToAll && (
-                // <span className="text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
-                //   🔗 Activation links are auto-personalized per merchant
-                // </span>
-              )} */}
             </div>
 
             {/* AI panel */}
