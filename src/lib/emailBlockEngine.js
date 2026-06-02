@@ -490,13 +490,13 @@ export const wrapForRichEmail = (bodyHtml) => {
     `<table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%">` +
     `<tr><td style="background:#eb1700;border-radius:12px 12px 0 0;padding:26px 32px">` +
     `<p style="margin:0;color:#fff;font-size:22px;font-weight:800;font-family:Helvetica,Arial,sans-serif;letter-spacing:-0.5px">DoorDash</p>` +
-    `<p style="margin:4px 0 0;color:rgba(255,255,255,0.65);font-size:11px;font-family:Helvetica,Arial,sans-serif;text-transform:uppercase;letter-spacing:1.5px">Merchant Success</p>` +
+    `<p style="margin:4px 0 0;color:rgba(255,255,255,0.65);font-size:11px;font-family:Helvetica,Arial,sans-serif;text-transform:uppercase;letter-spacing:1.5px">Merchant Success Manager</p>` +
     `</td></tr>` +
     `<tr><td style="background:#ffffff;padding:36px 32px 8px;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0">` +
     bodyHtml +
     `</td></tr>` +
     `<tr><td style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:0 0 12px 12px;padding:18px 32px;text-align:center">` +
-    `<p style="margin:0;font-size:11px;color:#94a3b8;font-family:Helvetica,Arial,sans-serif">DoorDash Merchant Success</p>` +
+    `<p style="margin:0;font-size:11px;color:#94a3b8;font-family:Helvetica,Arial,sans-serif">DoorDash Merchant Success Manager</p>` +
     `<p style="margin:4px 0 0;font-size:11px;color:#cbd5e1;font-family:Helvetica,Arial,sans-serif">&copy; ${year} DoorDash, Inc.</p>` +
     `</td></tr>` +
     `</table></td></tr></table></div>`
@@ -526,10 +526,10 @@ export const compileBlocksToCleanHtml = (blocks, deepLinks, merchant) => {
         break;
       case BLOCK_TYPES.PROMO: {
         const promoId = block.data.promoId;
-        const rawUrl  = block.data.customUrl || (promoId ? deepLinkToken(promoId) : "#");
-        const url     = (deepLinks && promoId && deepLinks[promoId]) ? deepLinks[promoId] : rawUrl;
-        const href    = (url && !url.startsWith("%%")) ? url : "#";
-        const body    = _outlookLists(_interpolate(block.data.body, merchant));
+        const rawUrl = block.data.customUrl || (promoId ? deepLinkToken(promoId) : "#");
+        const url = (deepLinks && promoId && deepLinks[promoId]) ? deepLinks[promoId] : rawUrl;
+        const href = (url && !url.startsWith("%%")) ? url : "#";
+        const body = _outlookLists(_interpolate(block.data.body, merchant));
         parts.push(
           `<div style="margin:22px 0">` +
           `<p style="margin:0 0 6px;${ff}"><strong style="font-size:15px;color:#1a1a1a">${block.data.title}</strong></p>` +

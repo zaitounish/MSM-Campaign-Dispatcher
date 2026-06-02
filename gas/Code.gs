@@ -25,7 +25,7 @@ function doPost(e) {
         to: String(email.to).trim(),
         subject: String(email.subject),
         htmlBody: email.htmlBody,
-        name: email.name || "DoorDash Merchant Success"
+        name: email.name || "DoorDash Merchant Success Manager"
       };
       
       if (email.cc) {

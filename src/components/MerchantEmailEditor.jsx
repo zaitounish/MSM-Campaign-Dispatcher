@@ -44,11 +44,11 @@ export default function MerchantEmailEditor({
   // ── Independent content storage for each mode ──────────────────────────────
   // These refs hold the most recent HTML for each mode so nothing is lost
   // when the user switches between Rich and Clean.
-  const richContentRef  = useRef(initialRichHtml  || "");
+  const richContentRef = useRef(initialRichHtml || "");
   const cleanContentRef = useRef(initialCleanHtml || "");
 
   // Backup of per-merchant content so we can restore it when leaving "All Merchants" mode
-  const merchantRichRef  = useRef(initialRichHtml  || "");
+  const merchantRichRef = useRef(initialRichHtml || "");
   const merchantCleanRef = useRef(initialCleanHtml || "");
 
   // Which mode is currently loaded in the editor
@@ -72,12 +72,12 @@ export default function MerchantEmailEditor({
   const sepIdx = (initialSubject || "").indexOf(" | ") !== -1
     ? (initialSubject || "").indexOf(" | ")
     : (initialSubject || "").indexOf(" - ");
-  const namePart  = sepIdx !== -1 ? initialSubject.slice(0, sepIdx) : (merchant?.merchantName || "");
-  const titlePart = sepIdx !== -1 ? initialSubject.slice(sepIdx)    : (initialSubject ? ` | ${initialSubject}` : "");
+  const namePart = sepIdx !== -1 ? initialSubject.slice(0, sepIdx) : (merchant?.merchantName || "");
+  const titlePart = sepIdx !== -1 ? initialSubject.slice(sepIdx) : (initialSubject ? ` | ${initialSubject}` : "");
 
-  const [subjectMode,  setSubjectMode]  = useState("title");
+  const [subjectMode, setSubjectMode] = useState("title");
   const [subjectTitle, setSubjectTitle] = useState(titlePart);
-  const [subjectFull,  setSubjectFull]  = useState(initialSubject || "");
+  const [subjectFull, setSubjectFull] = useState(initialSubject || "");
 
   // Seed editor with the starting mode's content on mount
   useEffect(() => {
@@ -100,7 +100,7 @@ export default function MerchantEmailEditor({
     // Persist current editor content to the appropriate ref
     const currentHtml = editorRef.current?.innerHTML || "";
     if (editMode === "plain") cleanContentRef.current = currentHtml;
-    else                      richContentRef.current  = currentHtml;
+    else richContentRef.current = currentHtml;
 
     // Load the new mode's content into the editor
     const nextContent = newMode === "plain" ? cleanContentRef.current : richContentRef.current;
@@ -121,11 +121,11 @@ export default function MerchantEmailEditor({
     if (newVal) {
       // Switching TO "All Merchants" — back up per-merchant content and load token template
       if (editMode === "plain") merchantCleanRef.current = currentHtml;
-      else                      merchantRichRef.current  = currentHtml;
+      else merchantRichRef.current = currentHtml;
 
       if (initialTokenHtml) {
         // Load global token template for both modes
-        richContentRef.current  = initialTokenHtml;
+        richContentRef.current = initialTokenHtml;
         cleanContentRef.current = initialTokenHtml;
         const loaded = editMode === "plain" ? initialTokenHtml : initialTokenHtml;
         if (editorRef.current) {
@@ -136,9 +136,9 @@ export default function MerchantEmailEditor({
       // If no tokenHtml available (e.g. override-only path), keep current content as-is
     } else {
       // Switching BACK to "This Merchant" — restore per-merchant content
-      const merchantRich  = merchantRichRef.current;
+      const merchantRich = merchantRichRef.current;
       const merchantClean = merchantCleanRef.current;
-      richContentRef.current  = merchantRich;
+      richContentRef.current = merchantRich;
       cleanContentRef.current = merchantClean;
       const nextContent = editMode === "plain" ? merchantClean : merchantRich;
       if (editorRef.current) {
@@ -209,20 +209,20 @@ export default function MerchantEmailEditor({
     // Flush the currently-active editor content to its ref before saving
     const currentHtml = editorRef.current?.innerHTML || "";
     if (editMode === "plain") cleanContentRef.current = currentHtml;
-    else                      richContentRef.current  = currentHtml;
+    else richContentRef.current = currentHtml;
 
     // When "Apply to All" is active, de-inject the current merchant's real deep-link URLs
     // back to %%DD_LINK_promoId%% tokens before saving as the global template.
     // This is the fail-safe: it works even if the editor is displaying Merchant 1's
     // resolved URLs (e.g. business_id=14144219) rather than the generic token template.
     // App.jsx's emailDrafts will then re-inject each merchant's own URLs via injectDeepLinks.
-    const richToSave  = applyToAll ? deInjectDeepLinks(richContentRef.current,  dlMap) : richContentRef.current;
+    const richToSave = applyToAll ? deInjectDeepLinks(richContentRef.current, dlMap) : richContentRef.current;
     const cleanToSave = applyToAll ? deInjectDeepLinks(cleanContentRef.current, dlMap) : cleanContentRef.current;
 
     onSave({
-      html:      richToSave,
+      html: richToSave,
       cleanHtml: cleanToSave,
-      subject:   buildSubject(),
+      subject: buildSubject(),
       applyToAll,
     });
   };
@@ -292,11 +292,10 @@ Rules:
           <div>
             <h2 className="text-lg font-bold text-slate-800">
               Edit Email
-              <span className={`ml-2 text-xs font-bold px-2 py-0.5 rounded-full ${
-                editMode === "plain"
-                  ? "bg-slate-100 text-slate-600"
-                  : "bg-red-50 text-dd-red border border-red-100"
-              }`}>
+              <span className={`ml-2 text-xs font-bold px-2 py-0.5 rounded-full ${editMode === "plain"
+                ? "bg-slate-100 text-slate-600"
+                : "bg-red-50 text-dd-red border border-red-100"
+                }`}>
                 {editMode === "plain" ? "👤 Clean Mode" : "✨ Rich Mode"}
               </span>
             </h2>
@@ -329,11 +328,11 @@ Rules:
                   All Merchants
                 </ToggleBtn>
               </div>
-              {applyToAll && (
-                <span className="text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
-                  🔗 Activation links are auto-personalized per merchant
-                </span>
-              )}
+              {/* {applyToAll && (
+                // <span className="text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
+                //   🔗 Activation links are auto-personalized per merchant
+                // </span>
+              )} */}
             </div>
 
             {/* AI panel */}
@@ -479,18 +478,16 @@ Rules:
                 <button
                   onClick={() => switchMode("html")}
                   title="Edit Rich — DoorDash branded design"
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all ${
-                    editMode === "html" ? "bg-dd-red text-white shadow-sm" : "text-slate-500 hover:text-slate-700"
-                  }`}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all ${editMode === "html" ? "bg-dd-red text-white shadow-sm" : "text-slate-500 hover:text-slate-700"
+                    }`}
                 >
                   <Sparkles className="w-3.5 h-3.5" /> Rich
                 </button>
                 <button
                   onClick={() => switchMode("plain")}
                   title="Edit Clean — personal email style"
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all ${
-                    editMode === "plain" ? "bg-slate-700 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"
-                  }`}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all ${editMode === "plain" ? "bg-slate-700 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"
+                    }`}
                 >
                   <UserCircle className="w-3.5 h-3.5" /> Clean
                 </button>
