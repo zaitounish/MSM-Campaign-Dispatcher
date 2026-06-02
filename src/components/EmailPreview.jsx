@@ -210,6 +210,8 @@ export default function EmailPreview({
           merchant={currentMerchant}
           initialRichHtml={currentMerchant.emailOverride || draft.htmlBody}
           initialCleanHtml={currentMerchant.cleanOverride || draft.cleanBody}
+          initialTokenHtml={draft.tokenBody || null}
+          dlMap={draft.dlMap || {}}
           initialSubject={currentMerchant.subjectOverride || draft.subject}
           onSave={handleSave}
           onCancel={() => setIsEditorOpen(false)}

@@ -22,6 +22,7 @@ import {
   wrapForRichEmail,
   htmlToPlainText,
   injectDeepLinks,
+  stripDeepLinkTokens,
 } from "./lib/emailBlockEngine";
 
 // Catches any unhandled render crash and shows a message instead of a blank page
@@ -134,6 +135,15 @@ function AppInner({ userProfile, onSignOut }) {
 
   const emailDrafts = useMemo(() => {
     if (resolvedGlobalBlocks.length === 0 && !globalHtmlTemplate) return [];
+
+    // Build a token-only version of the global template using generic placeholders.
+    // This is passed to the editor so "Apply to All" preserves %%DD_LINK_xxx%% tokens
+    // rather than baking in the first merchant's real URLs.
+    const TEMPLATE_MERCHANT = { merchantName: "{Store Name}", dmName: "{DM Name}" };
+    const sharedTokenBody = resolvedGlobalBlocks.length > 0
+      ? compileBlocksToHtml(resolvedGlobalBlocks, {}, TEMPLATE_MERCHANT, selectedTheme, true)
+      : null;
+
     return targetMerchants.map(m => {
       const rawSubject = buildEmailSubject(m, selectedPromos);
       const subject = rawSubject
@@ -159,6 +169,8 @@ function AppInner({ userProfile, onSignOut }) {
           richBody:      wrapForRichEmail(html),
           cleanBody:     cleanHtml,
           plainTextBody: htmlToPlainText(html),
+          tokenBody:     sharedTokenBody,
+          dlMap,
         };
       }
 
@@ -178,6 +190,8 @@ function AppInner({ userProfile, onSignOut }) {
           richBody:      wrapForRichEmail(html),
           cleanBody:     cleanHtml,
           plainTextBody: htmlToPlainText(html),
+          tokenBody:     sharedTokenBody,
+          dlMap,
         };
       }
 
@@ -195,6 +209,8 @@ function AppInner({ userProfile, onSignOut }) {
               .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there")
           : compileBlocksToCleanHtml(resolvedGlobalBlocks, dlMap, m),
         plainTextBody: compileBlocksToText(resolvedGlobalBlocks, dlMap, m),
+        tokenBody:     sharedTokenBody,
+        dlMap,
       };
     });
   }, [resolvedGlobalBlocks, globalHtmlTemplate, targetMerchants, deepLinks, selectedTheme, selectedPromos]);

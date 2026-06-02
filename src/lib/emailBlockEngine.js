@@ -58,6 +58,34 @@ export const stripDeepLinkTokens = (html) => {
   return html.replace(/%%DD_LINK_[^%]+%%/g, "#");
 };
 
+/**
+ * Reverses injectDeepLinks: replaces real deep-link URLs back to %%DD_LINK_promoId%% tokens.
+ *
+ * This is the fail-safe used at "Apply to All" save time. Even when the editor is
+ * displaying a specific merchant's resolved URLs (business_id=XXXXX etc.), this
+ * converts them back to stable tokens so every other merchant gets their own URLs
+ * when injectDeepLinks() runs in App.jsx's emailDrafts memo.
+ *
+ * Both raw URL form and HTML-entity-encoded form (&amp;) are replaced.
+ *
+ * @param {string} html   - HTML potentially containing real deep-link URLs
+ * @param {object} dlMap  - { [promoId]: urlString } for the CURRENT merchant
+ * @returns {string} HTML with real URLs replaced by %%DD_LINK_promoId%% tokens
+ */
+export const deInjectDeepLinks = (html, dlMap = {}) => {
+  if (!html) return "";
+  let result = html;
+  Object.entries(dlMap).forEach(([promoId, url]) => {
+    if (!url) return;
+    const token = deepLinkToken(promoId);
+    // Replace the HTML-encoded form first (&amp;), then the raw form
+    const encoded = url.replace(/&/g, "&amp;");
+    if (encoded !== url) result = result.split(encoded).join(token);
+    result = result.split(url).join(token);
+  });
+  return result;
+};
+
 // ─── Block type enum ───────────────────────────────────────────────────────────
 export const BLOCK_TYPES = {
   TEXT: "text",
@@ -354,7 +382,7 @@ const _spotlightPromo = (block, url, isFirst) =>
  * @param {string}   themeId     "momentum" | "executive" | "spotlight"
  * @returns {string} compiled HTML with deep links resolved
  */
-export const compileBlocksToHtml = (blocks, deepLinks, merchant, themeId = "momentum") => {
+export const compileBlocksToHtml = (blocks, deepLinks, merchant, themeId = "momentum", skipInject = false) => {
   let promoIndex = 0;
   const tokenHtml = blocks.map(block => {
     switch (block.type) {
@@ -393,8 +421,9 @@ export const compileBlocksToHtml = (blocks, deepLinks, merchant, themeId = "mome
     }
   }).join("\n");
 
-  // Resolve tokens with this merchant's real deep links
-  return injectDeepLinks(tokenHtml, deepLinks);
+  // skipInject = true → return raw token HTML for use as a global template
+  // (%%DD_LINK_xxx%% tokens stay intact so each merchant gets their own URLs later)
+  return skipInject ? tokenHtml : injectDeepLinks(tokenHtml, deepLinks);
 };
 
 /**
