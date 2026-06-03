@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { Check, Settings } from "lucide-react";
+import { Check, BarChart2 } from "lucide-react";
 
 const STEPS = [
   { id: "upload",  label: "Upload BOB",        title: "Upload Book of Business" },
@@ -8,7 +8,7 @@ const STEPS = [
   { id: "deliver", label: "Preview & Send",    title: "Preview & Send Emails"   },
 ];
 
-export default function StepIndicator({ phase, setPhase, hasMerchants, hasPromos, onOpenSettings }) {
+export default function StepIndicator({ phase, setPhase, hasMerchants, hasPromos, onOpenAnalysis }) {
   const currentIndex = STEPS.findIndex(s => s.id === phase);
 
   // Update browser tab title per step
@@ -62,10 +62,10 @@ export default function StepIndicator({ phase, setPhase, hasMerchants, hasPromos
                   className={`absolute top-0 left-0 h-full transition-all duration-500 ${isCompleted ? "bg-green-500 w-full" : "bg-transparent w-0"}`}
                 />
                 {/* Phase 1.5 dot — only on the first connector (between Upload and Select) */}
-                {index === 0 && onOpenSettings && (
+                {index === 0 && onOpenAnalysis && (
                   <button
-                    onClick={onOpenSettings}
-                    title="Rep Configuration"
+                    onClick={onOpenAnalysis}
+                    title="BOB Analysis"
                     className="relative z-10 group/dot flex flex-col items-center"
                   >
                     <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-200 shadow-sm
@@ -74,10 +74,10 @@ export default function StepIndicator({ phase, setPhase, hasMerchants, hasPromos
                         : "bg-white border-slate-300 hover:border-dd-red hover:bg-red-50"
                       }`}
                     >
-                      <Settings className={`w-2.5 h-2.5 transition-colors ${isCompleted ? "text-white" : "text-slate-400 group-hover/dot:text-dd-red"}`} />
+                      <BarChart2 className={`w-2.5 h-2.5 transition-colors ${isCompleted ? "text-white" : "text-slate-400 group-hover/dot:text-dd-red"}`} />
                     </div>
                     <span className="absolute top-6 text-[9px] font-bold text-slate-400 whitespace-nowrap opacity-0 group-hover/dot:opacity-100 transition-opacity">
-                      Rep Setup
+                      BOB Analysis
                     </span>
                   </button>
                 )}

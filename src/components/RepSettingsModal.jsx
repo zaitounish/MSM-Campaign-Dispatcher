@@ -1,18 +1,30 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Database, Settings, Save, AlertCircle, Sparkles, FileText } from "lucide-react";
 
 export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepSettings }) {
   const [formData, setFormData] = useState({
-    signature:    repSettings.signature    || "",
-    repId:        repSettings.repId        || "",
-    gasUrl:       repSettings.gasUrl       || "",
+    repId: repSettings.repId || "",
+    gasUrl: repSettings.gasUrl || "",
     geminiApiKey: repSettings.geminiApiKey || "",
-    // Keep legacy fields so old data isn't lost if reps update mid-session
-    firstName:    repSettings.firstName    || "",
-    lastName:     repSettings.lastName     || "",
-    title:        repSettings.title        || "Merchant Success Manager",
-    phone:        repSettings.phone        || "",
+    // Legacy structured fields — kept so existing data isn't lost
+    firstName: repSettings.firstName || "",
+    lastName: repSettings.lastName || "",
+    title: repSettings.title || "Merchant Success Manager",
+    phone: repSettings.phone || "",
   });
+
+  // Signature is rich HTML (images + formatting) — managed via ref to avoid
+  // React-controlled cursor-jump issues with contentEditable
+  const signatureRef = useRef(null);
+  const [sigEmpty, setSigEmpty] = useState(!repSettings.signature);
+
+  // Seed the contentEditable div once on mount
+  useEffect(() => {
+    if (signatureRef.current && repSettings.signature) {
+      signatureRef.current.innerHTML = repSettings.signature;
+      setSigEmpty(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isOpen) return null;
 
@@ -21,7 +33,10 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
   };
 
   const handleSave = () => {
-    setRepSettings(formData);
+    // Read rich HTML from the contentEditable ref for signature
+    const rawSig = signatureRef.current?.innerHTML || "";
+    const sig = (rawSig === "<br>" || rawSig.trim() === "") ? "" : rawSig;
+    setRepSettings({ ...formData, signature: sig });
     onClose();
   };
 
@@ -44,22 +59,33 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
         {/* ── Scrollable body ── */}
         <div className="flex-1 overflow-y-auto p-8 space-y-6">
 
-          {/* Email Signature — raw paste from Gmail */}
+          {/* Email Signature — rich paste from Gmail (images supported) */}
           <div className="space-y-3">
             <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
               <FileText className="w-4 h-4" /> Email Signature
             </h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Copy your signature from Gmail and paste it below. It will appear at the bottom of every email exactly as written.
-            </p>
-            <textarea
-              name="signature"
-              value={formData.signature}
-              onChange={handleChange}
-              rows={6}
-              placeholder={"Best regards,\nYour Name\nMerchant Success Manager · DoorDash\n(555) 123-4567"}
-              className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-sm text-slate-800 outline-none focus:border-dd-red focus:ring-1 focus:ring-dd-red transition-all resize-none leading-relaxed font-sans placeholder:text-slate-400"
-            />
+
+            {/* contentEditable so images paste in natively */}
+            <div className="relative">
+              <div
+                ref={signatureRef}
+                contentEditable
+                suppressContentEditableWarning
+                onInput={() => setSigEmpty(!signatureRef.current?.textContent?.trim())}
+                style={{ minHeight: 128 }}
+                className={`w-full bg-white border rounded-xl px-4 py-3 outline-none
+                  text-sm text-slate-800 leading-relaxed transition-all
+                  focus:border-dd-red focus:ring-1 focus:ring-dd-red
+                  [&_img]:max-h-16 [&_img]:max-w-[180px] [&_img]:object-contain [&_img]:inline-block
+                  ${sigEmpty ? "border-slate-300" : "border-slate-400"}
+                `}
+              />
+              {sigEmpty && (
+                <p className="absolute top-3 left-4 text-sm text-slate-400 pointer-events-none select-none">
+                  Paste your Outreach signature here (Ctrl+V)…
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="h-px w-full bg-slate-100" />

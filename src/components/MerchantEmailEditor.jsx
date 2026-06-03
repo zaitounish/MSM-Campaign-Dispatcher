@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
-  X, Save, Users, User, Mail, Bold, Italic, Underline,
-  List, Link, Check, Sparkles, Loader2, Wand2, RefreshCw,
+  X, Save, Users, User, Mail, Bold, Italic, Underline, Strikethrough,
+  AlignLeft, AlignCenter, AlignRight, Quote, Indent, Outdent, Palette, Highlighter,
+  List, ListOrdered, Link, Check, Sparkles, Loader2, Wand2, RefreshCw,
   ChevronDown, Minus, UserCircle,
 } from "lucide-react";
 import { wrapForRichEmail, deInjectDeepLinks, deInterpolateMerchant } from "../lib/emailBlockEngine";
@@ -59,6 +60,8 @@ export default function MerchantEmailEditor({
   const [applyToAll, setApplyToAll] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("https://");
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const [colorType, setColorType] = useState("foreColor"); // "foreColor" | "hiliteColor"
 
   // AI
   const [aiOpen, setAiOpen] = useState(false);
@@ -161,6 +164,20 @@ export default function MerchantEmailEditor({
     document.execCommand("createLink", false, url);
     savedRange.current = null;
     setLinkOpen(false);
+  };
+
+  // ── Color Picker ───────────────────────────────────────────────────────────────
+  const applyColor = (color) => {
+    editorRef.current?.focus();
+    // "hiliteColor" is for background color. IE/Opera use backColor, everyone else hiliteColor
+    document.execCommand(colorType, false, color);
+    setColorPickerOpen(false);
+  };
+
+  const openColorPicker = (type) => {
+    // Compare against the incoming type (not the stale state) to correctly toggle
+    setColorType(type);
+    setColorPickerOpen(prev => (colorType === type ? !prev : true));
   };
 
   // ── Subject builder ────────────────────────────────────────────────────────────
@@ -401,21 +418,59 @@ Rules:
 
             {/* Toolbar */}
             <div className="px-4 py-2 border-b border-slate-200 bg-slate-50 flex items-center gap-0.5 flex-wrap shrink-0">
-              <TBtn onCmd={() => exec("bold")} title="Bold (Ctrl+B)"><Bold className="w-3.5 h-3.5" /></TBtn>
-              <TBtn onCmd={() => exec("italic")} title="Italic (Ctrl+I)"><Italic className="w-3.5 h-3.5" /></TBtn>
-              <TBtn onCmd={() => exec("underline")} title="Underline (Ctrl+U)"><Underline className="w-3.5 h-3.5" /></TBtn>
+              <div className="flex items-center">
+                <TBtn onCmd={() => exec("bold")} title="Bold (Ctrl+B)"><Bold className="w-3.5 h-3.5" /></TBtn>
+                <TBtn onCmd={() => exec("italic")} title="Italic (Ctrl+I)"><Italic className="w-3.5 h-3.5" /></TBtn>
+                <TBtn onCmd={() => exec("underline")} title="Underline (Ctrl+U)"><Underline className="w-3.5 h-3.5" /></TBtn>
+                <TBtn onCmd={() => exec("strikeThrough")} title="Strikethrough"><Strikethrough className="w-3.5 h-3.5" /></TBtn>
+              </div>
               <div className="w-px h-4 bg-slate-300 mx-1" />
-              <TBtn onCmd={() => exec("insertUnorderedList")} title="Bullet list"><List className="w-3.5 h-3.5" /></TBtn>
-              <TBtn onCmd={() => exec("insertOrderedList")} title="Numbered list" className="font-mono text-xs font-bold px-1.5">1.</TBtn>
-              <TBtn onCmd={() => exec("removeFormat")} title="Clear formatting"><X className="w-3.5 h-3.5" /></TBtn>
+              
+              <div className="flex items-center relative">
+                <TBtn onCmd={() => openColorPicker("foreColor")} title="Text Color" active={colorPickerOpen && colorType === "foreColor"}><Palette className="w-3.5 h-3.5" /></TBtn>
+                <TBtn onCmd={() => openColorPicker("hiliteColor")} title="Highlight Color" active={colorPickerOpen && colorType === "hiliteColor"}><Highlighter className="w-3.5 h-3.5" /></TBtn>
+                
+                {colorPickerOpen && (
+                  <div className="absolute top-full left-0 mt-1 p-2 bg-white border border-slate-200 rounded-lg shadow-xl z-10 grid grid-cols-5 gap-1 w-40">
+                    {["#000000", "#475569", "#eb1700", "#ea580c", "#ca8a04", "#16a34a", "#2563eb", "#9333ea", "#ec4899", "#ffffff", "#f8fafc", "#fef2f2", "#fff7ed", "#fefce8", "#f0fdf4", "#eff6ff", "#faf5ff", "#fdf2f8", "transparent"].map(c => (
+                      <button key={c} onMouseDown={e => { e.preventDefault(); applyColor(c); }}
+                        className={`w-6 h-6 rounded-full border border-slate-200 hover:scale-110 transition-transform ${c === "transparent" ? "bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAIklEQVQIW2NkQAKrVq36zwjjgzhhYWGMYAEYB8RmROaABADeOQ8CXl/xfgAAAABJRU5ErkJggg==')]" : ""}`}
+                        style={{ backgroundColor: c !== "transparent" ? c : undefined }}
+                        title={c}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="w-px h-4 bg-slate-300 mx-1" />
-              <TBtn onCmd={openLinkBar} title="Insert link" active={linkOpen}><Link className="w-3.5 h-3.5" /></TBtn>
-              <TBtn onCmd={() => exec("insertHorizontalRule")} title="Insert divider line"><Minus className="w-3.5 h-3.5" /></TBtn>
+
+              <div className="flex items-center">
+                <TBtn onCmd={() => exec("justifyLeft")} title="Align Left"><AlignLeft className="w-3.5 h-3.5" /></TBtn>
+                <TBtn onCmd={() => exec("justifyCenter")} title="Align Center"><AlignCenter className="w-3.5 h-3.5" /></TBtn>
+                <TBtn onCmd={() => exec("justifyRight")} title="Align Right"><AlignRight className="w-3.5 h-3.5" /></TBtn>
+              </div>
+              <div className="w-px h-4 bg-slate-300 mx-1" />
+
+              <div className="flex items-center">
+                <TBtn onCmd={() => exec("insertUnorderedList")} title="Bullet list"><List className="w-3.5 h-3.5" /></TBtn>
+                <TBtn onCmd={() => exec("insertOrderedList")} title="Numbered list"><ListOrdered className="w-3.5 h-3.5" /></TBtn>
+                <TBtn onCmd={() => exec("outdent")} title="Decrease Indent"><Outdent className="w-3.5 h-3.5" /></TBtn>
+                <TBtn onCmd={() => exec("indent")} title="Increase Indent"><Indent className="w-3.5 h-3.5" /></TBtn>
+              </div>
+              <div className="w-px h-4 bg-slate-300 mx-1" />
+
+              <div className="flex items-center">
+                <TBtn onCmd={() => exec("formatBlock", "BLOCKQUOTE")} title="Quote"><Quote className="w-3.5 h-3.5" /></TBtn>
+                <TBtn onCmd={openLinkBar} title="Insert link" active={linkOpen}><Link className="w-3.5 h-3.5" /></TBtn>
+                <TBtn onCmd={() => exec("insertHorizontalRule")} title="Insert divider line"><Minus className="w-3.5 h-3.5" /></TBtn>
+                <TBtn onCmd={() => exec("removeFormat")} title="Clear formatting"><X className="w-3.5 h-3.5" /></TBtn>
+              </div>
+
               <div className="flex-1" />
-              <span className="text-[10px] text-slate-400 mr-1 hidden sm:block">Insert:</span>
+              <span className="text-[10px] text-slate-400 mr-1 hidden lg:block">Insert:</span>
               {["{Store Name}", "{DM Name}"].map(v => (
                 <button key={v} onMouseDown={e => { e.preventDefault(); insertVar(v); }}
-                  className="text-[10px] font-bold bg-white border border-slate-300 text-slate-600 hover:border-violet-400 hover:text-violet-600 px-2 py-1.5 rounded-lg transition-colors shadow-sm">
+                  className="text-[10px] font-bold bg-white border border-slate-300 text-slate-600 hover:border-violet-400 hover:text-violet-600 px-2 py-1.5 rounded-lg transition-colors shadow-sm hidden sm:block">
                   {v}
                 </button>
               ))}
@@ -439,26 +494,29 @@ Rules:
               </div>
             )}
 
-            {/* contentEditable */}
-            <div className="flex-1 overflow-y-auto bg-white">
-              <div
-                ref={editorRef}
-                contentEditable
-                suppressContentEditableWarning
-                onKeyDown={handleKeyDown}
-                onInput={handleInput}
-                className={`
-                  min-h-full px-8 py-6 outline-none text-sm text-slate-800 leading-relaxed
-                  [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2
-                  [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2
-                  [&_li]:my-0.5
-                  [&_a]:text-blue-600 [&_a]:underline
-                  [&_strong]:font-bold [&_em]:italic
-                  [&_h3]:text-base [&_h3]:font-bold [&_h3]:mt-4 [&_h3]:mb-2
-                  [&_hr]:border-0 [&_hr]:border-t [&_hr]:border-slate-300 [&_hr]:my-4
-                `}
-                style={{ fontFamily: "sans-serif", whiteSpace: "normal" }}
-              />
+            <div className="flex-1 overflow-y-auto bg-slate-100/50 p-4 md:p-8 cursor-text" onClick={() => editorRef.current?.focus()}>
+              <div className="max-w-[700px] mx-auto bg-white min-h-[400px] shadow-sm border border-slate-200 rounded-xl p-8 lg:p-12 transition-shadow focus-within:shadow-md focus-within:border-violet-300">
+                <div
+                  ref={editorRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onKeyDown={handleKeyDown}
+                  onInput={handleInput}
+                  className={`
+                    w-full h-full outline-none text-[15px] text-slate-800 leading-relaxed
+                    [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-3 [&_ul]:space-y-1.5
+                    [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:my-3 [&_ol]:space-y-1.5
+                    [&_li]:marker:text-slate-400
+                    [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800
+                    [&_b]:font-bold [&_strong]:font-bold
+                    [&_i]:italic [&_em]:italic
+                    [&_strike]:line-through
+                    [&_blockquote]:border-l-4 [&_blockquote]:border-slate-300 [&_blockquote]:pl-4 [&_blockquote]:py-1 [&_blockquote]:my-4 [&_blockquote]:italic [&_blockquote]:text-slate-600 [&_blockquote]:bg-slate-50
+                    [&_hr]:my-6 [&_hr]:border-slate-200
+                  `}
+                  style={{ fontFamily: "sans-serif", whiteSpace: "normal" }}
+                />
+              </div>
             </div>
           </div>
 

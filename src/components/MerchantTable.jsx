@@ -459,46 +459,7 @@ export default function MerchantTable({
             </div>
           )}
 
-          {/* Touch count range slider */}
-          {dynConfig.touchCol && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-xs font-bold text-slate-600">{dynConfig.touchCol.rawHeader} | Range</div>
-                <div className="text-xs text-slate-500">
-                  {resolvedTouchRange[0]}–{resolvedTouchRange[1]} touches
-                  {touchRange !== null && (
-                    <button
-                      onClick={() => setTouchRange(null)}
-                      className="ml-2 text-red-400 hover:text-red-600 font-semibold"
-                    >
-                      Reset
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-slate-400 w-6 text-right">0</span>
-                <div className="flex-1 flex flex-col gap-1.5">
-                  <input
-                    type="range" min={0} max={touchMax}
-                    value={resolvedTouchRange[0]}
-                    onChange={e => setTouchRange([parseInt(e.target.value), Math.max(parseInt(e.target.value), resolvedTouchRange[1])])}
-                    className="w-full accent-violet-600 h-1.5"
-                  />
-                  <input
-                    type="range" min={0} max={touchMax}
-                    value={resolvedTouchRange[1]}
-                    onChange={e => setTouchRange([Math.min(resolvedTouchRange[0], parseInt(e.target.value)), parseInt(e.target.value)])}
-                    className="w-full accent-violet-600 h-1.5"
-                  />
-                </div>
-                <span className="text-xs text-slate-400 w-6">{touchMax}</span>
-              </div>
-              <div className="text-xs text-slate-400 mt-1.5">
-                Avg: <strong>{dynConfig.touchCol.avg}</strong> · Untouched: <strong className="text-dd-red">{dynConfig.touchCol.untouched}</strong>
-              </div>
-            </div>
-          )}
+
         </div>
       )}
 
@@ -582,6 +543,11 @@ export default function MerchantTable({
                           {row.locationCount > 1 && (
                             <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
                               {row.locationCount} Locs
+                            </span>
+                          )}
+                          {row.bobFileCount > 1 && (
+                            <span className="text-[10px] bg-orange-100 text-orange-700 font-bold px-1.5 py-0.5 rounded-full" title={`Appeared in ${row.bobFileCount} uploaded BOB files`}>
+                              {row.bobFileCount} BOBs
                             </span>
                           )}
                         </div>

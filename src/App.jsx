@@ -249,7 +249,7 @@ function AppInner({ userProfile, onSignOut }) {
           setPhase={setPhase}
           hasMerchants={merchants.length > 0}
           hasPromos={selectedPromos.length > 0}
-          onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenAnalysis={() => setPhase("analyze")}
         />
 
         {phase === "upload" && (

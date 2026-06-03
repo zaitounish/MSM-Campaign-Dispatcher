@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { UploadCloud, Loader2, FileSpreadsheet, AlertTriangle, RefreshCw } from "lucide-react";
+import { UploadCloud, Loader2, FileSpreadsheet, AlertTriangle, RefreshCw, Plus, X, Files } from "lucide-react";
 import * as XLSX from "xlsx";
 import { processSheetData } from "../lib/bobParser";
 import { analyzeBOB } from "../lib/bobAnalyzer";
@@ -7,106 +7,167 @@ import { analyzeBOB } from "../lib/bobAnalyzer";
 export default function UploadZone({ onDataLoaded }) {
   const [isDragging,       setIsDragging]       = useState(false);
   const [isProcessing,     setIsProcessing]     = useState(false);
-  const [pendingWorkbook,  setPendingWorkbook]  = useState(null);
-  const [availableSheets,  setAvailableSheets]  = useState([]);
   const [uploadError,      setUploadError]      = useState("");
+
+  // Multi-file pending queue: each entry = { fileName, wb, sheets[] }
+  const [pendingFiles, setPendingFiles] = useState([]); // files waiting for sheet selection
+  const [stagedFiles,  setStagedFiles]  = useState([]); // files fully resolved, waiting to merge
+
   const fileInputRef = useRef(null);
 
-  const processSheet = (wb, sheetName) => {
-    setIsProcessing(true);
-    setUploadError("");
-    setTimeout(() => {
-      try {
-        const ws = wb.Sheets[sheetName];
-        const json = XLSX.utils.sheet_to_json(ws, {
-          header: 1,
-          defval: null,
-          raw: false,
-        });
-
-        // Run the analytics engine on the raw worksheet + json
-        // Must happen before processSheetData (which deduplicates rows)
-        const analyticsPayload = analyzeBOB(ws, json);
-
-        const processed = processSheetData(json);
-        if (!processed || processed.length === 0) {
-          setUploadError("No valid merchant rows found in this sheet. Check that your file has Store ID and Merchant Name columns.");
-          setIsProcessing(false);
-          return;
+  // ── Read a raw File object into an XLSX workbook ──────────────────────────
+  const readWorkbook = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const wb = XLSX.read(new Uint8Array(e.target.result), { type: "array", cellStyles: true });
+          resolve(wb);
+        } catch (err) {
+          reject(err);
         }
-        // Pass both the merchant list AND the analytics payload up to App
-        onDataLoaded(processed, analyticsPayload);
-      } catch (err) {
-        console.error("Error processing sheet:", err);
-        setUploadError(`Could not parse this sheet: ${err.message || "Unknown error"}. Try a different sheet or re-export the file.`);
-      } finally {
-        setIsProcessing(false);
-        setPendingWorkbook(null);
-        setAvailableSheets([]);
-        if (fileInputRef.current) fileInputRef.current.value = "";
-      }
-    }, 50);
-  };
+      };
+      reader.onerror = () => reject(new Error("File could not be read"));
+      reader.readAsArrayBuffer(file);
+    });
 
+  // ── Handle file(s) dropped / selected ────────────────────────────────────
   const handleFileUpload = async (files) => {
     if (!files || files.length === 0) return;
     setUploadError("");
     setIsProcessing(true);
-    const file = files[0]; // One BOB file at a time
 
-    try {
-      const data = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(new Uint8Array(e.target.result));
-        reader.onerror = () => reject(new Error("File could not be read"));
-        reader.readAsArrayBuffer(file);
-      });
+    const newPending = [];
+    const newStaged  = [];
 
-      // Briefly yield to the UI thread so the loading overlay appears
-      await new Promise(r => setTimeout(r, 50));
-
-      // cellStyles: true is required for cell fill color extraction in bobAnalyzer
-      const wb = XLSX.read(data, { type: "array", cellStyles: true });
-      
-      if (wb.SheetNames.length === 1) {
-        processSheet(wb, wb.SheetNames[0]);
-      } else {
-        setPendingWorkbook(wb);
-        setAvailableSheets(wb.SheetNames);
-        setIsProcessing(false);
+    for (const file of Array.from(files)) {
+      try {
+        const wb = await readWorkbook(file);
+        if (wb.SheetNames.length === 1) {
+          // Auto-resolve single-sheet workbooks immediately
+          newStaged.push({ fileName: file.name, wb, sheetName: wb.SheetNames[0] });
+        } else {
+          // Multi-sheet: ask user which sheet to use
+          newPending.push({ fileName: file.name, wb, sheets: wb.SheetNames });
+        }
+      } catch (err) {
+        setUploadError(`Could not read "${file.name}": ${err.message || "Unknown error"}.`);
       }
-      
-    } catch (err) {
-      console.error("Error reading file:", err);
-      setUploadError(`Could not read this file: ${err.message || "Unknown error"}. Make sure it's a valid Excel or CSV file.`);
-      setIsProcessing(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+
+    setIsProcessing(false);
+
+    if (newPending.length > 0) {
+      setPendingFiles(prev => [...prev, ...newPending]);
+    }
+
+    if (newStaged.length > 0) {
+      setStagedFiles(prev => [...prev, ...newStaged]);
+    }
+
+    // If nothing needs sheet selection, merge immediately
+    if (newPending.length === 0 && newStaged.length > 0) {
+      mergeAndFinish([...stagedFiles, ...newStaged]);
     }
   };
 
-  const onDragOver = (e) => {
-    e.preventDefault();
-    setIsDragging(true);
+  // ── User picks a sheet for a pending file ─────────────────────────────────
+  const resolveSheet = (fileName, wb, sheetName) => {
+    const resolved = { fileName, wb, sheetName };
+    const remaining = pendingFiles.filter(p => p.fileName !== fileName);
+    setPendingFiles(remaining);
+    const updatedStaged = [...stagedFiles, resolved];
+    setStagedFiles(updatedStaged);
+
+    // If all pending files are resolved, merge
+    if (remaining.length === 0) {
+      mergeAndFinish(updatedStaged);
+    }
   };
-  const onDragLeave = (e) => {
-    e.preventDefault();
-    setIsDragging(false);
+
+  // ── Merge all staged files into one merchant list ─────────────────────────
+  const mergeAndFinish = (allStaged) => {
+    setIsProcessing(true);
+    setUploadError("");
+
+    setTimeout(() => {
+      try {
+        // Map: storeId → merchant object (first-seen wins for data)
+        // We also count how many files each merchant appeared in
+        const merchantMap = new Map(); // storeId → { merchant, filesSeen: Set }
+        let combinedAnalyticsWs  = null;
+        let combinedAnalyticsJson = null;
+
+        for (const { wb, sheetName } of allStaged) {
+          const ws   = wb.Sheets[sheetName];
+          const json = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false });
+
+          // Analytics from first file only (used for BOB dashboard)
+          if (!combinedAnalyticsWs) {
+            combinedAnalyticsWs   = ws;
+            combinedAnalyticsJson = json;
+          }
+
+          const parsed = processSheetData(json);
+          if (!parsed || parsed.length === 0) continue;
+
+          for (const merchant of parsed) {
+            const key = String(merchant.id || merchant.merchantId || merchant.storeId || merchant.merchantName);
+            if (merchantMap.has(key)) {
+              merchantMap.get(key).filesSeen.add(sheetName + wb.SheetNames[0]);
+            } else {
+              merchantMap.set(key, { merchant, filesSeen: new Set([sheetName + wb.SheetNames[0]]) });
+            }
+          }
+        }
+
+        if (merchantMap.size === 0) {
+          setUploadError("No valid merchant rows found in any of the uploaded files.");
+          setIsProcessing(false);
+          return;
+        }
+
+        // Attach bobFileCount to each merchant
+        const merged = Array.from(merchantMap.values()).map(({ merchant, filesSeen }) => ({
+          ...merchant,
+          bobFileCount: filesSeen.size,
+        }));
+
+        // Run analytics on the first file's data
+        const analyticsPayload = combinedAnalyticsWs
+          ? analyzeBOB(combinedAnalyticsWs, combinedAnalyticsJson)
+          : null;
+
+        onDataLoaded(merged, analyticsPayload);
+
+        // Reset all state
+        setPendingFiles([]);
+        setStagedFiles([]);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      } catch (err) {
+        console.error("Error merging BOB files:", err);
+        setUploadError(`Could not merge files: ${err.message || "Unknown error"}.`);
+      } finally {
+        setIsProcessing(false);
+      }
+    }, 50);
   };
-  const onDrop = (e) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (e.dataTransfer.files) handleFileUpload(e.dataTransfer.files);
-  };
+
+  const onDragOver  = (e) => { e.preventDefault(); setIsDragging(true); };
+  const onDragLeave = (e) => { e.preventDefault(); setIsDragging(false); };
+  const onDrop      = (e) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files) handleFileUpload(e.dataTransfer.files); };
+
+  const totalFilesLoading = pendingFiles.length + stagedFiles.length;
 
   return (
     <div className="flex flex-col items-center justify-center py-16 animate-in fade-in duration-500">
-      
+
       {isProcessing && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center">
           <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md text-center animate-in zoom-in-95">
             <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center justify-center gap-2">
-              <Loader2 className="w-5 h-5 text-dd-red animate-spin" /> 
-              Processing Book of Business...
+              <Loader2 className="w-5 h-5 text-dd-red animate-spin" />
+              {stagedFiles.length > 1 ? "Merging Books of Business..." : "Processing Book of Business..."}
             </h3>
             <p className="text-sm text-slate-500">
               Reading data, running deduplication, mapping emails...
@@ -115,47 +176,60 @@ export default function UploadZone({ onDataLoaded }) {
         </div>
       )}
 
-      {availableSheets.length > 0 && !isProcessing && (
-        <div className="w-full max-w-3xl bg-white border border-slate-200 rounded-3xl shadow-sm p-8 animate-in zoom-in-95 duration-300">
-           <div className="flex items-center gap-3 mb-2">
-             <div className="bg-slate-100 p-2.5 rounded-xl">
-               <FileSpreadsheet className="w-6 h-6 text-slate-600" />
-             </div>
-             <div>
-               <h3 className="text-xl font-bold text-slate-800">Multiple Sheets Detected</h3>
-               <p className="text-slate-500">Please select your specific rep sheet from the workbook below:</p>
-             </div>
-           </div>
-           
-           <div className="mt-8 grid grid-cols-2 md:grid-cols-3 gap-3 max-h-72 overflow-y-auto pr-2 pb-2">
-             {availableSheets.map(sheet => (
-                <button
-                  key={sheet}
-                  onClick={() => processSheet(pendingWorkbook, sheet)}
-                  className="bg-slate-50 border border-slate-200 hover:border-dd-red hover:bg-red-50 text-slate-700 font-medium py-3.5 px-4 rounded-xl text-sm transition-all focus:ring-2 focus:ring-dd-red focus:outline-none text-left break-all shadow-sm"
-                >
-                  {sheet}
-                </button>
-             ))}
-           </div>
-           
-           <div className="mt-8 pt-4 border-t border-slate-100 flex justify-end">
-             <button
-               onClick={() => {
-                 setAvailableSheets([]);
-                 setPendingWorkbook(null);
-               }}
-               className="text-slate-500 font-bold hover:text-slate-800 px-4 py-2 rounded-lg hover:bg-slate-100 transition-colors"
-             >
-               Cancel & Upload Different File
-             </button>
-           </div>
+      {/* Staged files list (ready to merge once all pending are resolved) */}
+      {stagedFiles.length > 0 && pendingFiles.length > 0 && (
+        <div className="w-full max-w-3xl mb-4 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Files Ready</div>
+          <div className="space-y-1.5">
+            {stagedFiles.map(f => (
+              <div key={f.fileName} className="flex items-center gap-2 text-sm text-slate-700">
+                <FileSpreadsheet className="w-4 h-4 text-green-500 shrink-0" />
+                <span className="flex-1 truncate">{f.fileName}</span>
+                <span className="text-xs text-green-600 font-bold">✓ {f.sheetName}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
+
+      {/* Sheet-selection cards for multi-sheet workbooks */}
+      {pendingFiles.map((pending) => (
+        <div key={pending.fileName} className="w-full max-w-3xl bg-white border border-slate-200 rounded-3xl shadow-sm p-8 mb-4 animate-in zoom-in-95 duration-300">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="bg-slate-100 p-2.5 rounded-xl">
+              <FileSpreadsheet className="w-6 h-6 text-slate-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-xl font-bold text-slate-800">Multiple Sheets Detected</h3>
+              <p className="text-slate-500 truncate text-sm">{pending.fileName}</p>
+            </div>
+            <button
+              onClick={() => setPendingFiles(prev => prev.filter(p => p.fileName !== pending.fileName))}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <p className="text-sm text-slate-500 mb-4">Select the sheet that contains your rep's data:</p>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-60 overflow-y-auto pr-2 pb-2">
+            {pending.sheets.map(sheet => (
+              <button
+                key={sheet}
+                onClick={() => resolveSheet(pending.fileName, pending.wb, sheet)}
+                className="bg-slate-50 border border-slate-200 hover:border-dd-red hover:bg-red-50 text-slate-700 font-medium py-3.5 px-4 rounded-xl text-sm transition-all focus:ring-2 focus:ring-dd-red focus:outline-none text-left break-all shadow-sm"
+              >
+                {sheet}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
 
       <input
         type="file"
         accept=".xlsx,.xls,.xlsm,.xlsb,.csv,.tsv,.ods,.xltx,.xltm"
+        multiple
         className="hidden"
         ref={fileInputRef}
         onChange={(e) => handleFileUpload(e.target.files)}
@@ -178,32 +252,72 @@ export default function UploadZone({ onDataLoaded }) {
         </div>
       )}
 
-      {availableSheets.length === 0 && !isProcessing && (
+      {/* Drop zone — always visible when no pending sheet selections */}
+      {pendingFiles.length === 0 && !isProcessing && (
         <div
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           onDrop={onDrop}
           className={`w-full max-w-3xl border-2 border-dashed rounded-3xl p-16 text-center transition-all duration-200 bg-white shadow-sm ${
-            isDragging 
-              ? "border-dd-red bg-red-50/50 scale-[1.02]" 
+            isDragging
+              ? "border-dd-red bg-red-50/50 scale-[1.02]"
               : "border-slate-300 hover:border-dd-red hover:shadow-md"
           }`}
         >
           <div className="mx-auto w-20 h-20 mb-6 rounded-full bg-red-50 flex items-center justify-center">
-            <UploadCloud className="w-10 h-10 text-dd-red" />
+            {stagedFiles.length > 0
+              ? <Files className="w-10 h-10 text-dd-red" />
+              : <UploadCloud className="w-10 h-10 text-dd-red" />
+            }
           </div>
-          <h3 className="text-2xl font-bold text-slate-800 mb-3">
-            Drag and drop your Book of Business (BOB)
-          </h3>
-          <p className="text-slate-500 mb-8 max-w-md mx-auto leading-relaxed">
-            Upload <strong className="text-slate-700">Excel (.xlsx)</strong> files. We will automatically extract Merchant Names, Store IDs, and Target Emails.
-          </p>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="px-8 py-3.5 bg-dd-red text-white font-semibold rounded-xl shadow-sm hover:bg-dd-red-dark transition-colors"
-          >
-            Browse Files
-          </button>
+
+          {stagedFiles.length > 0 ? (
+            <>
+              <h3 className="text-2xl font-bold text-slate-800 mb-2">
+                {stagedFiles.length} file{stagedFiles.length > 1 ? "s" : ""} ready
+              </h3>
+              <p className="text-slate-500 mb-2 text-sm">
+                {stagedFiles.map(f => f.fileName).join(", ")}
+              </p>
+              <p className="text-slate-400 mb-8 text-sm">
+                Drop more files to add them, or continue with what you have.
+              </p>
+              <div className="flex items-center justify-center gap-3">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-2 px-6 py-3 border-2 border-slate-300 text-slate-700 font-semibold rounded-xl hover:border-dd-red hover:text-dd-red transition-colors"
+                >
+                  <Plus className="w-4 h-4" /> Add More Files
+                </button>
+                <button
+                  onClick={() => mergeAndFinish(stagedFiles)}
+                  className="flex items-center gap-2 px-8 py-3.5 bg-dd-red text-white font-semibold rounded-xl shadow-sm hover:bg-dd-red-dark transition-colors"
+                >
+                  Merge & Continue →
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <h3 className="text-2xl font-bold text-slate-800 mb-3">
+                Drag and drop your Book{" "}
+                <span className="text-dd-red">of Business</span>
+              </h3>
+              <p className="text-slate-500 mb-2 max-w-md mx-auto leading-relaxed">
+                Upload <strong className="text-slate-700">one or multiple Excel (.xlsx)</strong> files.
+                Merchants are automatically merged and deduplicated across files.
+              </p>
+              <p className="text-xs text-slate-400 mb-8">
+                Each merchant will show how many BOBs they appeared in.
+              </p>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="px-8 py-3.5 bg-dd-red text-white font-semibold rounded-xl shadow-sm hover:bg-dd-red-dark transition-colors"
+              >
+                Browse Files
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
