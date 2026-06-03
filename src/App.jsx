@@ -145,7 +145,9 @@ function AppInner({ userProfile, onSignOut }) {
       : null;
 
     return targetMerchants.map(m => {
-      const rawSubject = buildEmailSubject(m, selectedPromos);
+      // Use saved subject override (may contain {Store Name}/{DM Name} tokens from
+      // "Apply to All" save — these get re-resolved below per merchant)
+      const rawSubject = m.subjectOverride || buildEmailSubject(m, selectedPromos);
       const subject = rawSubject
         .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
         .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there");
@@ -247,6 +249,7 @@ function AppInner({ userProfile, onSignOut }) {
           setPhase={setPhase}
           hasMerchants={merchants.length > 0}
           hasPromos={selectedPromos.length > 0}
+          onOpenSettings={() => setIsSettingsOpen(true)}
         />
 
         {phase === "upload" && (

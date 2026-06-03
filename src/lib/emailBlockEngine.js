@@ -86,6 +86,44 @@ export const deInjectDeepLinks = (html, dlMap = {}) => {
   return result;
 };
 
+/**
+ * Reverses merchant-specific name interpolation back to {Store Name} / {DM Name} tokens.
+ *
+ * Parallel to deInjectDeepLinks but for variable placeholders. Used at "Apply to All"
+ * save time so the globalHtmlTemplate contains universal tokens instead of Merchant 1's
+ * real store/DM name. App.jsx's emailDrafts re-interpolates each merchant's own names.
+ *
+ * Longer strings are replaced first to avoid substring collisions
+ * (e.g. "Ali's Pizza" before "Ali").
+ *
+ * @param {string} html       - HTML potentially containing resolved merchant names
+ * @param {object} merchant   - { merchantName, dmName } for the CURRENT merchant
+ * @returns {string} HTML with real names replaced by {Store Name} / {DM Name} tokens
+ */
+export const deInterpolateMerchant = (html, merchant = {}) => {
+  if (!html) return "";
+  const { merchantName, dmName } = merchant;
+
+  // Build the list of substitutions — skip generic fallback values
+  const subs = [];
+  if (merchantName && merchantName !== "Merchant Partner") {
+    subs.push({ from: merchantName, to: "{Store Name}" });
+  }
+  // Only de-interpolate DM name if it's a meaningful distinct value
+  if (dmName && dmName !== merchantName && dmName !== "there" && dmName !== "Merchant Partner") {
+    subs.push({ from: dmName, to: "{DM Name}" });
+  }
+
+  // Replace longer strings first to avoid partial-match bugs (e.g. "Ali" inside "Ali's Pizza")
+  subs.sort((a, b) => b.from.length - a.from.length);
+
+  let result = html;
+  for (const { from, to } of subs) {
+    result = result.split(from).join(to);
+  }
+  return result;
+};
+
 // ─── Block type enum ───────────────────────────────────────────────────────────
 export const BLOCK_TYPES = {
   TEXT: "text",
@@ -318,11 +356,16 @@ const _toPlainText = htmlToPlainText;
 // ─── Per-block HTML renderers (per theme) ──────────────────────────────────────
 
 const _renderSignatureHtml = (block) => {
-  const { firstName = "", lastName = "", title = "Merchant Success", phone = "" } = block.data.repSettings || {};
-  const name = [firstName, lastName].filter(Boolean).join(" ") || "DoorDash Merchant Success";
+  const { signature, firstName = "", lastName = "", title = "Merchant Success Manager", phone = "" } = block.data.repSettings || {};
+  // If the rep pasted a raw signature, use it directly
+  if (signature && signature.trim()) {
+    return `<div style="margin-top:28px;padding-top:20px;border-top:1px solid #eee;font-family:sans-serif;font-size:14px;color:#333;line-height:1.6;white-space:pre-wrap">${signature.trim()}</div>`;
+  }
+  // Fall back to structured format
+  const name = [firstName, lastName].filter(Boolean).join(" ") || "DoorDash Merchant Success Manager";
   return `<p style="font-family:sans-serif;font-size:14px;color:#333;margin-top:28px">` +
     `Best regards,<br><strong>${name}</strong><br>${title}` +
-    `${phone ? `<br>${phone}` : ""}<br>DoorDash Merchant Success</p>`;
+    `${phone ? `<br>${phone}` : ""}<br>DoorDash Merchant Success Manager</p>`;
 };
 
 const _renderCreditHtml = (block) =>
@@ -338,7 +381,7 @@ const _momentumPromo = (block, url) =>
   `<div style="margin:0 0 16px;font-size:14px;color:#444;line-height:1.6">${_outlookLists(block.data.body)}</div>` +
   `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0"><tr>` +
   `<td style="background:#eb1700;border-radius:6px;padding:10px 22px">` +
-  `<a href="${url}" style="color:white;text-decoration:none;font-weight:bold;font-size:14px;font-family:sans-serif;display:block;white-space:nowrap">${block.data.buttonText}</a>` +
+  `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:white;text-decoration:none;font-weight:bold;font-size:14px;font-family:sans-serif;display:block;white-space:nowrap">${block.data.buttonText}</a>` +
   `</td></tr></table></div>`;
 
 // Executive theme renderers
@@ -350,7 +393,7 @@ const _executivePromo = (block, url, idx) =>
   `<div style="margin:0 0 16px;font-size:14px;color:#475569;line-height:1.6">${_outlookLists(block.data.body)}</div>` +
   `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0"><tr>` +
   `<td style="border:2px solid #1e293b;border-radius:6px;padding:9px 20px">` +
-  `<a href="${url}" style="color:#1e293b;text-decoration:none;font-weight:bold;font-size:14px;font-family:sans-serif;display:block;white-space:nowrap">${block.data.buttonText}</a>` +
+  `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:#1e293b;text-decoration:none;font-weight:bold;font-size:14px;font-family:sans-serif;display:block;white-space:nowrap">${block.data.buttonText}</a>` +
   `</td></tr></table></div>`;
 
 // Spotlight theme renderers
@@ -362,7 +405,7 @@ const _spotlightPromo = (block, url, isFirst) =>
     `<div style="margin:0 0 24px;font-size:15px;color:#cbd5e1;line-height:1.6">${_outlookLists(block.data.body)}</div>` +
     `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%"><tr>` +
     `<td style="background:#eb1700;border-radius:8px;padding:14px 24px;text-align:center">` +
-    `<a href="${url}" style="color:white;text-decoration:none;font-weight:bold;font-size:16px;font-family:sans-serif;display:block">${block.data.buttonText}</a>` +
+    `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:white;text-decoration:none;font-weight:bold;font-size:16px;font-family:sans-serif;display:block">${block.data.buttonText}</a>` +
     `</td></tr></table></div>`
     : _momentumPromo(block, url); // secondary promos use momentum style
 
@@ -452,9 +495,12 @@ export const compileBlocksToText = (blocks, deepLinks, merchant) => {
       }
 
       case BLOCK_TYPES.SIGNATURE: {
-        const { firstName = "", lastName = "", title = "Merchant Success", phone = "" } = block.data.repSettings || {};
-        const name = [firstName, lastName].filter(Boolean).join(" ") || "DoorDash Merchant Success";
-        return `\nBest regards,\n${name}\n${title}${phone ? `\n${phone}` : ""}\nDoorDash Merchant Success`;
+        const { signature, firstName = "", lastName = "", title = "Merchant Success Manager", phone = "" } = block.data.repSettings || {};
+        if (signature && signature.trim()) {
+          return `\nBest regards,\n${signature.trim()}`;
+        }
+        const name = [firstName, lastName].filter(Boolean).join(" ") || "DoorDash Merchant Success Manager";
+        return `\nBest regards,\n${name}\n${title}${phone ? `\n${phone}` : ""}\nDoorDash Merchant Success Manager`;
       }
 
       case BLOCK_TYPES.DIVIDER:
@@ -534,20 +580,27 @@ export const compileBlocksToCleanHtml = (blocks, deepLinks, merchant) => {
           `<div style="margin:22px 0">` +
           `<p style="margin:0 0 6px;${ff}"><strong style="font-size:15px;color:#1a1a1a">${block.data.title}</strong></p>` +
           `<div style="margin:0 0 10px;font-size:14px;color:#374151;line-height:1.75;${ff}">${body}</div>` +
-          `<a href="${href}" style="color:#1155cc;text-decoration:underline;font-size:13px;${ff}">${block.data.buttonText}</a>` +
+          `<a href="${href}" target="_blank" rel="noopener noreferrer" style="color:#1155cc;text-decoration:underline;font-size:13px;${ff}">${block.data.buttonText}</a>` +
           `</div>`
         );
         break;
       }
       case BLOCK_TYPES.SIGNATURE: {
-        const { firstName = "", lastName = "", title = "Merchant Success", phone = "" } = block.data.repSettings || {};
-        const name = [firstName, lastName].filter(Boolean).join(" ") || "DoorDash Merchant Success";
-        parts.push(
-          `<div style="margin-top:28px;padding-top:20px;border-top:1px solid #e5e7eb;font-size:14px;color:#1a1a1a;line-height:1.8;${ff}">` +
-          `Best regards,<br><strong style="font-size:15px">${name}</strong><br>` +
-          `<span style="color:#6b7280">${title}${phone ? ` &middot; ${phone}` : ""}</span><br>` +
-          `<span style="color:#6b7280">DoorDash Merchant Success</span></div>`
-        );
+        const { signature, firstName = "", lastName = "", title = "Merchant Success Manager", phone = "" } = block.data.repSettings || {};
+        if (signature && signature.trim()) {
+          parts.push(
+            `<div style="margin-top:28px;padding-top:20px;border-top:1px solid #e5e7eb;font-size:14px;color:#1a1a1a;line-height:1.8;white-space:pre-wrap;${ff}">` +
+            `Best regards,\n${signature.trim()}</div>`
+          );
+        } else {
+          const name = [firstName, lastName].filter(Boolean).join(" ") || "DoorDash Merchant Success Manager";
+          parts.push(
+            `<div style="margin-top:28px;padding-top:20px;border-top:1px solid #e5e7eb;font-size:14px;color:#1a1a1a;line-height:1.8;${ff}">` +
+            `Best regards,<br><strong style="font-size:15px">${name}</strong><br>` +
+            `<span style="color:#6b7280">${title}${phone ? ` &middot; ${phone}` : ""}</span><br>` +
+            `<span style="color:#6b7280">DoorDash Merchant Success Manager</span></div>`
+          );
+        }
         break;
       }
       case BLOCK_TYPES.DIVIDER:

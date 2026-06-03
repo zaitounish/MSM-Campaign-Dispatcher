@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { Check, ChevronRight } from "lucide-react";
+import { Check, Settings } from "lucide-react";
 
 const STEPS = [
   { id: "upload",  label: "Upload BOB",        title: "Upload Book of Business" },
@@ -8,7 +8,7 @@ const STEPS = [
   { id: "deliver", label: "Preview & Send",    title: "Preview & Send Emails"   },
 ];
 
-export default function StepIndicator({ phase, setPhase, hasMerchants, hasPromos }) {
+export default function StepIndicator({ phase, setPhase, hasMerchants, hasPromos, onOpenSettings }) {
   const currentIndex = STEPS.findIndex(s => s.id === phase);
 
   // Update browser tab title per step
@@ -56,10 +56,31 @@ export default function StepIndicator({ phase, setPhase, hasMerchants, hasPromos
             </div>
 
             {index < STEPS.length - 1 && (
-              <div className="flex-1 h-0.5 mx-2 bg-slate-200 relative mb-5">
+              <div className="flex-1 h-0.5 mx-2 bg-slate-200 relative mb-5 flex items-center justify-center">
+                {/* Animated completion fill */}
                 <div
                   className={`absolute top-0 left-0 h-full transition-all duration-500 ${isCompleted ? "bg-green-500 w-full" : "bg-transparent w-0"}`}
                 />
+                {/* Phase 1.5 dot — only on the first connector (between Upload and Select) */}
+                {index === 0 && onOpenSettings && (
+                  <button
+                    onClick={onOpenSettings}
+                    title="Rep Configuration"
+                    className="relative z-10 group/dot flex flex-col items-center"
+                  >
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-200 shadow-sm
+                      ${isCompleted
+                        ? "bg-green-400 border-green-500 hover:bg-green-300"
+                        : "bg-white border-slate-300 hover:border-dd-red hover:bg-red-50"
+                      }`}
+                    >
+                      <Settings className={`w-2.5 h-2.5 transition-colors ${isCompleted ? "text-white" : "text-slate-400 group-hover/dot:text-dd-red"}`} />
+                    </div>
+                    <span className="absolute top-6 text-[9px] font-bold text-slate-400 whitespace-nowrap opacity-0 group-hover/dot:opacity-100 transition-opacity">
+                      Rep Setup
+                    </span>
+                  </button>
+                )}
               </div>
             )}
           </React.Fragment>

@@ -4,7 +4,7 @@ import {
   List, Link, Check, Sparkles, Loader2, Wand2, RefreshCw,
   ChevronDown, Minus, UserCircle,
 } from "lucide-react";
-import { wrapForRichEmail, deInjectDeepLinks } from "../lib/emailBlockEngine";
+import { wrapForRichEmail, deInjectDeepLinks, deInterpolateMerchant } from "../lib/emailBlockEngine";
 
 /**
  * MerchantEmailEditor (v4 | Dual-Mode WYSIWYG)
@@ -40,6 +40,8 @@ export default function MerchantEmailEditor({
   const editorRef = useRef(null);
   const linkRef = useRef(null);
   const savedRange = useRef(null);
+  const subjectTitleRef = useRef(null); // ref for the "Edit Title" input
+  const subjectFullRef  = useRef(null); // ref for the "Full Subject" input
 
   // ── Independent content storage for each mode ──────────────────────────────
   // These refs hold the most recent HTML for each mode so nothing is lost
@@ -162,10 +164,32 @@ export default function MerchantEmailEditor({
   };
 
   // ── Subject builder ────────────────────────────────────────────────────────────
+  // When "Apply to All" is active, de-interpolate any merchant-specific names so the
+  // saved subject contains {Store Name} / {DM Name} tokens that re-resolve per merchant.
   const buildSubject = () => {
-    if (subjectMode === "full") return subjectFull;
+    if (subjectMode === "full") {
+      return applyToAll ? deInterpolateMerchant(subjectFull, merchant) : subjectFull;
+    }
     const prefix = applyToAll ? "{Store Name}" : (merchant?.merchantName || namePart);
-    return `${prefix}${subjectTitle}`;
+    const title  = applyToAll ? deInterpolateMerchant(subjectTitle, merchant) : subjectTitle;
+    return `${prefix}${title}`;
+  };
+
+  // ── Insert variable into focused subject input ─────────────────────────────────
+  const insertVarIntoSubject = (variable) => {
+    const ref = subjectMode === "title" ? subjectTitleRef : subjectFullRef;
+    const el  = ref.current;
+    if (!el) return;
+    const start  = el.selectionStart ?? el.value.length;
+    const end    = el.selectionEnd   ?? el.value.length;
+    const newVal = el.value.slice(0, start) + variable + el.value.slice(end);
+    if (subjectMode === "title") setSubjectTitle(newVal);
+    else                         setSubjectFull(newVal);
+    // Restore cursor position right after the inserted text
+    requestAnimationFrame(() => {
+      el.setSelectionRange(start + variable.length, start + variable.length);
+      el.focus();
+    });
   };
 
   // ── Save: always persist both modes ────────────────────────────────────────────
@@ -175,18 +199,17 @@ export default function MerchantEmailEditor({
     if (editMode === "plain") cleanContentRef.current = currentHtml;
     else richContentRef.current = currentHtml;
 
-    // When "Apply to All" is active, de-inject the current merchant's real deep-link URLs
-    // back to %%DD_LINK_promoId%% tokens before saving as the global template.
-    // This is the fail-safe: it works even if the editor is displaying Merchant 1's
-    // resolved URLs (e.g. business_id=14144219) rather than the generic token template.
-    // App.jsx's emailDrafts will then re-inject each merchant's own URLs via injectDeepLinks.
-    const richToSave = applyToAll ? deInjectDeepLinks(richContentRef.current, dlMap) : richContentRef.current;
-    const cleanToSave = applyToAll ? deInjectDeepLinks(cleanContentRef.current, dlMap) : cleanContentRef.current;
+    // When "Apply to All" is active:
+    //   1. de-inject deep links  → real URLs become %%DD_LINK_promoId%% tokens
+    //   2. de-interpolate names  → merchant-specific names become {Store Name}/{DM Name}
+    // App.jsx's emailDrafts re-injects/re-interpolates per-merchant on every render.
+    const deToken = (html) =>
+      applyToAll ? deInterpolateMerchant(deInjectDeepLinks(html, dlMap), merchant) : html;
 
     onSave({
-      html: richToSave,
-      cleanHtml: cleanToSave,
-      subject: buildSubject(),
+      html:      deToken(richContentRef.current),
+      cleanHtml: deToken(cleanContentRef.current),
+      subject:   buildSubject(),
       applyToAll,
     });
   };
@@ -352,15 +375,28 @@ Rules:
                   <span className="px-3 py-2.5 text-sm text-slate-400 bg-slate-50 border-r border-slate-200 whitespace-nowrap font-medium select-none">
                     {applyToAll ? "{Store Name}" : namePart}
                   </span>
-                  <input value={subjectTitle} onChange={e => setSubjectTitle(e.target.value)}
+                  <input ref={subjectTitleRef} value={subjectTitle} onChange={e => setSubjectTitle(e.target.value)}
                     placeholder=" | Boost Sales on DoorDash 🚀"
                     className="flex-1 px-3 py-2.5 text-sm text-slate-800 outline-none bg-white" />
                 </div>
               ) : (
-                <input value={subjectFull} onChange={e => setSubjectFull(e.target.value)}
+                <input ref={subjectFullRef} value={subjectFull} onChange={e => setSubjectFull(e.target.value)}
                   placeholder="Full subject line…"
                   className="w-full px-3 py-2.5 text-sm text-slate-800 border border-slate-300 rounded-xl outline-none focus:border-dd-red focus:ring-1 focus:ring-dd-red transition-all" />
               )}
+              {/* Variable chips for subject */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-slate-400">Insert into subject:</span>
+                {["{Store Name}", "{DM Name}"].map(v => (
+                  <button
+                    key={v}
+                    onMouseDown={e => { e.preventDefault(); insertVarIntoSubject(v); }}
+                    className="text-[10px] font-bold bg-white border border-slate-300 text-slate-600 hover:border-violet-400 hover:text-violet-600 px-2 py-0.5 rounded-md transition-colors shadow-sm"
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Toolbar */}
@@ -454,7 +490,7 @@ Rules:
             <div className="flex-1 overflow-hidden">
               <iframe
                 srcDoc={previewSrcDoc}
-                sandbox=""
+                sandbox="allow-popups allow-top-navigation-by-user-activation"
                 className="w-full h-full border-0"
                 title="Live Email Preview"
               />

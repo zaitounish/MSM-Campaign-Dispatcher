@@ -169,14 +169,22 @@ function BlockVisual({ block }) {
       );
 
     case BLOCK_TYPES.SIGNATURE: {
-      const { firstName = "", lastName = "", title = "Merchant Success", phone = "" } = block.data.repSettings || {};
+      const { signature, firstName = "", lastName = "", title = "Merchant Success Manager", phone = "" } = block.data.repSettings || {};
+      if (signature && signature.trim()) {
+        return (
+          <div className="px-5 py-4 text-sm text-slate-700 border-t border-slate-100" style={{ fontFamily: "sans-serif" }}>
+            <p className="mb-1 text-slate-500">Best regards,</p>
+            <p className="whitespace-pre-wrap text-slate-700">{signature.trim()}</p>
+          </div>
+        );
+      }
       return (
         <div className="px-5 py-4 text-sm text-slate-700" style={{ fontFamily: "sans-serif" }}>
           <p className="mb-1 text-slate-500">Best regards,</p>
           <p className="font-bold text-slate-800">{firstName} {lastName}</p>
           <p className="text-slate-600">{title}</p>
           {phone && <p className="text-slate-600">{phone}</p>}
-          <p className="text-slate-600">DoorDash Merchant Success</p>
+          <p className="text-slate-600">DoorDash Merchant Success Manager</p>
         </div>
       );
     }

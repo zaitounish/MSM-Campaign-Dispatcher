@@ -1,15 +1,17 @@
 import React, { useState } from "react";
-import { User, Mail, Database, Phone, Settings, Save, AlertCircle, Sparkles } from "lucide-react";
+import { Database, Settings, Save, AlertCircle, Sparkles, FileText } from "lucide-react";
 
 export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepSettings }) {
   const [formData, setFormData] = useState({
-    firstName:     repSettings.firstName     || "",
-    lastName:      repSettings.lastName      || "",
-    title:         repSettings.title         || "Merchant Success",
-    phone:         repSettings.phone         || "",
-    repId:         repSettings.repId         || "",
-    gasUrl:        repSettings.gasUrl        || "",
-    geminiApiKey:  repSettings.geminiApiKey  || "",
+    signature:    repSettings.signature    || "",
+    repId:        repSettings.repId        || "",
+    gasUrl:       repSettings.gasUrl       || "",
+    geminiApiKey: repSettings.geminiApiKey || "",
+    // Keep legacy fields so old data isn't lost if reps update mid-session
+    firstName:    repSettings.firstName    || "",
+    lastName:     repSettings.lastName     || "",
+    title:        repSettings.title        || "Merchant Success Manager",
+    phone:        repSettings.phone        || "",
   });
 
   if (!isOpen) return null;
@@ -25,9 +27,11 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
-        
-        <div className="px-8 py-6 bg-slate-50 border-b border-slate-200 flex items-center gap-3">
+      {/* max-h + flex-col so the footer (Save button) is always visible */}
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
+
+        {/* ── Header ── */}
+        <div className="px-8 py-6 bg-slate-50 border-b border-slate-200 flex items-center gap-3 shrink-0">
           <div className="bg-white p-2.5 rounded-xl shadow-sm border border-slate-200">
             <Settings className="w-6 h-6 text-slate-700" />
           </div>
@@ -37,76 +41,35 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
           </div>
         </div>
 
-        <div className="p-8 space-y-6">
-          
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Email Signature</h3>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                  <User className="w-4 h-4 text-slate-400" /> First Name
-                </label>
-                <input
-                  type="text"
-                  name="firstName"
-                  value={formData.firstName}
-                  onChange={handleChange}
-                  placeholder="e.g. Jane"
-                  className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 focus:border-dd-red focus:ring-1 focus:ring-dd-red outline-none transition-all"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                  <User className="w-4 h-4 text-slate-400" /> Last Name
-                </label>
-                <input
-                  type="text"
-                  name="lastName"
-                  value={formData.lastName}
-                  onChange={handleChange}
-                  placeholder="e.g. Doe"
-                  className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 focus:border-dd-red focus:ring-1 focus:ring-dd-red outline-none transition-all"
-                />
-              </div>
-            </div>
+        {/* ── Scrollable body ── */}
+        <div className="flex-1 overflow-y-auto p-8 space-y-6">
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                  <Mail className="w-4 h-4 text-slate-400" /> Title
-                </label>
-                <input
-                  type="text"
-                  name="title"
-                  value={formData.title}
-                  onChange={handleChange}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 focus:border-dd-red focus:ring-1 focus:ring-dd-red outline-none transition-all disabled:bg-slate-50 disabled:text-slate-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                  <Phone className="w-4 h-4 text-slate-400" /> Phone Number
-                </label>
-                <input
-                  type="text"
-                  name="phone"
-                  value={formData.phone}
-                  onChange={handleChange}
-                  placeholder="(555) 123-4567"
-                  className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 focus:border-dd-red focus:ring-1 focus:ring-dd-red outline-none transition-all"
-                />
-              </div>
-            </div>
+          {/* Email Signature — raw paste from Gmail */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+              <FileText className="w-4 h-4" /> Email Signature
+            </h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Copy your signature from Gmail and paste it below. It will appear at the bottom of every email exactly as written.
+            </p>
+            <textarea
+              name="signature"
+              value={formData.signature}
+              onChange={handleChange}
+              rows={6}
+              placeholder={"Best regards,\nYour Name\nMerchant Success Manager · DoorDash\n(555) 123-4567"}
+              className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-sm text-slate-800 outline-none focus:border-dd-red focus:ring-1 focus:ring-dd-red transition-all resize-none leading-relaxed font-sans placeholder:text-slate-400"
+            />
           </div>
 
-          <div className="h-px w-full bg-slate-100 my-4"></div>
+          <div className="h-px w-full bg-slate-100" />
 
+          {/* System Integration */}
           <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-               System Integration
+            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">
+              System Integration
             </h3>
-            
+
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
                 <Database className="w-4 h-4 text-slate-400" /> Assisted Rep ID (Salesforce)
@@ -116,7 +79,7 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
                 name="repId"
                 value={formData.repId}
                 onChange={handleChange}
-                placeholder="e.g. 0053h00000A1b2c"
+                placeholder="e.g. 563543"
                 className="w-full bg-slate-50 border border-slate-300 font-mono text-sm rounded-xl px-4 py-2.5 focus:border-dd-red focus:ring-1 focus:ring-dd-red outline-none transition-all"
               />
               <p className="text-xs text-slate-500 mt-2 leading-relaxed">
@@ -161,16 +124,17 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
 
         </div>
 
-        <div className="px-8 py-5 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
+        {/* ── Footer — always visible ── */}
+        <div className="px-8 py-5 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 shrink-0">
           {formData.repId && (
-            <button 
+            <button
               onClick={onClose}
               className="px-6 py-2.5 rounded-xl font-bold text-slate-600 bg-white border border-slate-300 hover:bg-slate-100 transition-colors shadow-sm"
             >
               Cancel
             </button>
           )}
-          <button 
+          <button
             onClick={handleSave}
             disabled={!formData.repId}
             className="flex items-center gap-2 px-8 py-2.5 rounded-xl font-bold text-white bg-dd-red hover:bg-dd-red-dark shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
