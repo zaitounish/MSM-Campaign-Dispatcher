@@ -95,18 +95,12 @@ export default function UploadZone({ onDataLoaded }) {
         // Map: storeId → merchant object (first-seen wins for data)
         // We also count how many files each merchant appeared in
         const merchantMap = new Map(); // storeId → { merchant, filesSeen: Set }
-        let combinedAnalyticsWs  = null;
-        let combinedAnalyticsJson = null;
+        const sheetsData = [];
 
         for (const { wb, sheetName } of allStaged) {
           const ws   = wb.Sheets[sheetName];
           const json = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false });
-
-          // Analytics from first file only (used for BOB dashboard)
-          if (!combinedAnalyticsWs) {
-            combinedAnalyticsWs   = ws;
-            combinedAnalyticsJson = json;
-          }
+          sheetsData.push({ ws, json });
 
           const parsed = processSheetData(json);
           if (!parsed || parsed.length === 0) continue;
@@ -133,9 +127,9 @@ export default function UploadZone({ onDataLoaded }) {
           bobFileCount: filesSeen.size,
         }));
 
-        // Run analytics on the first file's data
-        const analyticsPayload = combinedAnalyticsWs
-          ? analyzeBOB(combinedAnalyticsWs, combinedAnalyticsJson)
+        // Run analytics collectively on all uploaded files
+        const analyticsPayload = sheetsData.length > 0
+          ? analyzeBOB(sheetsData)
           : null;
 
         onDataLoaded(merged, analyticsPayload);

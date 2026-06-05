@@ -135,11 +135,14 @@ const classifyColumn = (header, sampleValues) => {
  * @param {any[][]} json - sheet_to_json(ws, { header: 1 }) result (raw 2D array)
  * @returns {BobAnalyticsPayload}
  */
-export const analyzeBOB = (ws, json) => {
-  const headerRowIdx = findHeaderRowIndex(json);
+export const analyzeBOB = (sheetsData) => {
+  if (!sheetsData || sheetsData.length === 0) return null;
+
+  const firstJson = sheetsData[0].json;
+  const headerRowIdx = findHeaderRowIndex(firstJson);
   if (headerRowIdx === -1) return null;
 
-  const rawHeaders = json[headerRowIdx];
+  const rawHeaders = firstJson[headerRowIdx];
 
   // ── Identify Store ID and Business ID column indices ─────────────────────────
   // A row without either is a blank/filler row and must be excluded from analytics,
@@ -165,8 +168,20 @@ export const analyzeBOB = (ws, json) => {
     return sidOk || bizOk;
   };
 
-  const dataRows  = json.slice(headerRowIdx + 1).filter(isValidRow);
-  const totalRows = dataRows.length;
+  const allDataRows = [];
+  sheetsData.forEach(({ ws, json }) => {
+    const localHeaderIdx = findHeaderRowIndex(json);
+    if (localHeaderIdx === -1) return;
+    
+    const rows = json.slice(localHeaderIdx + 1);
+    rows.forEach((row, offset) => {
+      if (isValidRow(row)) {
+        allDataRows.push({ row, ws, excelRowNum: localHeaderIdx + 2 + offset });
+      }
+    });
+  });
+
+  const totalRows = allDataRows.length;
 
   // ── 1. Build column metadata ────────────────────────────────────────────────
   const columns = []; // { index, rawHeader, normalized, type, uniqueValues?, sampleValues }
@@ -180,8 +195,8 @@ export const analyzeBOB = (ws, json) => {
     if (isKnown) return;
 
     // Gather a sample of up to 50 non-null values from this column
-    const sampleValues = dataRows
-      .map(row => (row && row[colIdx] !== undefined ? row[colIdx] : null))
+    const sampleValues = allDataRows
+      .map(dr => (dr.row && dr.row[colIdx] !== undefined ? dr.row[colIdx] : null))
       .filter(v => v !== null && v !== "")
       .slice(0, 50);
 
@@ -244,9 +259,8 @@ export const analyzeBOB = (ws, json) => {
     return letter;
   };
 
-  const rowAnalytics = dataRows.map((row, rowOffset) => {
-    // Excel row number in the actual sheet
-    const excelRowNum = headerRowIdx + 2 + rowOffset; // +1 for 1-based, +1 to skip header
+  const rowAnalytics = allDataRows.map((dr) => {
+    const { row, ws, excelRowNum } = dr;
 
     // Scan all cells in this row for a fill color
     let fillColor = null;

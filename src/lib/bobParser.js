@@ -170,7 +170,7 @@ export const processSheetData = (json) => {
     // Collect all raw email candidates
     const rawCandidates = [target.dmEmail, target.storeEmail]
       .filter(Boolean)
-      .flatMap(e => e.split(/[,\s]+/).map(ex => ex.trim()).filter(Boolean));
+      .flatMap(e => e.split(/[,\s]+/).map(ex => ex.trim().toLowerCase()).filter(Boolean));
 
     // Separate valid from invalid so we can surface bad ones to the rep
     const validEmails = rawCandidates.filter(validateEmail);

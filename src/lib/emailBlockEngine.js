@@ -251,6 +251,9 @@ export const generateInitialBlocks = (selectedPromos, promoConfigs, repSettings)
       ? `<p style="color:#15803d;font-weight:bold;margin:8px 0 0">💳 Covered by your $${config.creditAmount || "0"} risk-free trial credit!</p>`
       : "";
 
+    // Insert a deletable divider block before each promo
+    blocks.push(createDividerBlock());
+
     blocks.push(createBlock(BLOCK_TYPES.PROMO, {
       promoId,
       title: info.name,
@@ -266,7 +269,10 @@ export const generateInitialBlocks = (selectedPromos, promoConfigs, repSettings)
     html: "<p>Ready to get started? Click the activation links above to launch your campaigns immediately.</p>",
   }));
 
-  // 5. Signature (locked, always last)
+  // 5. Divider (deletable break line)
+  blocks.push(createDividerBlock());
+
+  // 6. Signature (locked, always last)
   blocks.push(createBlock(BLOCK_TYPES.SIGNATURE, { repSettings }));
 
   return blocks;
@@ -359,7 +365,7 @@ const _renderSignatureHtml = (block) => {
   const { signature, firstName = "", lastName = "", title = "Merchant Success Manager", phone = "" } = block.data.repSettings || {};
   // If the rep pasted a raw signature, use it directly
   if (signature && signature.trim()) {
-    return `<div style="margin-top:28px;padding-top:20px;border-top:1px solid #eee;font-family:sans-serif;font-size:14px;color:#333;line-height:1.6;white-space:pre-wrap">${signature.trim()}</div>`;
+    return `<div style="margin-top:28px;font-family:sans-serif;font-size:14px;color:#333;line-height:1.6">${signature.trim()}</div>`;
   }
   // Fall back to structured format
   const name = [firstName, lastName].filter(Boolean).join(" ") || "DoorDash Merchant Success Manager";
@@ -375,7 +381,7 @@ const _renderCreditHtml = (block) =>
 
 // Momentum theme renderers
 const _momentumPromo = (block, url) =>
-  `<div style="margin:24px 0;padding-top:20px;border-top:1px solid #f0f0f0;font-family:sans-serif">` +
+  `<div style="margin:24px 0;font-family:sans-serif">` +
   `<p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#eb1700;text-transform:uppercase;letter-spacing:1.5px;font-family:Helvetica,Arial,sans-serif">Campaign Opportunity</p>` +
   `<h3 style="margin:0 0 10px;color:#1e293b;font-size:16px;font-weight:700;font-family:Helvetica,Arial,sans-serif">${block.data.title}</h3>` +
   `<div style="margin:0 0 16px;font-size:14px;color:#444;line-height:1.6">${_outlookLists(block.data.body)}</div>` +
@@ -589,13 +595,13 @@ export const compileBlocksToCleanHtml = (blocks, deepLinks, merchant) => {
         const { signature, firstName = "", lastName = "", title = "Merchant Success Manager", phone = "" } = block.data.repSettings || {};
         if (signature && signature.trim()) {
           parts.push(
-            `<div style="margin-top:28px;padding-top:20px;border-top:1px solid #e5e7eb;font-size:14px;color:#1a1a1a;line-height:1.8;white-space:pre-wrap;${ff}">` +
-            `Best regards,\n${signature.trim()}</div>`
+            `<div style="margin-top:28px;font-size:14px;color:#1a1a1a;line-height:1.8;${ff}">` +
+            `${signature.trim()}</div>`
           );
         } else {
           const name = [firstName, lastName].filter(Boolean).join(" ") || "DoorDash Merchant Success Manager";
           parts.push(
-            `<div style="margin-top:28px;padding-top:20px;border-top:1px solid #e5e7eb;font-size:14px;color:#1a1a1a;line-height:1.8;${ff}">` +
+            `<div style="margin-top:28px;font-size:14px;color:#1a1a1a;line-height:1.8;${ff}">` +
             `Best regards,<br><strong style="font-size:15px">${name}</strong><br>` +
             `<span style="color:#6b7280">${title}${phone ? ` &middot; ${phone}` : ""}</span><br>` +
             `<span style="color:#6b7280">DoorDash Merchant Success Manager</span></div>`

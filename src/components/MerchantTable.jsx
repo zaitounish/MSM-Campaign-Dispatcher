@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import {
   Search, ChevronDown, ChevronRight, CheckSquare, Square,
-  Store, Mail, Edit3, AlertCircle, Filter, X, Zap, ArrowRight, SlidersHorizontal,
+  Store, Mail, Edit3, AlertCircle, Filter, X, Zap, ArrowRight, SlidersHorizontal, MinusCircle,
 } from "lucide-react";
 import MerchantEmailManager from "./MerchantEmailManager";
 
@@ -51,10 +51,17 @@ export default function MerchantTable({
   // ── Dynamic: touch count range [min, max] ────────────────────────────────────
   const [touchRange, setTouchRange] = useState(null); // null = unset
 
-  // Bulk select state
-  const [isBulkOpen, setIsBulkOpen]     = useState(false);
-  const [pasteData, setPasteData]       = useState("");
-  const [bulkFeedback, setBulkFeedback] = useState(null);
+  // Smart Filters panel state
+  const [showSelectPanel, setShowSelectPanel] = useState(false);
+  const [selectPanelTab, setSelectPanelTab]   = useState("smart"); // "smart" | "bulk"
+  const [pasteData, setPasteData]             = useState("");
+  const [bulkFeedback, setBulkFeedback]       = useState(null);
+
+  // Smart Exclude panel state
+  const [showExcludePanel, setShowExcludePanel] = useState(false);
+  const [excludePanelTab, setExcludePanelTab]   = useState("smart"); // "smart" | "bulk"
+  const [excludeData, setExcludeData]           = useState("");
+  const [excludeFeedback, setExcludeFeedback]   = useState(null);
 
   // ── Derive dynamic filter config from analyticsPayload ───────────────────────
   const dynConfig = useMemo(() => {
@@ -74,6 +81,12 @@ export default function MerchantTable({
 
     return { statusCols, touchCol, colorGroups };
   }, [analyticsPayload]);
+
+  // True when at least one dynamic filter type is available from the BOB
+  const hasDynFilters =
+    dynConfig.statusCols.length > 0 ||
+    dynConfig.colorGroups.length > 0 ||
+    dynConfig.touchCol !== null;
 
   // Max touch value for the slider upper bound
   const touchMax = dynConfig.touchCol?.max || 20;
@@ -232,6 +245,41 @@ export default function MerchantTable({
     setBulkFeedback({ foundCount: foundIds.size, totalCount: inputIds.size });
   };
 
+  // ── Smart Exclude ─────────────────────────────────────────────────────────────
+  const handleApplyExclude = () => {
+    const inputIds = new Set(
+      excludeData.split(/[\s,]+/).map(s => s.trim().toLowerCase()).filter(Boolean)
+    );
+    if (!inputIds.size) return;
+
+    let excludedCount = 0;
+    const updated = merchants.map(m => {
+      let match = false;
+      if (m.businessId && inputIds.has(m.businessId.toLowerCase())) {
+        match = true;
+      } else {
+        (m.originalSids || m.sids).split(",").forEach(sid => {
+          if (inputIds.has(sid.toLowerCase())) match = true;
+        });
+      }
+      if (match) excludedCount++;
+      return match ? { ...m, selected: false } : m;
+    });
+    setMerchants(updated);
+    setExcludeFeedback({ excludedCount, totalCount: inputIds.size });
+  };
+
+  // ── Select / Exclude all currently-filtered merchants ───────────────────────────
+  const handleSelectAllFiltered = () => {
+    const ids = new Set(filteredMerchants.map(m => m.id));
+    setMerchants(prev => prev.map(m => ids.has(m.id) ? { ...m, selected: true } : m));
+  };
+
+  const handleDeselectAllFiltered = () => {
+    const ids = new Set(filteredMerchants.map(m => m.id));
+    setMerchants(prev => prev.map(m => ids.has(m.id) ? { ...m, selected: false } : m));
+  };
+
   // ── Clear all filters ─────────────────────────────────────────────────────────
   const hasActiveFilters =
     filterSlOpp || filterPromoOpp || filterLoyalOpp || filterSlCredit || filterEmailIssues ||
@@ -268,8 +316,6 @@ export default function MerchantTable({
     });
   };
 
-  const hasDynFilters = dynConfig.statusCols.length > 0 || dynConfig.touchCol || dynConfig.colorGroups.length > 0;
-
   if (!merchants.length) return null;
 
   return (
@@ -295,24 +341,23 @@ export default function MerchantTable({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {hasDynFilters && (
-              <button
-                onClick={() => setShowDynFilters(v => !v)}
-                className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${
-                  showDynFilters ? "bg-violet-600 text-white border-violet-600" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                Smart Filters {showDynFilters ? "▲" : "▼"}
-              </button>
-            )}
             <button
-              onClick={() => { setIsBulkOpen(v => !v); setBulkFeedback(null); }}
+              onClick={() => { setShowSelectPanel(v => !v); if (showExcludePanel) setShowExcludePanel(false); }}
               className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${
-                isBulkOpen ? "bg-slate-800 text-white border-slate-800" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"
+                showSelectPanel ? "bg-violet-600 text-white border-violet-600" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"
               }`}
             >
-              <Zap className="w-3.5 h-3.5" /> Bulk Select
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              Smart Filters {showSelectPanel ? "▲" : "▼"}
+            </button>
+            <button
+              onClick={() => { setShowExcludePanel(v => !v); if (showSelectPanel) setShowSelectPanel(false); }}
+              className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${
+                showExcludePanel ? "bg-rose-600 text-white border-rose-600" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <MinusCircle className="w-3.5 h-3.5" />
+              Smart Exclude {showExcludePanel ? "▲" : "▼"}
             </button>
             <div className="text-sm font-semibold text-slate-500 bg-white border border-slate-200 px-3 py-1 rounded-lg">
               Selected: <span className="text-dd-red">{filteredMerchants.filter(m => m.selected).length}</span> / {filteredMerchants.length}
@@ -367,134 +412,255 @@ export default function MerchantTable({
         </div>
       )}
 
-      {/* ── Dynamic Smart Filters Panel ── */}
-      {showDynFilters && hasDynFilters && (
-        <div className="border-b border-slate-200 bg-violet-50/60 px-6 py-5 space-y-5 animate-in slide-in-from-top-2 duration-200">
-          <div className="flex items-center gap-2 text-xs font-bold text-violet-700 uppercase tracking-wider">
-            <SlidersHorizontal className="w-3.5 h-3.5" /> Detected Column Filters
+      {/* ── Smart Filters Panel (Smart tab + Bulk Select tab) ── */}
+      {showSelectPanel && (
+        <div className="border-b border-slate-200 bg-violet-50/60 animate-in slide-in-from-top-2 duration-200">
+          {/* Tab strip */}
+          <div className="flex items-center gap-1 px-6 pt-4 pb-0">
+            {[{ id: "smart", label: "Smart Filters" }, { id: "bulk", label: "Bulk Select" }].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setSelectPanelTab(tab.id)}
+                className={`text-xs font-bold px-4 py-2 rounded-t-lg border-b-2 transition-all ${
+                  selectPanelTab === tab.id
+                    ? "border-violet-600 text-violet-700 bg-white"
+                    : "border-transparent text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
 
-          {/* Status / text enum filters */}
-          {dynConfig.statusCols.map(col => {
-            const selected = statusFilters[col.col] || new Set();
-            return (
-              <div key={col.col}>
-                <div className="text-xs font-bold text-slate-600 mb-2">{col.rawHeader}</div>
-                <div className="flex flex-wrap gap-2">
-                  {col.distribution.map(({ label, count }) => {
-                    const isActive = selected.has(label);
-                    return (
-                      <button
-                        key={label}
-                        onClick={() => toggleStatusValue(col.col, label)}
-                        className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
-                          isActive
-                            ? "bg-violet-600 text-white border-violet-600 shadow-sm"
-                            : "bg-white text-slate-600 border-slate-300 hover:border-violet-400"
-                        }`}
-                      >
-                        {label} <span className="opacity-60">({count})</span>
-                      </button>
-                    );
-                  })}
-                  {selected.size > 0 && (
-                    <button
-                      onClick={() => setStatusFilters(prev => ({ ...prev, [col.col]: new Set() }))}
-                      className="text-xs text-slate-400 hover:text-red-500 transition-colors font-semibold"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-
-          {/* Color swatch filter */}
-          {dynConfig.colorGroups.length > 0 && (
-            <div>
-              <div className="text-xs font-bold text-slate-600 mb-2">Row Highlight Color</div>
-              <div className="flex flex-wrap gap-2 items-center">
-                {dynConfig.colorGroups.map(g => {
-                  const isActive = activeColors.has(g.hex);
-                  return (
-                    <button
-                      key={g.hex}
-                      onClick={() => toggleColor(g.hex)}
-                      title={`#${g.hex} | ${g.count} rows`}
-                      className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
-                        isActive
-                          ? "border-slate-700 shadow-md ring-2 ring-slate-400"
-                          : "border-slate-300 bg-white hover:border-slate-500"
-                      }`}
-                    >
-                      <span
-                        className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0"
-                        style={{ backgroundColor: `#${g.hex}` }}
-                      />
-                      <span className="text-slate-700">{g.label || `#${g.hex}`}</span>
-                      <span className="text-slate-400">({g.count})</span>
-                    </button>
-                  );
-                })}
-                {/* "Uncolored" toggle */}
+          {/* Tab: Smart Filters */}
+          {selectPanelTab === "smart" && (
+            <div className="px-6 py-5 space-y-4">
+              {hasDynFilters ? (
+                <>
+                  <div className="flex items-center gap-2 text-xs font-bold text-violet-700 uppercase tracking-wider">
+                    <SlidersHorizontal className="w-3.5 h-3.5" /> Detected Column Filters
+                  </div>
+                  <div className="space-y-3">
+                    {dynConfig.statusCols.map(col => {
+                      const selected = statusFilters[col.col] || new Set();
+                      return (
+                        <CollapsibleFilterGroup key={col.col} title={col.rawHeader} defaultExpanded={selected.size > 0} activeCount={selected.size}>
+                          <div className="flex flex-wrap gap-2">
+                            {col.distribution.map(({ label, count }) => {
+                              const isActive = selected.has(label);
+                              return (
+                                <button key={label} onClick={() => toggleStatusValue(col.col, label)}
+                                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
+                                    isActive ? "bg-violet-600 text-white border-violet-600 shadow-sm" : "bg-white text-slate-600 border-slate-300 hover:border-violet-400"
+                                  }`}>
+                                  {label} <span className="opacity-60">({count})</span>
+                                </button>
+                              );
+                            })}
+                            {selected.size > 0 && (
+                              <button onClick={() => setStatusFilters(prev => ({ ...prev, [col.col]: new Set() }))}
+                                className="text-xs text-slate-400 hover:text-red-500 transition-colors font-semibold">Clear</button>
+                            )}
+                          </div>
+                        </CollapsibleFilterGroup>
+                      );
+                    })}
+                    {dynConfig.colorGroups.length > 0 && (
+                      <CollapsibleFilterGroup title="Row Highlight Color" defaultExpanded={activeColors.size > 0} activeCount={activeColors.size}>
+                        <div className="flex flex-wrap gap-2 items-center">
+                          {dynConfig.colorGroups.map(g => {
+                            const isActive = activeColors.has(g.hex);
+                            return (
+                              <button key={g.hex} onClick={() => toggleColor(g.hex)} title={`#${g.hex} | ${g.count} rows`}
+                                className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
+                                  isActive ? "border-slate-700 shadow-md ring-2 ring-slate-400" : "border-slate-300 bg-white hover:border-slate-500"
+                                }`}>
+                                <span className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0" style={{ backgroundColor: `#${g.hex}` }} />
+                                <span className="text-slate-700">{g.label || `#${g.hex}`}</span>
+                                <span className="text-slate-400">({g.count})</span>
+                              </button>
+                            );
+                          })}
+                          <button onClick={() => toggleColor("none")}
+                            className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
+                              activeColors.has("none") ? "border-slate-700 shadow-md ring-2 ring-slate-400" : "border-slate-300 border-dashed bg-white hover:border-slate-500"
+                            }`}>
+                            <span className="w-3.5 h-3.5 rounded-full border border-dashed border-slate-400 shrink-0" />
+                            <span className="text-slate-500">No highlight</span>
+                            <span className="text-slate-400">({analyticsPayload?.uncoloredCount ?? "?"})</span>
+                          </button>
+                          {activeColors.size > 0 && (
+                            <button onClick={() => setActiveColors(new Set())} className="text-xs text-slate-400 hover:text-red-500 transition-colors font-semibold">Clear</button>
+                          )}
+                        </div>
+                      </CollapsibleFilterGroup>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-slate-500 italic">No dynamic column filters detected in this BOB. Use Bulk Select tab to select by IDs.</p>
+              )}
+              {/* Select All Filtered action */}
+              <div className="flex items-center gap-3 pt-1 border-t border-violet-100">
                 <button
-                  onClick={() => toggleColor("none")}
-                  className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
-                    activeColors.has("none")
-                      ? "border-slate-700 shadow-md ring-2 ring-slate-400"
-                      : "border-slate-300 border-dashed bg-white hover:border-slate-500"
-                  }`}
+                  onClick={handleSelectAllFiltered}
+                  className="flex items-center gap-2 text-xs font-bold px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg shadow-sm transition-colors"
                 >
-                  <span className="w-3.5 h-3.5 rounded-full border border-dashed border-slate-400 shrink-0" />
-                  <span className="text-slate-500">No highlight</span>
-                  <span className="text-slate-400">({analyticsPayload?.uncoloredCount ?? "?"})</span>
+                  <Zap className="w-3.5 h-3.5" /> Select All Filtered ({filteredMerchants.length})
                 </button>
-                {activeColors.size > 0 && (
-                  <button onClick={() => setActiveColors(new Set())} className="text-xs text-slate-400 hover:text-red-500 transition-colors font-semibold">
-                    Clear
-                  </button>
-                )}
+                <span className="text-xs text-slate-400">Selects every merchant currently visible in the table</span>
               </div>
             </div>
           )}
 
-
+          {/* Tab: Bulk Select */}
+          {selectPanelTab === "bulk" && (
+            <div className="px-6 py-5">
+              <p className="text-xs text-slate-500 mb-3">Paste Store IDs or Business IDs. <strong>Only matched merchants</strong> will be selected; all others deselected.</p>
+              <div className="flex gap-3 items-start">
+                <textarea
+                  value={pasteData}
+                  onChange={e => { setPasteData(e.target.value); setBulkFeedback(null); }}
+                  placeholder="Paste IDs separated by spaces or commas..."
+                  className="flex-1 bg-white border border-slate-300 rounded-xl p-3 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-400 outline-none resize-none h-20"
+                />
+                <div className="flex flex-col gap-2">
+                  <button onClick={handleApplyBulk} disabled={!pasteData.trim()}
+                    className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                    Apply
+                  </button>
+                  {bulkFeedback && (
+                    <span className={`text-xs font-bold px-2 py-1 rounded text-center ${
+                      bulkFeedback.foundCount === bulkFeedback.totalCount ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
+                    }`}>Found {bulkFeedback.foundCount}/{bulkFeedback.totalCount}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* ── Bulk Select Panel ── */}
-      {isBulkOpen && (
-        <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 animate-in slide-in-from-top-2">
-          <h4 className="font-bold text-slate-800 text-sm mb-2">Bulk Select by Store / Business IDs</h4>
-          <div className="flex gap-3 items-start">
-            <textarea
-              value={pasteData}
-              onChange={e => { setPasteData(e.target.value); setBulkFeedback(null); }}
-              placeholder="Paste IDs separated by spaces or commas..."
-              className="flex-1 bg-white border border-slate-300 rounded-xl p-3 text-sm focus:border-dd-red focus:ring-1 focus:ring-dd-red outline-none resize-none h-20"
-            />
-            <div className="flex flex-col gap-2">
+      {/* ── Smart Exclude Panel (Smart tab + Bulk Exclude tab) ── */}
+      {showExcludePanel && (
+        <div className="border-b border-rose-200 bg-rose-50/60 animate-in slide-in-from-top-2 duration-200">
+          {/* Tab strip */}
+          <div className="flex items-center gap-1 px-6 pt-4 pb-0">
+            {[{ id: "smart", label: "Smart Exclude" }, { id: "bulk", label: "Bulk Exclude" }].map(tab => (
               <button
-                onClick={handleApplyBulk}
-                disabled={!pasteData.trim()}
-                className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                key={tab.id}
+                onClick={() => setExcludePanelTab(tab.id)}
+                className={`text-xs font-bold px-4 py-2 rounded-t-lg border-b-2 transition-all ${
+                  excludePanelTab === tab.id
+                    ? "border-rose-600 text-rose-700 bg-white"
+                    : "border-transparent text-slate-500 hover:text-slate-700"
+                }`}
               >
-                Apply
+                {tab.label}
               </button>
-              {bulkFeedback && (
-                <span className={`text-xs font-bold px-2 py-1 rounded text-center ${
-                  bulkFeedback.foundCount === bulkFeedback.totalCount
-                    ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
-                }`}>
-                  Found {bulkFeedback.foundCount}/{bulkFeedback.totalCount}
-                </span>
-              )}
-            </div>
+            ))}
           </div>
-          <p className="text-xs text-slate-500 mt-2">
-            Any Store ID or Business ID will select the entire associated merchant. Unmatched merchants are deselected.
-          </p>
+
+          {/* Tab: Smart Exclude */}
+          {excludePanelTab === "smart" && (
+            <div className="px-6 py-5 space-y-4">
+              {hasDynFilters ? (
+                <>
+                  <div className="flex items-center gap-2 text-xs font-bold text-rose-700 uppercase tracking-wider">
+                    <SlidersHorizontal className="w-3.5 h-3.5" /> Filter to Identify Who to Exclude
+                  </div>
+                  <div className="space-y-3">
+                    {dynConfig.statusCols.map(col => {
+                      const selected = statusFilters[col.col] || new Set();
+                      return (
+                        <CollapsibleFilterGroup key={col.col} title={col.rawHeader} defaultExpanded={selected.size > 0} activeCount={selected.size}>
+                          <div className="flex flex-wrap gap-2">
+                            {col.distribution.map(({ label, count }) => {
+                              const isActive = selected.has(label);
+                              return (
+                                <button key={label} onClick={() => toggleStatusValue(col.col, label)}
+                                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
+                                    isActive ? "bg-rose-600 text-white border-rose-600 shadow-sm" : "bg-white text-slate-600 border-slate-300 hover:border-rose-400"
+                                  }`}>
+                                  {label} <span className="opacity-60">({count})</span>
+                                </button>
+                              );
+                            })}
+                            {selected.size > 0 && (
+                              <button onClick={() => setStatusFilters(prev => ({ ...prev, [col.col]: new Set() }))}
+                                className="text-xs text-slate-400 hover:text-red-500 transition-colors font-semibold">Clear</button>
+                            )}
+                          </div>
+                        </CollapsibleFilterGroup>
+                      );
+                    })}
+                    {dynConfig.colorGroups.length > 0 && (
+                      <CollapsibleFilterGroup title="Row Highlight Color" defaultExpanded={activeColors.size > 0} activeCount={activeColors.size}>
+                        <div className="flex flex-wrap gap-2 items-center">
+                          {dynConfig.colorGroups.map(g => {
+                            const isActive = activeColors.has(g.hex);
+                            return (
+                              <button key={g.hex} onClick={() => toggleColor(g.hex)}
+                                className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
+                                  isActive ? "border-rose-700 shadow-md ring-2 ring-rose-300" : "border-slate-300 bg-white hover:border-rose-400"
+                                }`}>
+                                <span className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0" style={{ backgroundColor: `#${g.hex}` }} />
+                                <span className="text-slate-700">{g.label || `#${g.hex}`}</span>
+                                <span className="text-slate-400">({g.count})</span>
+                              </button>
+                            );
+                          })}
+                          {activeColors.size > 0 && (
+                            <button onClick={() => setActiveColors(new Set())} className="text-xs text-slate-400 hover:text-red-500 transition-colors font-semibold">Clear</button>
+                          )}
+                        </div>
+                      </CollapsibleFilterGroup>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-slate-500 italic">No dynamic column filters detected. Use Bulk Exclude tab to deselect by IDs.</p>
+              )}
+              {/* Deselect All Filtered action */}
+              <div className="flex items-center gap-3 pt-1 border-t border-rose-100">
+                <button
+                  onClick={handleDeselectAllFiltered}
+                  className="flex items-center gap-2 text-xs font-bold px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg shadow-sm transition-colors"
+                >
+                  <MinusCircle className="w-3.5 h-3.5" /> Deselect All Filtered ({filteredMerchants.length})
+                </button>
+                <span className="text-xs text-slate-400">Deselects every merchant currently visible in the table</span>
+              </div>
+            </div>
+          )}
+
+          {/* Tab: Bulk Exclude */}
+          {excludePanelTab === "bulk" && (
+            <div className="px-6 py-5">
+              <p className="text-xs text-slate-500 mb-3">Paste Store IDs or Business IDs. Matched merchants will be <strong>deselected</strong>. All others stay as-is.</p>
+              <div className="flex gap-3 items-start">
+                <textarea
+                  value={excludeData}
+                  onChange={e => { setExcludeData(e.target.value); setExcludeFeedback(null); }}
+                  placeholder="Paste IDs to exclude, separated by spaces or commas..."
+                  className="flex-1 bg-white border border-rose-300 rounded-xl p-3 text-sm focus:border-rose-500 focus:ring-1 focus:ring-rose-400 outline-none resize-none h-20"
+                />
+                <div className="flex flex-col gap-2">
+                  <button onClick={handleApplyExclude} disabled={!excludeData.trim()}
+                    className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                    Exclude
+                  </button>
+                  {excludeFeedback && (
+                    <span className={`text-xs font-bold px-2 py-1 rounded text-center ${
+                      excludeFeedback.excludedCount > 0 ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-500"
+                    }`}>
+                      {excludeFeedback.excludedCount > 0 ? `Excluded ${excludeFeedback.excludedCount}` : "No matches"}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -671,5 +837,59 @@ function FilterChip({ label, active, onClick, variant }) {
     >
       {label}
     </button>
+  );
+}
+
+function CollapsibleFilterGroup({ title, children, defaultExpanded = false, activeCount = 0 }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const hasActive = activeCount > 0;
+
+  return (
+    <div className={`rounded-xl border transition-all duration-200 overflow-hidden ${
+      hasActive ? "border-violet-300 bg-white shadow-sm" : "border-slate-200 bg-white/60"
+    }`}>
+      {/* ── Header row ── */}
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="w-full flex items-center justify-between px-3.5 py-2.5 gap-3 focus:outline-none group"
+      >
+        {/* Left: title + active badge */}
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={`text-xs font-bold tracking-wide truncate transition-colors ${
+            hasActive ? "text-violet-700" : "text-slate-600 group-hover:text-slate-800"
+          }`}>
+            {title}
+          </span>
+          {hasActive && (
+            <span className="flex-shrink-0 text-[10px] font-bold bg-violet-600 text-white px-1.5 py-0.5 rounded-full leading-none">
+              {activeCount}
+            </span>
+          )}
+        </div>
+
+        {/* Right: +/- pill */}
+        <span className={`flex-shrink-0 flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full border transition-all ${
+          expanded
+            ? "bg-slate-100 text-slate-600 border-slate-200"
+            : hasActive
+              ? "bg-violet-50 text-violet-600 border-violet-200"
+              : "bg-slate-50 text-slate-500 border-slate-200 group-hover:border-slate-300"
+        }`}>
+          <span className="text-base leading-none" style={{ lineHeight: 1 }}>
+            {expanded ? "−" : "+"}
+          </span>
+          {expanded ? "Hide" : "Show"}
+        </span>
+      </button>
+
+      {/* ── Content ── */}
+      {expanded && (
+        <div className="px-3.5 pb-3.5 pt-0 animate-in slide-in-from-top-1 fade-in duration-150">
+          <div className="border-t border-slate-100 pt-3">
+            {children}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

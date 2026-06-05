@@ -34,7 +34,11 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
 
   const handleSave = () => {
     // Read rich HTML from the contentEditable ref for signature
-    const rawSig = signatureRef.current?.innerHTML || "";
+    let rawSig = signatureRef.current?.innerHTML || "";
+    // Strip any leading/trailing blank lines, <br>, or empty paragraph blocks
+    rawSig = rawSig.replace(/^(<br\s*\/?>|\s|<div><br\s*\/?><\/div>|<p><br\s*\/?><\/p>)+/gi, "");
+    rawSig = rawSig.replace(/(<br\s*\/?>|\s|<div><br\s*\/?><\/div>|<p><br\s*\/?><\/p>)+$/gi, "");
+    
     const sig = (rawSig === "<br>" || rawSig.trim() === "") ? "" : rawSig;
     setRepSettings({ ...formData, signature: sig });
     onClose();
