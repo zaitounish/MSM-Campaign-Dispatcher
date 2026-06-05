@@ -38,7 +38,7 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
     // Strip any leading/trailing blank lines, <br>, or empty paragraph blocks
     rawSig = rawSig.replace(/^(<br\s*\/?>|\s|<div><br\s*\/?><\/div>|<p><br\s*\/?><\/p>)+/gi, "");
     rawSig = rawSig.replace(/(<br\s*\/?>|\s|<div><br\s*\/?><\/div>|<p><br\s*\/?><\/p>)+$/gi, "");
-    
+
     const sig = (rawSig === "<br>" || rawSig.trim() === "") ? "" : rawSig;
     setRepSettings({ ...formData, signature: sig });
     onClose();
@@ -129,9 +129,9 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
                 placeholder="https://script.google.com/macros/s/.../exec"
                 className="w-full bg-slate-50 border border-slate-300 font-mono text-xs rounded-xl px-4 py-2.5 focus:border-dd-red focus:ring-1 focus:ring-dd-red outline-none transition-all"
               />
-              <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+              {/* <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                 Used exclusively by the "Bulk Send" feature to bypass local mail clients via Google's infrastructure.
-              </p>
+              </p> */}
             </div>
 
             <div>
@@ -146,9 +146,9 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
                 placeholder="AIza..."
                 className="w-full bg-slate-50 border border-slate-300 font-mono text-xs rounded-xl px-4 py-2.5 focus:border-violet-500 focus:ring-1 focus:ring-violet-400 outline-none transition-all"
               />
-              <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+              {/* <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                 Free key from <strong>ai.google.dev</strong>. Used locally to generate AI pipeline insights. Never sent to our servers.
-              </p>
+              </p> */}
             </div>
           </div>
 
