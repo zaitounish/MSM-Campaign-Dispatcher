@@ -45,11 +45,60 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
                 <h4 className="font-bold text-slate-800">{promo.name}</h4>
               </div>
 
-              {promo.id === "smart_campaign" || promo.id === "delivery_fee" ? (
-                <div className="text-sm text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-100 italic">
-                  No configuration needed. DoorDash handles this automatically.
+              {/* Smart Campaign Configuration */}
+              {promo.id === "smart_campaign" && (
+                <div className="max-w-2xl">
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Campaign Mode</label>
+                  <div className="inline-flex bg-slate-100 rounded-xl p-1 gap-1">
+                    <button
+                      onClick={() => updateConfig(promo.id, "isCartLevel", false)}
+                      className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                        !getConfig(promo.id, "isCartLevel")
+                          ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                          : "text-slate-500 hover:text-slate-700"
+                      }`}
+                    >
+                      Item Promotion
+                    </button>
+                    <button
+                      onClick={() => updateConfig(promo.id, "isCartLevel", true)}
+                      className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                        getConfig(promo.id, "isCartLevel")
+                          ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                          : "text-slate-500 hover:text-slate-700"
+                      }`}
+                    >
+                      Cart-Level (Spend X Get Y)
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-2">
+                    {!getConfig(promo.id, "isCartLevel") 
+                      ? "Algorithm chooses specific items to discount." 
+                      : "Algorithm applies discount to the whole cart."}
+                  </p>
                 </div>
-              ) : null}
+              )}
+
+              {/* Delivery Fee Configuration */}
+              {promo.id === "delivery_fee" && (
+                <div className="max-w-2xl">
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Target Audience</label>
+                  <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
+                    <Users className="w-4 h-4 text-slate-400 mr-2" />
+                    <select 
+                      value={getConfig(promo.id, "audience") || "all"}
+                      onChange={e => updateConfig(promo.id, "audience", e.target.value)}
+                      className="outline-none bg-transparent w-full text-slate-700 sm:text-sm cursor-pointer"
+                    >
+                      <option value="all">All Customers</option>
+                      <option value="new_to_merchant">New Customers</option>
+                      <option value="existing_consumers_to_merchant">Existing Customers</option>
+                      <option value="churned_users">Lapsed Customers</option>
+                    </select>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1.5">Delivery fee campaigns adjust the minimum subtotal dynamically based on audience selection.</p>
+                </div>
+              )}
 
               {promo.id === "ads" && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
@@ -92,30 +141,49 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
                 return (
                   <div className="space-y-4 max-w-2xl">
 
-                    {/* Mode Toggle | Percentage Off vs Dollar Off */}
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-2">Discount Type</label>
-                      <div className="inline-flex bg-slate-100 rounded-xl p-1 gap-1">
-                        <button
-                          onClick={() => updateConfig(promo.id, "discountType", "percentage")}
-                          className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                            discountType === "percentage"
-                              ? "bg-white text-slate-900 shadow-sm border border-slate-200"
-                              : "text-slate-500 hover:text-slate-700"
-                          }`}
-                        >
-                          % Percentage Off
-                        </button>
-                        <button
-                          onClick={() => updateConfig(promo.id, "discountType", "dollar")}
-                          className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                            discountType === "dollar"
-                              ? "bg-white text-slate-900 shadow-sm border border-slate-200"
-                              : "text-slate-500 hover:text-slate-700"
-                          }`}
-                        >
-                          $ Dollar Off
-                        </button>
+                    {/* Mode Toggle & Target Audience | Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-2">Discount Type</label>
+                        <div className="inline-flex bg-slate-100 rounded-xl p-1 gap-1">
+                          <button
+                            onClick={() => updateConfig(promo.id, "discountType", "percentage")}
+                            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                              discountType === "percentage"
+                                ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                                : "text-slate-500 hover:text-slate-700"
+                            }`}
+                          >
+                            % Percentage Off
+                          </button>
+                          <button
+                            onClick={() => updateConfig(promo.id, "discountType", "dollar")}
+                            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                              discountType === "dollar"
+                                ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                                : "text-slate-500 hover:text-slate-700"
+                            }`}
+                          >
+                            $ Dollar Off
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1.5">Target Audience</label>
+                        <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
+                          <Users className="w-4 h-4 text-slate-400 mr-2" />
+                          <select 
+                            value={getConfig(promo.id, "audience") || "all"}
+                            onChange={e => updateConfig(promo.id, "audience", e.target.value)}
+                            className="outline-none bg-transparent w-full text-slate-700 sm:text-sm cursor-pointer"
+                          >
+                            <option value="all">All Customers</option>
+                            <option value="new_to_merchant">New Customers</option>
+                            <option value="existing_consumers_to_merchant">Existing Customers</option>
+                            <option value="churned_users">Lapsed Customers</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
 
