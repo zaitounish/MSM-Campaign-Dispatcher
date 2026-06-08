@@ -4,93 +4,87 @@
  * Generates spec-compliant DoorDash campaign deep links for all promo types.
  *
  * Technical References:
- *   - SL Campaign Deep Link Generation (Stage 3).md
- *   - Campaign Deep Link Routing & Edge Cases.md
+ *   - MSM Campaign Dispatcher: Deep Link Architecture Blueprint
  *
  * Key rules enforced:
  *  - SL budgets: abwv = weekly*100, abv = floor(weekly/7)*100
  *  - SL $99 fallback: if weeklyBudget is falsy, default to 99 before cents conversion
- *  - dsd = Date.now() injected per link (SL and Smart/SpendXGetY)
+ *  - dsd = Date.now() injected per link
  *  - sids encoded: encodeURIComponent(array.join(",")) → %2C separator
  *  - assisted_rep_id sourced from repSettings.repId | never hardcoded
  *  - Loyalty: no sids, no dsd, no repId | only business_id
  *  - SpendXGetY: conditional pt=pdws vs pt=dvdws; financials in cents; % as raw int
  *
- * REMOVED: iftca ("Is First Time Campaign") parameter.
- *  Rationale: We do not pull historical campaign data from BOB uploads to verify
- *  whether a campaign is truly net-new. Passing iftca=false on a first-time campaign
- *  would force the wrong creation flow on the DoorDash side. Omitting the parameter
- *  entirely delegates the default resolution to DoorDash's routing layer, which is
- *  the correct and safer behaviour per the Campaign Deep Link Routing spec.
+ * CRITICAL BUG FIX: iftca=false is intentionally omitted from all URLs per blueprint.
  */
 
 // ─── Base URLs ────────────────────────────────────────────────────────────────
-const SL_BASE_URL        = "https://www.doordash.com/merchant/marketing/sl/create";
-const SMART_BASE_URL     = "https://www.doordash.com/merchant/marketing/smart/create";
-const SPENDXGETY_BASE_URL = "https://www.doordash.com/merchant/marketing/spendxgety/create";
-const LOYALTY_BASE_URL   = "https://www.doordash.com/merchant/loyalty";
+const SL_BASE_URL            = "https://www.doordash.com/merchant/marketing/sl/create";
+const SMART_BASE_URL         = "https://www.doordash.com/merchant/marketing/smart/create";
+const SPENDXGETY_BASE_URL    = "https://www.doordash.com/merchant/marketing/spendxgety/create";
+const LOYALTY_BASE_URL       = "https://www.doordash.com/merchant/loyalty";
+const BOGO_BASE_URL          = "https://www.doordash.com/merchant/marketing/bogo/create";
+const DDD_BASE_URL           = "https://www.doordash.com/merchant/marketing/ddd/create";
+const HAPPY_HOUR_BASE_URL    = "https://www.doordash.com/merchant/marketing/cx_moment/create";
+const LUNCH_SPECIAL_BASE_URL = "https://www.doordash.com/merchant/marketing/lunch_special/create";
 
 // ─── Audience Map ─────────────────────────────────────────────────────────────
 /**
  * Maps UI-facing dropdown values to the exact internal DoorDash DB strings.
- * CRITICAL: Any deviation from these exact strings causes broken routing.
- *
- * smart_targeting added per spec §4C for Smart/SpendXGetY campaigns.
  */
 export const AUDIENCE_MAP = {
   all:                            "all",
   new_to_merchant:                "new_to_merchant",
   existing_consumers_to_merchant: "existing_consumers_to_merchant",
   churned_users:                  "churned_users",
-  smart_targeting:                "smart_targeting",  // Required by Smart & SpendXGetY campaigns
+  smart_targeting:                "smart_targeting",
 };
 
-// ─── Shared Helper ────────────────────────────────────────────────────────────
+// ─── Shared Helpers ───────────────────────────────────────────────────────────
 /**
- * Encodes an array of Store IDs per spec §3:
- * commas MUST be %2C encoded to prevent DoorDash routing failures.
- * We use encodeURIComponent and NOT URLSearchParams (which would double-encode).
+ * Encodes an array of Store IDs per spec:
+ * commas MUST be %2C encoded.
  */
 const encodeSids = (sidsArray) => encodeURIComponent((sidsArray || []).join(","));
 
-// ─── 1. Sponsored Listing (SL) Generator ─────────────────────────────────────
 /**
- * Generates a spec-compliant SL campaign deep link.
- *
- * $99 Fallback (Spec §1 Edge Cases):
- *   If weeklyBudget is falsy (0, empty, undefined), the system defaults to $99
- *   to prevent abv=0&abwv=0 from crashing the DoorDash destination form.
- *
- * @param {string|number} businessId     - Parent Business ID from BOB.
- * @param {string[]}      sidsArray      - Array of Store IDs (multi-location safe).
- * @param {string|number} repId          - repSettings.repId | never hardcoded.
- * @param {number}        weeklyBudget   - Weekly budget in whole dollars.
- * @param {string}        audienceKey    - AUDIENCE_MAP key (e.g., "new_to_merchant").
- * @returns {string} Fully compiled SL URL.
+ * Generates the Global Parameters string array applicable to all complex campaigns.
  */
+const getGlobalParams = (merchant, repId) => {
+  const encodedSids = encodeSids(
+    merchant.originalSids ? merchant.originalSids.split(",") : [merchant.storeId]
+  );
+  return [
+    `business_id=${merchant.businessId}`,
+    `sids=${encodedSids}`,
+    `assisted_rep_id=${repId || ""}`,
+    `dsd=${Date.now()}`,
+    `sch_ad=true`,
+    `pbv=noBudget`,
+    `pbwv=noBudget`,
+    `pbic=false`,
+  ];
+};
+
+// ─── 1. Sponsored Listing (SL) Generator ─────────────────────────────────────
 export const generateDeepLink = ({ businessId, sidsArray, repId, weeklyBudget, audienceKey }) => {
-  // $99 fallback: prevents abv=0 / abwv=0 crashing the DoorDash form
   const weekly = parseFloat(weeklyBudget) || 99;
-  const abwv   = Math.round(weekly * 100);           // Weekly budget in cents
-  const abv    = Math.floor(weekly / 7) * 100;       // Daily budget in cents (floor per spec)
+  const abwv   = Math.round(weekly * 100);
+  const abv    = Math.floor(weekly / 7) * 100;
 
-  const encodedSids    = encodeSids(sidsArray);
-  const dsd            = Date.now();
-  const aud            = AUDIENCE_MAP[audienceKey] || "all";
-  const assistedRepId  = repId || "";
+  const encodedSids   = encodeSids(sidsArray);
+  const dsd           = Date.now();
+  const aud           = AUDIENCE_MAP[audienceKey] || "all";
+  const assistedRepId = repId || "";
 
-  // Manual string construction | URLSearchParams would double-encode the %2C in sids
   const params = [
     `business_id=${businessId}`,
     `aud=${aud}`,
-    // dsd = Unix timestamp in ms | uniquely identifies this link generation session;
-    // used by DoorDash to deduplicate concurrent campaign creation requests.
     `dsd=${dsd}`,
-    // NOTE: iftca omitted intentionally | see file-level comment for rationale.
     `sids=${encodedSids}`,
     `assisted_rep_id=${assistedRepId}`,
-    `abv=${abv}`,    // Daily budget in cents  (floor(weekly / 7) * 100)
-    `abwv=${abwv}`,  // Weekly budget in cents (weekly * 100)
+    `abv=${abv}`,
+    `abwv=${abwv}`,
     `bsao=0`,
     `bscv=500`,
     `bsia=true`,
@@ -101,128 +95,95 @@ export const generateDeepLink = ({ businessId, sidsArray, repId, weeklyBudget, a
 };
 
 // ─── 2. Smart Campaign Generator ─────────────────────────────────────────────
-/**
- * Generates a Smart Campaign deep link (both Item & Discount types share the same URL).
- *
- * Key spec rules:
- *  - Audience is ALWAYS smart_targeting (static, not user-configurable)
- *  - Budget params are static strings "noBudget" (not zero, not cents)
- *  - No financial inputs from the rep are required
- *
- * @param {object}        merchant  - Merchant object from Stage 2.
- * @param {string|number} repId     - repSettings.repId.
- * @returns {string} Smart campaign URL.
- */
-export const generateSmartLink = (merchant, repId) => {
-  const dsd          = Date.now();
-  const encodedSids  = encodeSids(
-    merchant.originalSids ? merchant.originalSids.split(",") : [merchant.storeId]
-  );
-
+export const generateSmartLink = (merchant, repId, config = {}) => {
+  const globals = getGlobalParams(merchant, repId);
   const params = [
-    `business_id=${merchant.businessId}`,
-    `aud=smart_targeting`,
-    // dsd = Unix timestamp in ms | provides a unique session anchor for this link.
-    `dsd=${dsd}`,
-    // NOTE: iftca omitted intentionally | see file-level comment for rationale.
-    `sids=${encodedSids}`,
-    `assisted_rep_id=${repId || ""}`,
+    ...globals,
+    `aud=smart_targeting`, // Aud is always smart_targeting
     `pt=undefined`,
-    `mst=0`,
-    `pbv=noBudget`,
-    `pbwv=noBudget`,
-    `pbic=false`,
-    `sch_ad=true`,
-  ].join("&");
+    `mst=0`
+  ];
 
-  return `${SMART_BASE_URL}?${params}`;
+  // Variation 2: Smart Spend X Get Y (Cart-Level)
+  if (config.isCartLevel) {
+    params.push(`is_smart_bogo=false`);
+  }
+
+  return `${SMART_BASE_URL}?${params.join("&")}`;
 };
 
 // ─── 3. Loyalty Generator ─────────────────────────────────────────────────────
-/**
- * Generates a Loyalty program deep link.
- *
- * Spec §3 rules (simplest routing in the system):
- *  - Only business_id is required | no sids, no dsd, no repId
- *  - Uses the /merchant/loyalty base (not /marketing/)
- *
- * @param {object} merchant - Merchant object from Stage 2.
- * @returns {string} Loyalty URL.
- */
 export const generateLoyaltyLink = (merchant) => {
   return `${LOYALTY_BASE_URL}?business_id=${merchant.businessId}`;
 };
 
 // ─── 4. Spend X Get Y Generator ──────────────────────────────────────────────
-/**
- * Generates a conditional Spend X Get Y (discount) deep link.
- *
- * Two modes | determined by config.discountType:
- *
- * Mode 1: "percentage" → pt=pdws
- *   - cpo = raw percentage integer (NOT cents) e.g. 20% → cpo=20
- *   - mst = minSubtotal in cents
- *   - cmpv = maxDiscount cap in cents
- *
- * Mode 2: "dollar" → pt=dvdws
- *   - cfo = dollarAmount in cents
- *   - mst = minSubtotal in cents
- *   - cmpv is OMITTED entirely from the URL
- *
- * @param {object}        merchant - Merchant object from Stage 2.
- * @param {string|number} repId    - repSettings.repId.
- * @param {object}        config   - PromoConfigs entry for "discount".
- * @returns {string} SpendXGetY URL.
- */
 export const generateSpendXGetYLink = (merchant, repId, config) => {
-  const dsd         = Date.now();
-  const encodedSids = encodeSids(
-    merchant.originalSids ? merchant.originalSids.split(",") : [merchant.storeId]
-  );
+  const globals = getGlobalParams(merchant, repId);
   const mstCents = Math.round((parseFloat(config.minSubtotal) || 0) * 100);
+  const aud = AUDIENCE_MAP[config.audience] || "all"; // Map aud based on user selection
 
-  // Base parameters shared by both percentage and dollar modes
   let params = [
-    `business_id=${merchant.businessId}`,
-    `aud=smart_targeting`,
-    // dsd = Unix timestamp in ms | deduplicates concurrent creation requests.
-    `dsd=${dsd}`,
-    // NOTE: iftca omitted intentionally | see file-level comment for rationale.
-    `sids=${encodedSids}`,
-    `assisted_rep_id=${repId || ""}`,
-    `mst=${mstCents}`,   // Minimum subtotal in cents
-    `pbv=noBudget`,
-    `pbwv=noBudget`,
-    `pbic=false`,
-    `sch_ad=true`,
-  ].join("&");
+    ...globals,
+    `aud=${aud}`,
+    `mst=${mstCents}`,
+  ];
 
   if (config.discountType === "percentage") {
-    // cpo is the raw percentage | NOT converted to cents
     const cpo       = parseInt(config.percentageAmount) || 0;
     const cmpvCents = Math.round((parseFloat(config.maxDiscount) || 0) * 100);
-    params += `&pt=pdws&cpo=${cpo}&cmpv=${cmpvCents}`;
+    params.push(`pt=pdws`, `cpo=${cpo}`, `cmpv=${cmpvCents}`);
 
   } else if (config.discountType === "dollar") {
-    // cfo is converted to cents; cmpv is omitted entirely (per spec)
     const cfoCents = Math.round((parseFloat(config.dollarAmount) || 0) * 100);
-    params += `&pt=dvdws&cfo=${cfoCents}`;
+    params.push(`pt=dvdws`, `cfo=${cfoCents}`);
   }
 
-  return `${SPENDXGETY_BASE_URL}?${params}`;
+  return `${SPENDXGETY_BASE_URL}?${params.join("&")}`;
 };
 
-// ─── 5. Master Link Builder ───────────────────────────────────────────────────
-/**
- * Maps over all selected merchants × selected promos and generates the
- * appropriate deep link per promo type, attaching it to the result map.
- *
- * @param {object[]} merchants      - Filtered active merchants from Stage 2.
- * @param {string[]} selectedPromos - Selected promo IDs.
- * @param {object}   promoConfigs   - { [promoId]: config }
- * @param {string}   repId          - repSettings.repId from global App state.
- * @returns {object} { [merchantId]: { [promoId]: string|null } }
- */
+// ─── 5. Buy 1, Get 1 Free (BOGO) Generator ───────────────────────────────────
+export const generateBogoLink = (merchant, repId, config) => {
+  const globals = getGlobalParams(merchant, repId);
+  const aud = AUDIENCE_MAP[config.audience] || "all";
+  
+  const params = [
+    ...globals,
+    `aud=${aud}`,
+    `pt=undefined`,
+    `mst=0`,
+    `aggregated_item_ids=`
+  ];
+
+  return `${BOGO_BASE_URL}?${params.join("&")}`;
+};
+
+// ─── 6. Pay Customer's Delivery Fee Generator ────────────────────────────────
+export const generateDeliveryFeeLink = (merchant, repId, config) => {
+  const globals = getGlobalParams(merchant, repId);
+  const aud = AUDIENCE_MAP[config.audience] || "all";
+  
+  let mst = 2500;
+  if (aud === "new_to_merchant") mst = 2000;
+  if (aud === "existing_consumers_to_merchant" || aud === "churned_users") mst = 1500;
+
+  const params = [
+    ...globals,
+    `aud=${aud}`,
+    `pt=ddws`,
+    `mst=${mst}`
+  ];
+
+  return `${DDD_BASE_URL}?${params.join("&")}`;
+};
+
+// ─── 7. Happy Hour / Lunch Specials (Lean URLs) ──────────────────────────────
+export const generateLeanLink = (merchant, type) => {
+  const base = type === "happy_hour" ? HAPPY_HOUR_BASE_URL : LUNCH_SPECIAL_BASE_URL;
+  return `${base}?business_id=${merchant.businessId}`;
+};
+
+// ─── 8. Master Link Builder ──────────────────────────────────────────────────
 export const buildAllDeepLinks = (merchants, selectedPromos, promoConfigs, repId) => {
   const links = {};
 
@@ -236,35 +197,45 @@ export const buildAllDeepLinks = (merchants, selectedPromos, promoConfigs, repId
       const config = promoConfigs[promoId] || {};
 
       switch (promoId) {
-
         case "ads":
-          // Unified SL advertise link | uses budget & audience from PromoCustomizer
           links[merchant.id][promoId] = generateDeepLink({
             businessId:   merchant.businessId,
             sidsArray,
             repId,
-            weeklyBudget: config.budget,        // $99 fallback applied inside generateDeepLink
+            weeklyBudget: config.budget,
             audienceKey:  config.audience || "all",
           });
           break;
 
         case "smart_campaign":
-          // Smart campaign | static params, no rep budget input needed
-          links[merchant.id][promoId] = generateSmartLink(merchant, repId);
+          links[merchant.id][promoId] = generateSmartLink(merchant, repId, config);
           break;
 
         case "loyalty":
-          // Loyalty | simplest link: only business_id, no repId injection
           links[merchant.id][promoId] = generateLoyaltyLink(merchant);
           break;
 
         case "discount":
-          // Spend X Get Y | conditional percentage vs dollar routing
           links[merchant.id][promoId] = generateSpendXGetYLink(merchant, repId, config);
           break;
 
+        case "bogo":
+          links[merchant.id][promoId] = generateBogoLink(merchant, repId, config);
+          break;
+
+        case "delivery_fee":
+          links[merchant.id][promoId] = generateDeliveryFeeLink(merchant, repId, config);
+          break;
+
+        case "happy_hour":
+          links[merchant.id][promoId] = generateLeanLink(merchant, "happy_hour");
+          break;
+
+        case "lunch_specials":
+          links[merchant.id][promoId] = generateLeanLink(merchant, "lunch_specials");
+          break;
+
         default:
-          // BOGO, delivery_fee, happy_hour, lunch_specials | no SL deep link
           links[merchant.id][promoId] = null;
           break;
       }
