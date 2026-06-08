@@ -286,7 +286,26 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
                 );
               })()}
 
-              {["loyalty", "bogo", "happy_hour", "lunch_specials"].includes(promo.id) && (
+              {promo.id === "bogo" && (
+                <div className="max-w-2xl">
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Target Audience</label>
+                  <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
+                    <Users className="w-4 h-4 text-slate-400 mr-2" />
+                    <select
+                      value={getConfig(promo.id, "audience") || "all"}
+                      onChange={e => updateConfig(promo.id, "audience", e.target.value)}
+                      className="outline-none bg-transparent w-full text-slate-700 sm:text-sm cursor-pointer"
+                    >
+                      <option value="all">All Customers</option>
+                      <option value="new_to_merchant">New Customers</option>
+                      <option value="existing_consumers_to_merchant">Existing Customers</option>
+                      <option value="churned_users">Lapsed Customers</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {["loyalty", "happy_hour", "lunch_specials"].includes(promo.id) && (
                 <div className="text-sm text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-100 italic">
                   No configuration needed. DoorDash handles this automatically.
                 </div>
