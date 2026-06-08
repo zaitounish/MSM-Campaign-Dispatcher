@@ -163,9 +163,8 @@ export const generateDeliveryFeeLink = (merchant, repId, config) => {
   const globals = getGlobalParams(merchant, repId);
   const aud = AUDIENCE_MAP[config.audience] || "all";
   
-  let mst = 2500;
-  if (aud === "new_to_merchant") mst = 2000;
-  if (aud === "existing_consumers_to_merchant" || aud === "churned_users") mst = 1500;
+  // Use the explicitly selected minSubtotal if provided, fallback to 2500 ($25.00)
+  const mst = config.minSubtotal ? parseInt(config.minSubtotal, 10) * 100 : 2500;
 
   const params = [
     ...globals,
