@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   X, UserPlus, ShieldCheck, Users, User, Trash2,
   RefreshCw, Check, AlertCircle, Search, ToggleLeft,
@@ -120,19 +120,21 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
 
-  // New user form
   const [newEmail, setNewEmail] = useState("");
-  const [newName, setNewName] = useState("");
-  const [newRole, setNewRole] = useState(addableRoles(actorRole)[0] || "rep");
+  const [newName, setNewName]   = useState("");
+  const [newRole, setNewRole]   = useState(addableRoles(actorRole)[0] || "rep");
   const [newRepId, setNewRepId] = useState("");
-  const [sendInvite, setSendInvite] = useState(true);
-  const [addError, setAddError] = useState("");
-  const [addLoading, setAddLoading] = useState(false);
-  const [addSuccess, setAddSuccess] = useState("");
+  // manager_id: for ultimate assigning a rep to a manager; for manager it auto-fills to their own ID
+  const [newManagerId, setNewManagerId] = useState("");
+  const [sendInvite, setSendInvite]     = useState(true);
+  const [addError, setAddError]         = useState("");
+  const [addLoading, setAddLoading]     = useState(false);
+  const [addSuccess, setAddSuccess]     = useState("");
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     setError("");
+    // Fetch all users — include manager_id for team grouping
     const { data, error: err } = await supabase
       .from("reps_whitelist")
       .select("*")
@@ -182,6 +184,18 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
     setSaving(null);
   };
 
+  // ── Assign / reassign manager (Ultimate only) ─────────────────────────────────
+  const changeManager = async (user, managerId) => {
+    if (actorRole !== "ultimate") return; // only Ultimate can do this
+    setSaving(user.id);
+    const { error: err } = await supabase
+      .from("reps_whitelist")
+      .update({ manager_id: managerId || null })
+      .eq("id", user.id);
+    if (!err) setUsers(prev => prev.map(u => u.id === user.id ? { ...u, manager_id: managerId || null } : u));
+    setSaving(null);
+  };
+
   // ── Add user ──────────────────────────────────────────────────────────────
   const handleAddUser = async (e) => {
     e.preventDefault();
@@ -198,10 +212,14 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
       .from("reps_whitelist")
       .insert({
         email,
-        full_name: newName.trim() || null,
-        role: newRole,
-        rep_id: newRepId.trim() || null,
-        is_active: true,
+        full_name:  newName.trim() || null,
+        role:       newRole,
+        rep_id:     newRepId.trim() || null,
+        is_active:  true,
+        // Only Ultimate can assign a rep to a manager.
+        // Managers adding reps do NOT auto-assign themselves — that is
+        // exclusively an Ultimate admin action.
+        manager_id: actorRole === "ultimate" ? (newManagerId || null) : null,
       })
       .select()
       .single();
@@ -237,9 +255,19 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
 
     setAddSuccess(`${email} added as ${ROLE_CONFIG[newRole].label}${inviteNote}`);
     setAddLoading(false);
-    setNewEmail(""); setNewName(""); setNewRole(addableRoles(actorRole)[0] || "rep"); setNewRepId("");
+    setNewEmail(""); setNewName(""); setNewRole(addableRoles(actorRole)[0] || "rep"); setNewRepId(""); setNewManagerId("");
     setTimeout(() => { setShowAdd(false); setAddSuccess(""); }, 4000);
   };
+
+  // Build a manager lookup for the table display
+  const managerLookup = useMemo(() => {
+    const map = {};
+    users.forEach(u => { if (u.role === "manager" || u.role === "ultimate") map[u.id] = u.full_name || u.email; });
+    return map;
+  }, [users]);
+
+  // Managers listed for the "assign to manager" dropdown (ultimate only)
+  const managerUsers = useMemo(() => users.filter(u => u.role === "manager"), [users]);
 
   const filtered = users.filter(u =>
     !search ||
@@ -247,6 +275,11 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
     u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
     u.rep_id?.toLowerCase().includes(search.toLowerCase())
   );
+
+  // Manager view: only show their reps + themselves
+  const visibleUsers = actorRole === "manager"
+    ? filtered.filter(u => u.id === userProfile?.id || u.manager_id === userProfile?.id)
+    : filtered;
 
   const stats = { ultimate: 0, manager: 0, rep: 0 };
   users.filter(u => u.is_active).forEach(u => { if (stats[u.role] !== undefined) stats[u.role]++; });
@@ -380,7 +413,23 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                     className="w-full border border-amber-300 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber-500 bg-white font-mono"
                   />
                 </div>
-              </div>
+                {/* Manager assignment — ultimate only; manager auto-assigns themselves */}
+                {actorRole === "ultimate" && newRole === "rep" && managerUsers.length > 0 && (
+                  <div>
+                    <label className="block text-xs font-bold text-amber-800 mb-1">Assign to Manager (optional)</label>
+                    <select
+                      value={newManagerId}
+                      onChange={e => setNewManagerId(e.target.value)}
+                      className="w-full border border-amber-300 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber-500 bg-white appearance-none cursor-pointer"
+                    >
+                      <option value="">No manager assigned</option>
+                      {managerUsers.map(m => (
+                        <option key={m.id} value={m.id}>{m.full_name || m.email}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>{/* end grid */}
 
               {/* Invitation toggle */}
               <label className="flex items-center gap-3 cursor-pointer select-none">
@@ -438,13 +487,13 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
-                    {["User", "Role", "Rep ID", "Status", "Added", "Actions"].map(h => (
+                    {["User", "Role", "Rep ID", actorRole !== "rep" && "Manager", "Status", "Added", "Actions"].filter(Boolean).map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((user, i) => {
+                  {visibleUsers.map((user, i) => {
                     const isUltimate = user.role === "ultimate";
                     const isBusy = saving === user.id;
                     const deletable = canDelete(actorRole, user.role);
@@ -479,8 +528,33 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="text-xs font-mono text-slate-500">{user.rep_id || "|"}</span>
+                          <span className="text-xs font-mono text-slate-500">{user.rep_id || "—"}</span>
                         </td>
+                        {/* Manager column — Ultimate: editable dropdown for reassignment; Manager: read-only badge */}
+                        {actorRole !== "rep" && (
+                          <td className="px-4 py-3">
+                            {actorRole === "ultimate" && user.role === "rep" ? (
+                              // Ultimate sees a dropdown to assign/reassign this rep to any manager
+                              <select
+                                value={user.manager_id || ""}
+                                onChange={e => changeManager(user, e.target.value)}
+                                disabled={isBusy}
+                                className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white appearance-none cursor-pointer outline-none focus:border-amber-400 max-w-[140px] truncate"
+                                title="Assign to manager"
+                              >
+                                <option value="">— Unassigned —</option>
+                                {managerUsers.map(m => (
+                                  <option key={m.id} value={m.id}>{m.full_name || m.email}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              // Manager sees a read-only badge (or dash if unassigned)
+                              user.manager_id && managerLookup[user.manager_id]
+                                ? <span className="text-xs text-violet-700 bg-violet-50 border border-violet-200 px-2 py-0.5 rounded-full font-semibold">{managerLookup[user.manager_id]}</span>
+                                : <span className="text-[10px] text-slate-300">—</span>
+                            )}
+                          </td>
+                        )}
                         <td className="px-4 py-3">
                           {deletable ? (
                             <button

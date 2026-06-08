@@ -18,13 +18,35 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
   const signatureRef = useRef(null);
   const [sigEmpty, setSigEmpty] = useState(!repSettings.signature);
 
-  // Seed the contentEditable div once on mount
+  // Re-sync formData + signature every time the modal opens.
+  // The component unmounts on close (if (!isOpen) return null below), so a
+  // [] dependency would only fire on the very first mount — missing every
+  // subsequent re-open. isOpen as dependency ensures the seed always runs.
   useEffect(() => {
-    if (signatureRef.current && repSettings.signature) {
-      signatureRef.current.innerHTML = repSettings.signature;
-      setSigEmpty(false);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!isOpen) return;
+
+    // Sync text fields
+    setFormData({
+      repId:        repSettings.repId        || "",
+      gasUrl:       repSettings.gasUrl       || "",
+      geminiApiKey: repSettings.geminiApiKey || "",
+      firstName:    repSettings.firstName    || "",
+      lastName:     repSettings.lastName     || "",
+      title:        repSettings.title        || "Merchant Success Manager",
+      phone:        repSettings.phone        || "",
+    });
+
+    // Seed the contentEditable signature div
+    // Use a tiny timeout so the DOM is guaranteed to be rendered
+    const timer = setTimeout(() => {
+      if (signatureRef.current) {
+        signatureRef.current.innerHTML = repSettings.signature || "";
+        setSigEmpty(!repSettings.signature);
+      }
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isOpen) return null;
 
@@ -129,9 +151,6 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
                 placeholder="https://script.google.com/macros/s/.../exec"
                 className="w-full bg-slate-50 border border-slate-300 font-mono text-xs rounded-xl px-4 py-2.5 focus:border-dd-red focus:ring-1 focus:ring-dd-red outline-none transition-all"
               />
-              {/* <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                Used exclusively by the "Bulk Send" feature to bypass local mail clients via Google's infrastructure.
-              </p> */}
             </div>
 
             <div>
@@ -146,9 +165,6 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
                 placeholder="AIza..."
                 className="w-full bg-slate-50 border border-slate-300 font-mono text-xs rounded-xl px-4 py-2.5 focus:border-violet-500 focus:ring-1 focus:ring-violet-400 outline-none transition-all"
               />
-              {/* <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                Free key from <strong>ai.google.dev</strong>. Used locally to generate AI pipeline insights. Never sent to our servers.
-              </p> */}
             </div>
           </div>
 

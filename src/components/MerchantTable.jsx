@@ -63,6 +63,13 @@ export default function MerchantTable({
   const [excludeData, setExcludeData]           = useState("");
   const [excludeFeedback, setExcludeFeedback]   = useState(null);
 
+  // ── INDEPENDENT Exclude filter state (does NOT affect the main table filter) ──
+  // These are used ONLY to identify merchants to deselect — they never filter the
+  // visible table. The Smart Exclude flow is: pick criteria → see count → press
+  // "Exclude X" → those merchants get deselected from the full merchant list.
+  const [excludeStatusFilters, setExcludeStatusFilters] = useState({});
+  const [excludeActiveColors,  setExcludeActiveColors]  = useState(new Set());
+
   // ── Derive dynamic filter config from analyticsPayload ───────────────────────
   const dynConfig = useMemo(() => {
     if (!analyticsPayload) return { statusCols: [], touchCol: null, colorGroups: [] };
@@ -245,7 +252,7 @@ export default function MerchantTable({
     setBulkFeedback({ foundCount: foundIds.size, totalCount: inputIds.size });
   };
 
-  // ── Smart Exclude ─────────────────────────────────────────────────────────────
+  // ── Bulk Exclude (paste IDs tab) ──────────────────────────────────────────────
   const handleApplyExclude = () => {
     const inputIds = new Set(
       excludeData.split(/[\s,]+/).map(s => s.trim().toLowerCase()).filter(Boolean)
@@ -267,6 +274,64 @@ export default function MerchantTable({
     });
     setMerchants(updated);
     setExcludeFeedback({ excludedCount, totalCount: inputIds.size });
+  };
+
+  // ── Smart Exclude — derived: merchants to deselect based on exclude-only filters ──
+  // Built from the FULL merchants array so the visible table is NEVER affected.
+  // Correct flow: 324 selected → pick criteria → identifies 24 → click Exclude → 300 remain.
+  const excludeFilteredMerchants = useMemo(() => {
+    const hasExcludeStatusFilters = Object.values(excludeStatusFilters).some(s => s && s.size > 0);
+    const hasExcludeColorFilter   = excludeActiveColors.size > 0;
+    if (!hasExcludeStatusFilters && !hasExcludeColorFilter) return [];
+
+    return merchants.filter((m, idx) => {
+      const rowData = getMerchantRowData(m, idx);
+      if (!rowData) return false;
+
+      if (hasExcludeStatusFilters) {
+        for (const [col, allowedSet] of Object.entries(excludeStatusFilters)) {
+          if (!allowedSet || allowedSet.size === 0) continue;
+          const rawVal  = rowData.colValues?.[col];
+          const cellVal = (rawVal !== null && rawVal !== undefined && rawVal !== "")
+            ? String(rawVal).trim()
+            : "(blank)";
+          if (!allowedSet.has(cellVal)) return false;
+        }
+      }
+
+      if (hasExcludeColorFilter) {
+        const rowColor = rowData.fillColor || "none";
+        if (!excludeActiveColors.has(rowColor)) return false;
+      }
+
+      return true;
+    });
+  }, [merchants, excludeStatusFilters, excludeActiveColors, dynConfig, analyticsPayload]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleExcludeStatusValue = (col, value) => {
+    setExcludeStatusFilters(prev => {
+      const current = new Set(prev[col] || []);
+      current.has(value) ? current.delete(value) : current.add(value);
+      return { ...prev, [col]: current };
+    });
+  };
+
+  const toggleExcludeColor = (hex) => {
+    setExcludeActiveColors(prev => {
+      const next = new Set(prev);
+      next.has(hex) ? next.delete(hex) : next.add(hex);
+      return next;
+    });
+  };
+
+  // Apply smart exclude: deselect only the identified merchants, all others unchanged
+  const handleApplySmartExclude = () => {
+    if (excludeFilteredMerchants.length === 0) return;
+    const excludeIds = new Set(excludeFilteredMerchants.map(m => m.id));
+    setMerchants(prev => prev.map(m => excludeIds.has(m.id) ? { ...m, selected: false } : m));
+    setExcludeStatusFilters({});
+    setExcludeActiveColors(new Set());
+    setShowExcludePanel(false);
   };
 
   // ── Select / Exclude all currently-filtered merchants ───────────────────────────
@@ -564,6 +629,16 @@ export default function MerchantTable({
           {/* Tab: Smart Exclude */}
           {excludePanelTab === "smart" && (
             <div className="px-6 py-5 space-y-4">
+              {/* Explanation banner */}
+              <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
+                <MinusCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-rose-700 leading-relaxed">
+                  <strong>How Smart Exclude works:</strong> Pick criteria below to identify merchants you want to
+                  remove. The main table stays unchanged. When ready, click
+                  <strong> "Exclude X merchants"</strong> and only those will be deselected.
+                </p>
+              </div>
+
               {hasDynFilters ? (
                 <>
                   <div className="flex items-center gap-2 text-xs font-bold text-rose-700 uppercase tracking-wider">
@@ -571,14 +646,15 @@ export default function MerchantTable({
                   </div>
                   <div className="space-y-3">
                     {dynConfig.statusCols.map(col => {
-                      const selected = statusFilters[col.col] || new Set();
+                      // Use INDEPENDENT exclude filters — not the main statusFilters!
+                      const selected = excludeStatusFilters[col.col] || new Set();
                       return (
-                        <CollapsibleFilterGroup key={col.col} title={col.rawHeader} defaultExpanded={selected.size > 0} activeCount={selected.size}>
+                        <CollapsibleFilterGroup key={col.col} title={col.rawHeader} defaultExpanded={selected.size > 0} activeCount={selected.size} accentColor="rose">
                           <div className="flex flex-wrap gap-2">
                             {col.distribution.map(({ label, count }) => {
                               const isActive = selected.has(label);
                               return (
-                                <button key={label} onClick={() => toggleStatusValue(col.col, label)}
+                                <button key={label} onClick={() => toggleExcludeStatusValue(col.col, label)}
                                   className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
                                     isActive ? "bg-rose-600 text-white border-rose-600 shadow-sm" : "bg-white text-slate-600 border-slate-300 hover:border-rose-400"
                                   }`}>
@@ -587,7 +663,7 @@ export default function MerchantTable({
                               );
                             })}
                             {selected.size > 0 && (
-                              <button onClick={() => setStatusFilters(prev => ({ ...prev, [col.col]: new Set() }))}
+                              <button onClick={() => setExcludeStatusFilters(prev => ({ ...prev, [col.col]: new Set() }))}
                                 className="text-xs text-slate-400 hover:text-red-500 transition-colors font-semibold">Clear</button>
                             )}
                           </div>
@@ -595,12 +671,12 @@ export default function MerchantTable({
                       );
                     })}
                     {dynConfig.colorGroups.length > 0 && (
-                      <CollapsibleFilterGroup title="Row Highlight Color" defaultExpanded={activeColors.size > 0} activeCount={activeColors.size}>
+                      <CollapsibleFilterGroup title="Row Highlight Color" defaultExpanded={excludeActiveColors.size > 0} activeCount={excludeActiveColors.size} accentColor="rose">
                         <div className="flex flex-wrap gap-2 items-center">
                           {dynConfig.colorGroups.map(g => {
-                            const isActive = activeColors.has(g.hex);
+                            const isActive = excludeActiveColors.has(g.hex);
                             return (
-                              <button key={g.hex} onClick={() => toggleColor(g.hex)}
+                              <button key={g.hex} onClick={() => toggleExcludeColor(g.hex)}
                                 className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
                                   isActive ? "border-rose-700 shadow-md ring-2 ring-rose-300" : "border-slate-300 bg-white hover:border-rose-400"
                                 }`}>
@@ -610,8 +686,8 @@ export default function MerchantTable({
                               </button>
                             );
                           })}
-                          {activeColors.size > 0 && (
-                            <button onClick={() => setActiveColors(new Set())} className="text-xs text-slate-400 hover:text-red-500 transition-colors font-semibold">Clear</button>
+                          {excludeActiveColors.size > 0 && (
+                            <button onClick={() => setExcludeActiveColors(new Set())} className="text-xs text-slate-400 hover:text-red-500 transition-colors font-semibold">Clear</button>
                           )}
                         </div>
                       </CollapsibleFilterGroup>
@@ -621,15 +697,23 @@ export default function MerchantTable({
               ) : (
                 <p className="text-sm text-slate-500 italic">No dynamic column filters detected. Use Bulk Exclude tab to deselect by IDs.</p>
               )}
-              {/* Deselect All Filtered action */}
+              {/* Exclude action — targets ONLY the identified merchants, not the visible filtered list */}
               <div className="flex items-center gap-3 pt-1 border-t border-rose-100">
                 <button
-                  onClick={handleDeselectAllFiltered}
-                  className="flex items-center gap-2 text-xs font-bold px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg shadow-sm transition-colors"
+                  onClick={handleApplySmartExclude}
+                  disabled={excludeFilteredMerchants.length === 0}
+                  className="flex items-center gap-2 text-xs font-bold px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <MinusCircle className="w-3.5 h-3.5" /> Deselect All Filtered ({filteredMerchants.length})
+                  <MinusCircle className="w-3.5 h-3.5" />
+                  {excludeFilteredMerchants.length > 0
+                    ? `Exclude ${excludeFilteredMerchants.length} merchants from selection`
+                    : "Pick criteria above to identify merchants"}
                 </button>
-                <span className="text-xs text-slate-400">Deselects every merchant currently visible in the table</span>
+                {excludeFilteredMerchants.length > 0 && (
+                  <span className="text-xs text-slate-400">
+                    {merchants.filter(m => m.selected).length} selected → {merchants.filter(m => m.selected).length - excludeFilteredMerchants.filter(m => m.selected).length} after exclude
+                  </span>
+                )}
               </div>
             </div>
           )}
@@ -840,13 +924,18 @@ function FilterChip({ label, active, onClick, variant }) {
   );
 }
 
-function CollapsibleFilterGroup({ title, children, defaultExpanded = false, activeCount = 0 }) {
+function CollapsibleFilterGroup({ title, children, defaultExpanded = false, activeCount = 0, accentColor = "violet" }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const hasActive = activeCount > 0;
 
+  const borderActive   = accentColor === "rose" ? "border-rose-300 bg-white shadow-sm" : "border-violet-300 bg-white shadow-sm";
+  const textActive     = accentColor === "rose" ? "text-rose-700" : "text-violet-700";
+  const badgeBg        = accentColor === "rose" ? "bg-rose-600" : "bg-violet-600";
+  const pillActiveText = accentColor === "rose" ? "bg-rose-50 text-rose-600 border-rose-200" : "bg-violet-50 text-violet-600 border-violet-200";
+
   return (
     <div className={`rounded-xl border transition-all duration-200 overflow-hidden ${
-      hasActive ? "border-violet-300 bg-white shadow-sm" : "border-slate-200 bg-white/60"
+      hasActive ? borderActive : "border-slate-200 bg-white/60"
     }`}>
       {/* ── Header row ── */}
       <button
@@ -856,12 +945,12 @@ function CollapsibleFilterGroup({ title, children, defaultExpanded = false, acti
         {/* Left: title + active badge */}
         <div className="flex items-center gap-2 min-w-0">
           <span className={`text-xs font-bold tracking-wide truncate transition-colors ${
-            hasActive ? "text-violet-700" : "text-slate-600 group-hover:text-slate-800"
+            hasActive ? textActive : "text-slate-600 group-hover:text-slate-800"
           }`}>
             {title}
           </span>
           {hasActive && (
-            <span className="flex-shrink-0 text-[10px] font-bold bg-violet-600 text-white px-1.5 py-0.5 rounded-full leading-none">
+            <span className={`flex-shrink-0 text-[10px] font-bold ${badgeBg} text-white px-1.5 py-0.5 rounded-full leading-none`}>
               {activeCount}
             </span>
           )}
@@ -872,7 +961,7 @@ function CollapsibleFilterGroup({ title, children, defaultExpanded = false, acti
           expanded
             ? "bg-slate-100 text-slate-600 border-slate-200"
             : hasActive
-              ? "bg-violet-50 text-violet-600 border-violet-200"
+              ? pillActiveText
               : "bg-slate-50 text-slate-500 border-slate-200 group-hover:border-slate-300"
         }`}>
           <span className="text-base leading-none" style={{ lineHeight: 1 }}>
