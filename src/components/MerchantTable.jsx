@@ -30,16 +30,16 @@ export default function MerchantTable({
   onActiveMerchantsChange,
   analyticsPayload,
 }) {
-  const [searchTerm, setSearchTerm]       = useState("");
-  const [expandedRows, setExpandedRows]   = useState(new Set());
+  const [searchTerm, setSearchTerm] = useState("");
+  const [expandedRows, setExpandedRows] = useState(new Set());
   const [editingEmailsId, setEditingEmailsId] = useState(null);
-  const [showDynFilters, setShowDynFilters]   = useState(false);
+  const [showDynFilters, setShowDynFilters] = useState(false);
 
   // ── Hardcoded known-opp filters ──────────────────────────────────────────────
-  const [filterSlOpp,      setFilterSlOpp]      = useState(false);
-  const [filterPromoOpp,   setFilterPromoOpp]   = useState(false);
-  const [filterLoyalOpp,   setFilterLoyalOpp]   = useState(false);
-  const [filterSlCredit,   setFilterSlCredit]   = useState(false);
+  const [filterSlOpp, setFilterSlOpp] = useState(false);
+  const [filterPromoOpp, setFilterPromoOpp] = useState(false);
+  const [filterLoyalOpp, setFilterLoyalOpp] = useState(false);
+  const [filterSlCredit, setFilterSlCredit] = useState(false);
   const [filterEmailIssues, setFilterEmailIssues] = useState(false); // show only merchants with bad/missing email
 
   // ── Dynamic: status column selections  { [colNormalized]: Set<string> } ──────
@@ -53,22 +53,22 @@ export default function MerchantTable({
 
   // Smart Filters panel state
   const [showSelectPanel, setShowSelectPanel] = useState(false);
-  const [selectPanelTab, setSelectPanelTab]   = useState("smart"); // "smart" | "bulk"
-  const [pasteData, setPasteData]             = useState("");
-  const [bulkFeedback, setBulkFeedback]       = useState(null);
+  const [selectPanelTab, setSelectPanelTab] = useState("smart"); // "smart" | "bulk"
+  const [pasteData, setPasteData] = useState("");
+  const [bulkFeedback, setBulkFeedback] = useState(null);
 
   // Smart Exclude panel state
   const [showExcludePanel, setShowExcludePanel] = useState(false);
-  const [excludePanelTab, setExcludePanelTab]   = useState("smart"); // "smart" | "bulk"
-  const [excludeData, setExcludeData]           = useState("");
-  const [excludeFeedback, setExcludeFeedback]   = useState(null);
+  const [excludePanelTab, setExcludePanelTab] = useState("smart"); // "smart" | "bulk"
+  const [excludeData, setExcludeData] = useState("");
+  const [excludeFeedback, setExcludeFeedback] = useState(null);
 
   // ── INDEPENDENT Exclude filter state (does NOT affect the main table filter) ──
   // These are used ONLY to identify merchants to deselect — they never filter the
   // visible table. The Smart Exclude flow is: pick criteria → see count → press
   // "Exclude X" → those merchants get deselected from the full merchant list.
   const [excludeStatusFilters, setExcludeStatusFilters] = useState({});
-  const [excludeActiveColors,  setExcludeActiveColors]  = useState(new Set());
+  const [excludeActiveColors, setExcludeActiveColors] = useState(new Set());
 
   // ── Derive dynamic filter config from analyticsPayload ───────────────────────
   const dynConfig = useMemo(() => {
@@ -77,8 +77,8 @@ export default function MerchantTable({
     const statusCols = analyticsPayload.widgets
       .filter(w => w.widget === "statusBar")
       .map(w => ({
-        col:          w.normalized,
-        rawHeader:    w.rawHeader,
+        col: w.normalized,
+        rawHeader: w.rawHeader,
         distribution: w.distribution, // [{ label, count }]
       }));
 
@@ -134,13 +134,13 @@ export default function MerchantTable({
   // ── Main filter pipeline ──────────────────────────────────────────────────────
   const filteredMerchants = useMemo(() => {
     const hasStatusFilters = Object.values(statusFilters).some(s => s && s.size > 0);
-    const hasColorFilter   = activeColors.size > 0;
-    const hasTouchFilter   = touchRange !== null;
-    const touchColKey      = dynConfig.touchCol?.normalized;
+    const hasColorFilter = activeColors.size > 0;
+    const hasTouchFilter = touchRange !== null;
+    const touchColKey = dynConfig.touchCol?.normalized;
 
     return merchants.filter((m, idx) => {
       // 1. Known opp hard filters
-      if (filterSlOpp    && !m.slOpp)    return false;
+      if (filterSlOpp && !m.slOpp) return false;
       if (filterPromoOpp && !m.promoOpp) return false;
       if (filterLoyalOpp && !m.loyalOpp) return false;
       if (filterSlCredit && !m.slCredit) return false;
@@ -149,10 +149,10 @@ export default function MerchantTable({
       // 2. Text search
       if (searchTerm) {
         const lower = searchTerm.toLowerCase();
-        const inName  = m.merchantName.toLowerCase().includes(lower);
+        const inName = m.merchantName.toLowerCase().includes(lower);
         const inEmail = m.emails?.some(e => e.address.toLowerCase().includes(lower));
         const inBizId = m.businessId?.toLowerCase().includes(lower);
-        const inSids  = m.sids.split(",").some(s => s.toLowerCase().includes(lower));
+        const inSids = m.sids.split(",").some(s => s.toLowerCase().includes(lower));
         if (!inName && !inEmail && !inBizId && !inSids) return false;
       }
 
@@ -182,7 +182,7 @@ export default function MerchantTable({
 
         // 3c. Touch range slider
         if (hasTouchFilter && touchColKey) {
-          const raw   = rowData.colValues?.[touchColKey];
+          const raw = rowData.colValues?.[touchColKey];
           const count = raw !== null && raw !== "" ? parseInt(raw) || 0 : 0;
           if (count < resolvedTouchRange[0] || count > resolvedTouchRange[1]) return false;
         }
@@ -278,33 +278,48 @@ export default function MerchantTable({
 
   // ── Smart Exclude — derived: merchants to deselect based on exclude-only filters ──
   // Built from the FULL merchants array so the visible table is NEVER affected.
-  // Correct flow: 324 selected → pick criteria → identifies 24 → click Exclude → 300 remain.
+  //
+  // LOGIC:
+  //   • Within one status column  → OR  (any selected value matches)
+  //   • Across different columns  → OR  (merchant matches ANY active criterion)
+  //   • Color + status columns    → OR  (merchant matches status OR color)
+  //
+  // Example: 324 total, pick Status="Inactive" (20 merchants) + Color=Red (10 merchants,
+  //          5 overlapping) → 25 unique merchants identified for exclusion → 299 remain.
   const excludeFilteredMerchants = useMemo(() => {
-    const hasExcludeStatusFilters = Object.values(excludeStatusFilters).some(s => s && s.size > 0);
-    const hasExcludeColorFilter   = excludeActiveColors.size > 0;
+    const activeStatusCols = Object.entries(excludeStatusFilters).filter(
+      ([, s]) => s && s.size > 0
+    );
+    const hasExcludeStatusFilters = activeStatusCols.length > 0;
+    const hasExcludeColorFilter = excludeActiveColors.size > 0;
+
     if (!hasExcludeStatusFilters && !hasExcludeColorFilter) return [];
 
     return merchants.filter((m, idx) => {
       const rowData = getMerchantRowData(m, idx);
+      // If there's no row analytics data we cannot match criteria — skip
       if (!rowData) return false;
 
+      // ── Status column checks (OR across columns, OR within each column's values) ──
+      // A merchant is targeted for exclusion if it matches ANY of the selected criteria.
       if (hasExcludeStatusFilters) {
-        for (const [col, allowedSet] of Object.entries(excludeStatusFilters)) {
-          if (!allowedSet || allowedSet.size === 0) continue;
-          const rawVal  = rowData.colValues?.[col];
+        for (const [col, allowedSet] of activeStatusCols) {
+          const rawVal = rowData.colValues?.[col];
           const cellVal = (rawVal !== null && rawVal !== undefined && rawVal !== "")
             ? String(rawVal).trim()
             : "(blank)";
-          if (!allowedSet.has(cellVal)) return false;
+          if (allowedSet.has(cellVal)) return true; // ← OR: matched this column criterion → exclude
         }
       }
 
+      // ── Color check (OR with status checks) ──
       if (hasExcludeColorFilter) {
         const rowColor = rowData.fillColor || "none";
-        if (!excludeActiveColors.has(rowColor)) return false;
+        if (excludeActiveColors.has(rowColor)) return true; // ← OR: matched color → exclude
       }
 
-      return true;
+      // Matched no active criterion → do NOT exclude
+      return false;
     });
   }, [merchants, excludeStatusFilters, excludeActiveColors, dynConfig, analyticsPayload]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -408,18 +423,16 @@ export default function MerchantTable({
           <div className="flex items-center gap-2">
             <button
               onClick={() => { setShowSelectPanel(v => !v); if (showExcludePanel) setShowExcludePanel(false); }}
-              className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${
-                showSelectPanel ? "bg-violet-600 text-white border-violet-600" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"
-              }`}
+              className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${showSelectPanel ? "bg-violet-600 text-white border-violet-600" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"
+                }`}
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
               Smart Filters {showSelectPanel ? "▲" : "▼"}
             </button>
             <button
               onClick={() => { setShowExcludePanel(v => !v); if (showSelectPanel) setShowSelectPanel(false); }}
-              className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${
-                showExcludePanel ? "bg-rose-600 text-white border-rose-600" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"
-              }`}
+              className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${showExcludePanel ? "bg-rose-600 text-white border-rose-600" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"
+                }`}
             >
               <MinusCircle className="w-3.5 h-3.5" />
               Smart Exclude {showExcludePanel ? "▲" : "▼"}
@@ -435,15 +448,15 @@ export default function MerchantTable({
           <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
             <Filter className="w-3.5 h-3.5" /> Quick Filters:
           </span>
-          <FilterChip label="SL Opp"    active={filterSlOpp}    onClick={() => { setFilterSlOpp(v => !v); if (filterSlOpp) setFilterSlCredit(false); }} />
+          <FilterChip label="SL Opp" active={filterSlOpp} onClick={() => { setFilterSlOpp(v => !v); if (filterSlOpp) setFilterSlCredit(false); }} />
           {filterSlOpp && (
             <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-left-2 duration-200">
               <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
               <FilterChip label="Has Credit" active={filterSlCredit} onClick={() => setFilterSlCredit(v => !v)} />
             </div>
           )}
-          <FilterChip label="Promo Opp"  active={filterPromoOpp} onClick={() => setFilterPromoOpp(v => !v)} />
-          <FilterChip label="Loyal Opp"  active={filterLoyalOpp} onClick={() => setFilterLoyalOpp(v => !v)} />
+          <FilterChip label="Promo Opp" active={filterPromoOpp} onClick={() => setFilterPromoOpp(v => !v)} />
+          <FilterChip label="Loyal Opp" active={filterLoyalOpp} onClick={() => setFilterLoyalOpp(v => !v)} />
           {emailIssueCount > 0 && (
             <FilterChip
               label={`⚠️ Email Issues (${emailIssueCount})`}
@@ -486,11 +499,10 @@ export default function MerchantTable({
               <button
                 key={tab.id}
                 onClick={() => setSelectPanelTab(tab.id)}
-                className={`text-xs font-bold px-4 py-2 rounded-t-lg border-b-2 transition-all ${
-                  selectPanelTab === tab.id
+                className={`text-xs font-bold px-4 py-2 rounded-t-lg border-b-2 transition-all ${selectPanelTab === tab.id
                     ? "border-violet-600 text-violet-700 bg-white"
                     : "border-transparent text-slate-500 hover:text-slate-700"
-                }`}
+                  }`}
               >
                 {tab.label}
               </button>
@@ -515,9 +527,8 @@ export default function MerchantTable({
                               const isActive = selected.has(label);
                               return (
                                 <button key={label} onClick={() => toggleStatusValue(col.col, label)}
-                                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
-                                    isActive ? "bg-violet-600 text-white border-violet-600 shadow-sm" : "bg-white text-slate-600 border-slate-300 hover:border-violet-400"
-                                  }`}>
+                                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${isActive ? "bg-violet-600 text-white border-violet-600 shadow-sm" : "bg-white text-slate-600 border-slate-300 hover:border-violet-400"
+                                    }`}>
                                   {label} <span className="opacity-60">({count})</span>
                                 </button>
                               );
@@ -537,9 +548,8 @@ export default function MerchantTable({
                             const isActive = activeColors.has(g.hex);
                             return (
                               <button key={g.hex} onClick={() => toggleColor(g.hex)} title={`#${g.hex} | ${g.count} rows`}
-                                className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
-                                  isActive ? "border-slate-700 shadow-md ring-2 ring-slate-400" : "border-slate-300 bg-white hover:border-slate-500"
-                                }`}>
+                                className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${isActive ? "border-slate-700 shadow-md ring-2 ring-slate-400" : "border-slate-300 bg-white hover:border-slate-500"
+                                  }`}>
                                 <span className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0" style={{ backgroundColor: `#${g.hex}` }} />
                                 <span className="text-slate-700">{g.label || `#${g.hex}`}</span>
                                 <span className="text-slate-400">({g.count})</span>
@@ -547,9 +557,8 @@ export default function MerchantTable({
                             );
                           })}
                           <button onClick={() => toggleColor("none")}
-                            className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
-                              activeColors.has("none") ? "border-slate-700 shadow-md ring-2 ring-slate-400" : "border-slate-300 border-dashed bg-white hover:border-slate-500"
-                            }`}>
+                            className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${activeColors.has("none") ? "border-slate-700 shadow-md ring-2 ring-slate-400" : "border-slate-300 border-dashed bg-white hover:border-slate-500"
+                              }`}>
                             <span className="w-3.5 h-3.5 rounded-full border border-dashed border-slate-400 shrink-0" />
                             <span className="text-slate-500">No highlight</span>
                             <span className="text-slate-400">({analyticsPayload?.uncoloredCount ?? "?"})</span>
@@ -595,9 +604,8 @@ export default function MerchantTable({
                     Apply
                   </button>
                   {bulkFeedback && (
-                    <span className={`text-xs font-bold px-2 py-1 rounded text-center ${
-                      bulkFeedback.foundCount === bulkFeedback.totalCount ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
-                    }`}>Found {bulkFeedback.foundCount}/{bulkFeedback.totalCount}</span>
+                    <span className={`text-xs font-bold px-2 py-1 rounded text-center ${bulkFeedback.foundCount === bulkFeedback.totalCount ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
+                      }`}>Found {bulkFeedback.foundCount}/{bulkFeedback.totalCount}</span>
                   )}
                 </div>
               </div>
@@ -615,11 +623,10 @@ export default function MerchantTable({
               <button
                 key={tab.id}
                 onClick={() => setExcludePanelTab(tab.id)}
-                className={`text-xs font-bold px-4 py-2 rounded-t-lg border-b-2 transition-all ${
-                  excludePanelTab === tab.id
+                className={`text-xs font-bold px-4 py-2 rounded-t-lg border-b-2 transition-all ${excludePanelTab === tab.id
                     ? "border-rose-600 text-rose-700 bg-white"
                     : "border-transparent text-slate-500 hover:text-slate-700"
-                }`}
+                  }`}
               >
                 {tab.label}
               </button>
@@ -633,9 +640,7 @@ export default function MerchantTable({
               <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
                 <MinusCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
                 <p className="text-xs text-rose-700 leading-relaxed">
-                  <strong>How Smart Exclude works:</strong> Pick criteria below to identify merchants you want to
-                  remove. The main table stays unchanged. When ready, click
-                  <strong> "Exclude X merchants"</strong> and only those will be deselected.
+                  <strong>How Smart Exclude works:</strong> Choose your criteria below. Merchants that match <strong>any</strong> of your choices will be flagged. Click <strong>"Exclude X merchants"</strong> to deselect only those merchants, leaving the rest unchanged.
                 </p>
               </div>
 
@@ -655,9 +660,8 @@ export default function MerchantTable({
                               const isActive = selected.has(label);
                               return (
                                 <button key={label} onClick={() => toggleExcludeStatusValue(col.col, label)}
-                                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
-                                    isActive ? "bg-rose-600 text-white border-rose-600 shadow-sm" : "bg-white text-slate-600 border-slate-300 hover:border-rose-400"
-                                  }`}>
+                                  className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${isActive ? "bg-rose-600 text-white border-rose-600 shadow-sm" : "bg-white text-slate-600 border-slate-300 hover:border-rose-400"
+                                    }`}>
                                   {label} <span className="opacity-60">({count})</span>
                                 </button>
                               );
@@ -677,9 +681,8 @@ export default function MerchantTable({
                             const isActive = excludeActiveColors.has(g.hex);
                             return (
                               <button key={g.hex} onClick={() => toggleExcludeColor(g.hex)}
-                                className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
-                                  isActive ? "border-rose-700 shadow-md ring-2 ring-rose-300" : "border-slate-300 bg-white hover:border-rose-400"
-                                }`}>
+                                className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${isActive ? "border-rose-700 shadow-md ring-2 ring-rose-300" : "border-slate-300 bg-white hover:border-rose-400"
+                                  }`}>
                                 <span className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0" style={{ backgroundColor: `#${g.hex}` }} />
                                 <span className="text-slate-700">{g.label || `#${g.hex}`}</span>
                                 <span className="text-slate-400">({g.count})</span>
@@ -735,9 +738,8 @@ export default function MerchantTable({
                     Exclude
                   </button>
                   {excludeFeedback && (
-                    <span className={`text-xs font-bold px-2 py-1 rounded text-center ${
-                      excludeFeedback.excludedCount > 0 ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-500"
-                    }`}>
+                    <span className={`text-xs font-bold px-2 py-1 rounded text-center ${excludeFeedback.excludedCount > 0 ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-500"
+                      }`}>
                       {excludeFeedback.excludedCount > 0 ? `Excluded ${excludeFeedback.excludedCount}` : "No matches"}
                     </span>
                   )}
@@ -776,7 +778,7 @@ export default function MerchantTable({
             ) : (
               filteredMerchants.map(row => {
                 const isExpanded = expandedRows.has(row.id);
-                const sidArray   = row.sids.split(",");
+                const sidArray = row.sids.split(",");
                 return (
                   <React.Fragment key={row.id}>
                     <tr className={`hover:bg-slate-50 transition-colors ${!row.selected ? "opacity-60" : ""}`}>
@@ -913,11 +915,10 @@ function FilterChip({ label, active, onClick, variant }) {
   return (
     <button
       onClick={onClick}
-      className={`text-xs font-bold px-2.5 py-1 rounded-full transition-all border ${
-        active
+      className={`text-xs font-bold px-2.5 py-1 rounded-full transition-all border ${active
           ? activeClass
           : "bg-white text-slate-600 border-slate-300 hover:border-slate-400"
-      }`}
+        }`}
     >
       {label}
     </button>
@@ -928,15 +929,14 @@ function CollapsibleFilterGroup({ title, children, defaultExpanded = false, acti
   const [expanded, setExpanded] = useState(defaultExpanded);
   const hasActive = activeCount > 0;
 
-  const borderActive   = accentColor === "rose" ? "border-rose-300 bg-white shadow-sm" : "border-violet-300 bg-white shadow-sm";
-  const textActive     = accentColor === "rose" ? "text-rose-700" : "text-violet-700";
-  const badgeBg        = accentColor === "rose" ? "bg-rose-600" : "bg-violet-600";
+  const borderActive = accentColor === "rose" ? "border-rose-300 bg-white shadow-sm" : "border-violet-300 bg-white shadow-sm";
+  const textActive = accentColor === "rose" ? "text-rose-700" : "text-violet-700";
+  const badgeBg = accentColor === "rose" ? "bg-rose-600" : "bg-violet-600";
   const pillActiveText = accentColor === "rose" ? "bg-rose-50 text-rose-600 border-rose-200" : "bg-violet-50 text-violet-600 border-violet-200";
 
   return (
-    <div className={`rounded-xl border transition-all duration-200 overflow-hidden ${
-      hasActive ? borderActive : "border-slate-200 bg-white/60"
-    }`}>
+    <div className={`rounded-xl border transition-all duration-200 overflow-hidden ${hasActive ? borderActive : "border-slate-200 bg-white/60"
+      }`}>
       {/* ── Header row ── */}
       <button
         onClick={() => setExpanded(v => !v)}
@@ -944,9 +944,8 @@ function CollapsibleFilterGroup({ title, children, defaultExpanded = false, acti
       >
         {/* Left: title + active badge */}
         <div className="flex items-center gap-2 min-w-0">
-          <span className={`text-xs font-bold tracking-wide truncate transition-colors ${
-            hasActive ? textActive : "text-slate-600 group-hover:text-slate-800"
-          }`}>
+          <span className={`text-xs font-bold tracking-wide truncate transition-colors ${hasActive ? textActive : "text-slate-600 group-hover:text-slate-800"
+            }`}>
             {title}
           </span>
           {hasActive && (
@@ -957,13 +956,12 @@ function CollapsibleFilterGroup({ title, children, defaultExpanded = false, acti
         </div>
 
         {/* Right: +/- pill */}
-        <span className={`flex-shrink-0 flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full border transition-all ${
-          expanded
+        <span className={`flex-shrink-0 flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full border transition-all ${expanded
             ? "bg-slate-100 text-slate-600 border-slate-200"
             : hasActive
               ? pillActiveText
               : "bg-slate-50 text-slate-500 border-slate-200 group-hover:border-slate-300"
-        }`}>
+          }`}>
           <span className="text-base leading-none" style={{ lineHeight: 1 }}>
             {expanded ? "−" : "+"}
           </span>
