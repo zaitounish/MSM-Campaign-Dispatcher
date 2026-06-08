@@ -11,7 +11,6 @@ import RepSettingsModal from "./components/RepSettingsModal";
 import BOBDashboard from "./components/BOBDashboard";
 import SendLogDashboard from "./components/SendLogDashboard";
 import AdminPanel from "./components/AdminPanel";
-import BulkSendModal from "./components/BulkSendModal";
 import { ArrowRight, Settings } from "lucide-react";
 import { buildAllDeepLinks } from "./lib/deepLinkBuilder";
 import {
@@ -105,7 +104,6 @@ function AppInner({ userProfile, onSignOut }) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
-  const [isBulkSendOpen, setIsBulkSendOpen] = useState(false);
 
   // Auto-open settings if repId is missing on App mount
   useEffect(() => {
@@ -234,7 +232,6 @@ function AppInner({ userProfile, onSignOut }) {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenDashboard={() => setIsDashboardOpen(true)}
         onOpenAdmin={() => setIsAdminOpen(true)}
-        onOpenBulkSend={(userProfile?.role === "manager" || userProfile?.role === "ultimate") ? () => setIsBulkSendOpen(true) : undefined}
         userProfile={userProfile}
         onSignOut={onSignOut}
       />
@@ -370,13 +367,6 @@ function AppInner({ userProfile, onSignOut }) {
           onClose={() => setIsAdminOpen(false)}
           userProfile={userProfile}
           repSettings={repSettings}
-        />
-      )}
-      {isBulkSendOpen && (userProfile?.role === "ultimate" || userProfile?.role === "manager") && (
-        <BulkSendModal
-          userProfile={userProfile}
-          repSettings={repSettings}
-          onClose={() => setIsBulkSendOpen(false)}
         />
       )}
     </div>

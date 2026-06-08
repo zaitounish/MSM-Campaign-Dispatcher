@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Mail, Settings, LogOut, BarChart2, ShieldCheck, Users, User, ChevronDown, Send } from "lucide-react";
+import { Mail, Settings, LogOut, BarChart2, ShieldCheck, Users, User, ChevronDown } from "lucide-react";
 
 const ROLE_CONFIG = {
   ultimate: { label: "Ultimate",  color: "bg-amber-100 text-amber-700 border-amber-200",  icon: ShieldCheck },
@@ -7,7 +7,7 @@ const ROLE_CONFIG = {
   rep:      { label: "Rep",       color: "bg-slate-100 text-slate-600 border-slate-200",   icon: User },
 };
 
-export default function Header({ onOpenSettings, onOpenDashboard, onOpenAdmin, onOpenBulkSend, userProfile, onSignOut }) {
+export default function Header({ onOpenSettings, onOpenDashboard, onOpenAdmin, userProfile, onSignOut }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   const role   = userProfile?.role || "rep";
@@ -48,17 +48,6 @@ export default function Header({ onOpenSettings, onOpenDashboard, onOpenAdmin, o
             title="Manage Access"
           >
             <ShieldCheck className="w-4 h-4" /> {role === "ultimate" ? "Admin" : "Manage Reps"}
-          </button>
-        )}
-
-        {/* Bulk Send button — manager + ultimate only */}
-        {(role === "manager" || role === "ultimate") && onOpenBulkSend && (
-          <button
-            onClick={onOpenBulkSend}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors border border-emerald-200"
-            title="Bulk Email Send"
-          >
-            <Send className="w-4 h-4" /> Bulk Send
           </button>
         )}
 
