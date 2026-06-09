@@ -48,6 +48,12 @@ const GAS_SCRIPT = `// ─── MSM Campaign Dispatcher — Gmail Drafts Bridge
 // After deploying, open the Web App URL once in your browser to grant Gmail
 // permissions, then paste the URL into ⚙ Settings → Google Apps Script URL.
 // ─────────────────────────────────────────────────────────────────────────────
+function doGet(e) {
+  return ContentService.createTextOutput(
+    "✅ Authorization successful! You can close this tab and return to the Dispatcher."
+  );
+}
+
 function doPost(e) {
   // Reads form-encoded fields sent by the hidden <form> POST
   var action = e.parameter.action || "draft";
@@ -419,7 +425,7 @@ export default function DeliveryPanel({
                   <ol className="list-decimal list-inside space-y-2 text-slate-600">
                     <li>Go to <a href="https://script.google.com" target="_blank" rel="noreferrer" className="text-blue-600 underline font-semibold">script.google.com</a> and create a <strong>New Project</strong>.</li>
                     <li>Delete any existing code and paste the script below.</li>
-                    <li>Click <strong>Deploy → New Deployment → Web App</strong>.</li>
+                    <li>Click <strong>Deploy → New Deployment → Web App</strong>. <span className="text-xs text-amber-600 font-bold">(Always choose "New Deployment" if updating!)</span></li>
                     <li>Set <em>Execute as</em> = <strong>Me</strong>, <em>Who has access</em> = <strong>Anyone within DoorDash</strong>.</li>
                     <li>Click Deploy, authorize Gmail permissions, and <strong>copy the Web App URL</strong>.</li>
                     <li>Paste that URL into <strong>⚙ Settings → Google Apps Script URL</strong>.</li>
