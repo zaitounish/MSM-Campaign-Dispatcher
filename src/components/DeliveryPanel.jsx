@@ -59,8 +59,12 @@ function doPost(e) {
   var emails = [];
   
   try {
-    if (e.parameter.payload) {
-      // Decode Base64 safely to preserve UTF-8 emojis
+    if (e.parameter.payload_encoded) {
+      // Decode the URL-encoded JSON string safely using native JS
+      var jsonStr = decodeURIComponent(e.parameter.payload_encoded);
+      emails = JSON.parse(jsonStr);
+    } else if (e.parameter.payload) {
+      // fallback for the previous base64 approach
       var decodedBytes = Utilities.base64Decode(e.parameter.payload);
       var jsonStr = Utilities.newBlob(decodedBytes).getDataAsString();
       emails = JSON.parse(jsonStr);
@@ -270,13 +274,13 @@ export default function DeliveryPanel({
       form.appendChild(input);
     };
 
-    // Encode the JSON string to Base64 to safely preserve emojis (like 🚀)
-    // without them getting corrupted by the browser's form URL-encoding.
+    // Use encodeURIComponent to completely protect emojis (like 🚀)
+    // from being garbled by the form POST process or Apps Script's backend.
     const jsonStr = JSON.stringify(payloads);
-    const base64Payload = window.btoa(unescape(encodeURIComponent(jsonStr)));
+    const encodedPayload = encodeURIComponent(jsonStr);
 
     addField("action", "draft");
-    addField("payload", base64Payload);
+    addField("payload_encoded", encodedPayload);
 
     document.body.appendChild(form);
     form.submit();
