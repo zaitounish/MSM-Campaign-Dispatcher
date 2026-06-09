@@ -104,7 +104,7 @@ export const deInterpolateMerchant = (html, merchant = {}) => {
   if (!html) return "";
   const { merchantName, dmName } = merchant;
 
-  // Build the list of substitutions — skip generic fallback values
+  // Build the list of substitutions skip generic fallback values
   const subs = [];
   if (merchantName && merchantName !== "Merchant Partner") {
     subs.push({ from: merchantName, to: "{Store Name}" });
@@ -556,7 +556,7 @@ export const wrapForRichEmail = (bodyHtml) => {
 };
 
 // ─── Clean (personal) email compiler ──────────────────────────────────────────
-// Looks like a professional email written in Gmail — no banners, no heavy
+// Looks like a professional email written in Gmail no banners, no heavy
 // backgrounds, structured prose with in-text hyperlinks and a simple signature.
 export const compileBlocksToCleanHtml = (blocks, deepLinks, merchant) => {
   const ff = "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";

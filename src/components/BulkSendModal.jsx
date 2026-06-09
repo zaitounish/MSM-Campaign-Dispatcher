@@ -6,7 +6,7 @@ import {
 import { supabase } from "../lib/supabase";
 
 /**
- * BulkSendModal — Manager / Ultimate only
+ * BulkSendModal Manager / Ultimate only
  *
  * Allows managers to send bulk emails on behalf of their reps.
  * Uses the GAS bridge (gasUrl from repSettings) to push emails.
@@ -17,21 +17,21 @@ import { supabase } from "../lib/supabase";
  *   onClose      () => void
  */
 export default function BulkSendModal({ userProfile, repSettings, onClose }) {
-  const [step, setStep]         = useState(1); // 1=rep, 2=template, 3=confirm
+  const [step, setStep] = useState(1); // 1=rep, 2=template, 3=confirm
   const [teamReps, setTeamReps] = useState([]);
   const [loadingReps, setLoadingReps] = useState(true);
   const [selectedRep, setSelectedRep] = useState(null);
 
-  const [subject, setSubject]   = useState("");
+  const [subject, setSubject] = useState("");
   const [htmlBody, setHtmlBody] = useState("");
   const [toEmails, setToEmails] = useState(""); // comma/newline separated
   const [sendMode, setSendMode] = useState("draft"); // "draft" | "send"
 
-  const [sending, setSending]   = useState(false);
-  const [result, setResult]     = useState(null); // { ok, message }
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null); // { ok, message }
 
-  const role    = userProfile?.role || "rep";
-  const gasUrl  = repSettings?.gasUrl || "";
+  const role = userProfile?.role || "rep";
+  const gasUrl = repSettings?.gasUrl || "";
 
   // ── Fetch team reps ─────────────────────────────────────────────────────────
   const fetchTeamReps = useCallback(async () => {
@@ -134,7 +134,7 @@ export default function BulkSendModal({ userProfile, repSettings, onClose }) {
             </div>
             <div>
               <h2 className="text-lg font-bold text-white">Bulk Email Send</h2>
-              <p className="text-xs text-emerald-100 mt-0.5">Manager / Ultimate — push emails via GAS bridge</p>
+              <p className="text-xs text-emerald-100 mt-0.5">Manager / Ultimate push emails via GAS bridge</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 text-emerald-100 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
@@ -148,13 +148,12 @@ export default function BulkSendModal({ userProfile, repSettings, onClose }) {
             <React.Fragment key={s.n}>
               <button
                 onClick={() => { if (s.n < step || (s.n === 2 && selectedRep)) setStep(s.n); }}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${
-                  step === s.n
-                    ? "bg-emerald-600 text-white"
-                    : s.n < step
-                      ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                      : "text-slate-400"
-                }`}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${step === s.n
+                  ? "bg-emerald-600 text-white"
+                  : s.n < step
+                    ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                    : "text-slate-400"
+                  }`}
               >
                 <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${step === s.n ? "bg-white text-emerald-700" : s.n < step ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-500"}`}>
                   {s.n < step ? "✓" : s.n}
@@ -319,8 +318,8 @@ export default function BulkSendModal({ userProfile, repSettings, onClose }) {
                 <p className="text-sm font-bold text-slate-700 mb-3">Delivery mode</p>
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { id: "draft", label: "Push to Drafts", desc: "Creates Gmail drafts — you review before sending", icon: FileText, color: "border-blue-400 bg-blue-50" },
-                    { id: "send",  label: "Send Now",       desc: "GAS sends immediately — no review step",          icon: Zap,      color: "border-emerald-500 bg-emerald-50" },
+                    { id: "draft", label: "Push to Drafts", desc: "Creates Gmail drafts you review before sending", icon: FileText, color: "border-blue-400 bg-blue-50" },
+                    { id: "send", label: "Send Now", desc: "GAS sends immediately no review step", icon: Zap, color: "border-emerald-500 bg-emerald-50" },
                   ].map(m => (
                     <button
                       key={m.id}
@@ -375,7 +374,7 @@ export default function BulkSendModal({ userProfile, repSettings, onClose }) {
                   onClick={onClose}
                   className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors"
                 >
-                  Done — Close
+                  Done Close
                 </button>
               )}
             </div>

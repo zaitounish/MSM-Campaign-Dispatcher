@@ -121,20 +121,20 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
   const [showAdd, setShowAdd] = useState(false);
 
   const [newEmail, setNewEmail] = useState("");
-  const [newName, setNewName]   = useState("");
-  const [newRole, setNewRole]   = useState(addableRoles(actorRole)[0] || "rep");
+  const [newName, setNewName] = useState("");
+  const [newRole, setNewRole] = useState(addableRoles(actorRole)[0] || "rep");
   const [newRepId, setNewRepId] = useState("");
   // manager_id: for ultimate assigning a rep to a manager; for manager it auto-fills to their own ID
   const [newManagerId, setNewManagerId] = useState("");
-  const [sendInvite, setSendInvite]     = useState(true);
-  const [addError, setAddError]         = useState("");
-  const [addLoading, setAddLoading]     = useState(false);
-  const [addSuccess, setAddSuccess]     = useState("");
+  const [sendInvite, setSendInvite] = useState(true);
+  const [addError, setAddError] = useState("");
+  const [addLoading, setAddLoading] = useState(false);
+  const [addSuccess, setAddSuccess] = useState("");
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     setError("");
-    // Fetch all users — include manager_id for team grouping
+    // Fetch all users include manager_id for team grouping
     const { data, error: err } = await supabase
       .from("reps_whitelist")
       .select("*")
@@ -212,12 +212,12 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
       .from("reps_whitelist")
       .insert({
         email,
-        full_name:  newName.trim() || null,
-        role:       newRole,
-        rep_id:     newRepId.trim() || null,
-        is_active:  true,
+        full_name: newName.trim() || null,
+        role: newRole,
+        rep_id: newRepId.trim() || null,
+        is_active: true,
         // Only Ultimate can assign a rep to a manager.
-        // Managers adding reps do NOT auto-assign themselves — that is
+        // Managers adding reps do NOT auto-assign themselves that is
         // exclusively an Ultimate admin action.
         manager_id: actorRole === "ultimate" ? (newManagerId || null) : null,
       })
@@ -413,7 +413,7 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                     className="w-full border border-amber-300 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber-500 bg-white font-mono"
                   />
                 </div>
-                {/* Manager assignment — ultimate only; manager auto-assigns themselves */}
+                {/* Manager assignment ultimate only; manager auto-assigns themselves */}
                 {actorRole === "ultimate" && newRole === "rep" && managerUsers.length > 0 && (
                   <div>
                     <label className="block text-xs font-bold text-amber-800 mb-1">Assign to Manager (optional)</label>
@@ -528,9 +528,9 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="text-xs font-mono text-slate-500">{user.rep_id || "—"}</span>
+                          <span className="text-xs font-mono text-slate-500">{user.rep_id || "."}</span>
                         </td>
-                        {/* Manager column — Ultimate: editable dropdown for reassignment; Manager: read-only badge */}
+                        {/* Manager column Ultimate: editable dropdown for reassignment; Manager: read-only badge */}
                         {actorRole !== "rep" && (
                           <td className="px-4 py-3">
                             {actorRole === "ultimate" && user.role === "rep" ? (
@@ -542,7 +542,7 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                                 className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white appearance-none cursor-pointer outline-none focus:border-amber-400 max-w-[140px] truncate"
                                 title="Assign to manager"
                               >
-                                <option value="">— Unassigned —</option>
+                                <option value="">. Unassigned .</option>
                                 {managerUsers.map(m => (
                                   <option key={m.id} value={m.id}>{m.full_name || m.email}</option>
                                 ))}
@@ -551,7 +551,7 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                               // Manager sees a read-only badge (or dash if unassigned)
                               user.manager_id && managerLookup[user.manager_id]
                                 ? <span className="text-xs text-violet-700 bg-violet-50 border border-violet-200 px-2 py-0.5 rounded-full font-semibold">{managerLookup[user.manager_id]}</span>
-                                : <span className="text-[10px] text-slate-300">—</span>
+                                : <span className="text-[10px] text-slate-300">.</span>
                             )}
                           </td>
                         )}

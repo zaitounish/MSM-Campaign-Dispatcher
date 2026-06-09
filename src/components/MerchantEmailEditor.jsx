@@ -42,7 +42,7 @@ export default function MerchantEmailEditor({
   const linkRef = useRef(null);
   const savedRange = useRef(null);
   const subjectTitleRef = useRef(null); // ref for the "Edit Title" input
-  const subjectFullRef  = useRef(null); // ref for the "Full Subject" input
+  const subjectFullRef = useRef(null); // ref for the "Full Subject" input
 
   // ── Independent content storage for each mode ──────────────────────────────
   // These refs hold the most recent HTML for each mode so nothing is lost
@@ -114,7 +114,7 @@ export default function MerchantEmailEditor({
     setEmailFormat?.(newMode);
   };
 
-  // ── Apply-to-all toggle: just flips the flag — editor keeps showing current edits.
+  // ── Apply-to-all toggle: just flips the flag editor keeps showing current edits.
   // deep links are de-injected at save time via deInjectDeepLinks(), so no content
   // swap is needed here. The rep sees exactly what they wrote in either mode.
   const handleApplyToAllToggle = (newVal) => setApplyToAll(newVal);
@@ -188,20 +188,20 @@ export default function MerchantEmailEditor({
       return applyToAll ? deInterpolateMerchant(subjectFull, merchant) : subjectFull;
     }
     const prefix = applyToAll ? "{Store Name}" : (merchant?.merchantName || namePart);
-    const title  = applyToAll ? deInterpolateMerchant(subjectTitle, merchant) : subjectTitle;
+    const title = applyToAll ? deInterpolateMerchant(subjectTitle, merchant) : subjectTitle;
     return `${prefix}${title}`;
   };
 
   // ── Insert variable into focused subject input ─────────────────────────────────
   const insertVarIntoSubject = (variable) => {
     const ref = subjectMode === "title" ? subjectTitleRef : subjectFullRef;
-    const el  = ref.current;
+    const el = ref.current;
     if (!el) return;
-    const start  = el.selectionStart ?? el.value.length;
-    const end    = el.selectionEnd   ?? el.value.length;
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
     const newVal = el.value.slice(0, start) + variable + el.value.slice(end);
     if (subjectMode === "title") setSubjectTitle(newVal);
-    else                         setSubjectFull(newVal);
+    else setSubjectFull(newVal);
     // Restore cursor position right after the inserted text
     requestAnimationFrame(() => {
       el.setSelectionRange(start + variable.length, start + variable.length);
@@ -224,9 +224,9 @@ export default function MerchantEmailEditor({
       applyToAll ? deInterpolateMerchant(deInjectDeepLinks(html, dlMap), merchant) : html;
 
     onSave({
-      html:      deToken(richContentRef.current),
+      html: deToken(richContentRef.current),
       cleanHtml: deToken(cleanContentRef.current),
-      subject:   buildSubject(),
+      subject: buildSubject(),
       applyToAll,
     });
   };
@@ -279,7 +279,7 @@ Rules:
     }
   };
 
-  // Preview srcDoc — always shows the live editor content with real URLs
+  // Preview srcDoc always shows the live editor content with real URLs
   const previewSrcDoc = editMode === "plain"
     ? `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:32px;background:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">${liveHtml}</body></html>`
     : `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0;background:#f1f5f9">${wrapForRichEmail(liveHtml)}</body></html>`;
@@ -425,11 +425,11 @@ Rules:
                 <TBtn onCmd={() => exec("strikeThrough")} title="Strikethrough"><Strikethrough className="w-3.5 h-3.5" /></TBtn>
               </div>
               <div className="w-px h-4 bg-slate-300 mx-1" />
-              
+
               <div className="flex items-center relative">
                 <TBtn onCmd={() => openColorPicker("foreColor")} title="Text Color" active={colorPickerOpen && colorType === "foreColor"}><Palette className="w-3.5 h-3.5" /></TBtn>
                 <TBtn onCmd={() => openColorPicker("hiliteColor")} title="Highlight Color" active={colorPickerOpen && colorType === "hiliteColor"}><Highlighter className="w-3.5 h-3.5" /></TBtn>
-                
+
                 {colorPickerOpen && (
                   <div className="absolute top-full left-0 mt-1 p-2 bg-white border border-slate-200 rounded-lg shadow-xl z-10 grid grid-cols-5 gap-1 w-40">
                     {["#000000", "#475569", "#eb1700", "#ea580c", "#ca8a04", "#16a34a", "#2563eb", "#9333ea", "#ec4899", "#ffffff", "#f8fafc", "#fef2f2", "#fff7ed", "#fefce8", "#f0fdf4", "#eff6ff", "#faf5ff", "#fdf2f8", "transparent"].map(c => (
@@ -528,7 +528,7 @@ Rules:
               <div className="flex items-center bg-white border border-slate-200 rounded-lg p-0.5 shadow-sm gap-0.5">
                 <button
                   onClick={() => switchMode("html")}
-                  title="Edit Rich — DoorDash branded design"
+                  title="Edit Rich DoorDash branded design"
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all ${editMode === "html" ? "bg-dd-red text-white shadow-sm" : "text-slate-500 hover:text-slate-700"
                     }`}
                 >
@@ -536,7 +536,7 @@ Rules:
                 </button>
                 <button
                   onClick={() => switchMode("plain")}
-                  title="Edit Clean — personal email style"
+                  title="Edit Clean personal email style"
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all ${editMode === "plain" ? "bg-slate-700 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"
                     }`}
                 >

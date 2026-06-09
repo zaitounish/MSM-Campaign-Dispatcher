@@ -5,13 +5,13 @@ import { processSheetData } from "../lib/bobParser";
 import { analyzeBOB } from "../lib/bobAnalyzer";
 
 export default function UploadZone({ onDataLoaded }) {
-  const [isDragging,       setIsDragging]       = useState(false);
-  const [isProcessing,     setIsProcessing]     = useState(false);
-  const [uploadError,      setUploadError]      = useState("");
+  const [isDragging, setIsDragging] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [uploadError, setUploadError] = useState("");
 
   // Multi-file pending queue: each entry = { fileName, wb, sheets[] }
   const [pendingFiles, setPendingFiles] = useState([]); // files waiting for sheet selection
-  const [stagedFiles,  setStagedFiles]  = useState([]); // files fully resolved, waiting to merge
+  const [stagedFiles, setStagedFiles] = useState([]); // files fully resolved, waiting to merge
 
   const fileInputRef = useRef(null);
 
@@ -38,7 +38,7 @@ export default function UploadZone({ onDataLoaded }) {
     setIsProcessing(true);
 
     const newPending = [];
-    const newStaged  = [];
+    const newStaged = [];
 
     for (const file of Array.from(files)) {
       try {
@@ -98,7 +98,7 @@ export default function UploadZone({ onDataLoaded }) {
         const sheetsData = [];
 
         for (const { wb, sheetName } of allStaged) {
-          const ws   = wb.Sheets[sheetName];
+          const ws = wb.Sheets[sheetName];
           const json = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false });
           sheetsData.push({ ws, json });
 
@@ -147,9 +147,9 @@ export default function UploadZone({ onDataLoaded }) {
     }, 50);
   };
 
-  const onDragOver  = (e) => { e.preventDefault(); setIsDragging(true); };
+  const onDragOver = (e) => { e.preventDefault(); setIsDragging(true); };
   const onDragLeave = (e) => { e.preventDefault(); setIsDragging(false); };
-  const onDrop      = (e) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files) handleFileUpload(e.dataTransfer.files); };
+  const onDrop = (e) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files) handleFileUpload(e.dataTransfer.files); };
 
   const totalFilesLoading = pendingFiles.length + stagedFiles.length;
 
@@ -246,17 +246,16 @@ export default function UploadZone({ onDataLoaded }) {
         </div>
       )}
 
-      {/* Drop zone — always visible when no pending sheet selections */}
+      {/* Drop zone always visible when no pending sheet selections */}
       {pendingFiles.length === 0 && !isProcessing && (
         <div
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           onDrop={onDrop}
-          className={`w-full max-w-3xl border-2 border-dashed rounded-3xl p-16 text-center transition-all duration-200 bg-white shadow-sm ${
-            isDragging
-              ? "border-dd-red bg-red-50/50 scale-[1.02]"
-              : "border-slate-300 hover:border-dd-red hover:shadow-md"
-          }`}
+          className={`w-full max-w-3xl border-2 border-dashed rounded-3xl p-16 text-center transition-all duration-200 bg-white shadow-sm ${isDragging
+            ? "border-dd-red bg-red-50/50 scale-[1.02]"
+            : "border-slate-300 hover:border-dd-red hover:shadow-md"
+            }`}
         >
           <div className="mx-auto w-20 h-20 mb-6 rounded-full bg-red-50 flex items-center justify-center">
             {stagedFiles.length > 0

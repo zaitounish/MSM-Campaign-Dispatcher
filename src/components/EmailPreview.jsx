@@ -24,7 +24,7 @@ export default function EmailPreview({
       const draft = emailDrafts.find(d => d.merchantId === merchant.id);
       if (!draft || !merchant.emails || merchant.emails.length === 0) return;
 
-      const primary     = merchant.emails.find(e => e.isPrimary) || merchant.emails[0];
+      const primary = merchant.emails.find(e => e.isPrimary) || merchant.emails[0];
       const secondaries = merchant.emails.filter(e => !e.isPrimary).map(e => e.address);
 
       if (dispatchMode === "separate") {
@@ -45,7 +45,7 @@ export default function EmailPreview({
 
   if (expandedDrafts.length === 0) return null;
 
-  const safeIndex   = Math.min(currentIndex, expandedDrafts.length - 1);
+  const safeIndex = Math.min(currentIndex, expandedDrafts.length - 1);
   const currentItem = expandedDrafts[safeIndex];
   if (!currentItem) return null;
 
@@ -101,28 +101,26 @@ export default function EmailPreview({
         </div>
 
         <div className="flex items-center gap-3 flex-wrap justify-end">
-          {/* Format toggle — Rich (branded) vs Clean (personal) */}
+          {/* Format toggle Rich (branded) vs Clean (personal) */}
           {setEmailFormat && (
             <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm gap-0.5">
               <button
                 onClick={() => setEmailFormat("html")}
-                title="Rich — DoorDash branded design"
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all ${
-                  emailFormat === "html"
-                    ? "bg-dd-red text-white shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
-                }`}
+                title="Rich DoorDash branded design"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all ${emailFormat === "html"
+                  ? "bg-dd-red text-white shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+                  }`}
               >
                 <Sparkles className="w-3.5 h-3.5" /> Rich
               </button>
               <button
                 onClick={() => setEmailFormat("plain")}
-                title="Clean — professional personal email style"
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all ${
-                  emailFormat === "plain"
-                    ? "bg-slate-700 text-white shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
-                }`}
+                title="Clean professional personal email style"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all ${emailFormat === "plain"
+                  ? "bg-slate-700 text-white shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+                  }`}
               >
                 <UserCircle className="w-3.5 h-3.5" /> Clean
               </button>
@@ -150,7 +148,7 @@ export default function EmailPreview({
         {/* Left: Metadata & Actions */}
         <div className="w-full lg:w-1/3 border-r border-slate-200 bg-slate-50/50 p-6 flex flex-col">
           <div className="space-y-4">
-            <MetaField label="To"      value={targetDisplay} mono />
+            <MetaField label="To" value={targetDisplay} mono />
             {ccDisplay && <MetaField label="Cc" value={ccDisplay} mono />}
             <MetaField label="Subject" value={currentMerchant.subjectOverride || draft.subject} />
             {currentMerchant.businessId && (
@@ -177,10 +175,10 @@ export default function EmailPreview({
           </div>
         </div>
 
-        {/* Right: email preview — Rich (branded) or Clean (personal) */}
+        {/* Right: email preview Rich (branded) or Clean (personal) */}
         <div className="w-full lg:w-2/3 bg-slate-100 flex items-start justify-center overflow-y-auto" style={{ minHeight: 500 }}>
           {emailFormat === "plain" ? (
-            // Clean mode: white background, generous padding — reads like Gmail
+            // Clean mode: white background, generous padding reads like Gmail
             <div className="w-full h-full bg-white">
               <iframe
                 srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:32px;background:#fff;">${draft.cleanBody || draft.htmlBody}</body></html>`}

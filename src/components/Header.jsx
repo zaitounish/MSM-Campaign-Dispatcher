@@ -2,16 +2,16 @@ import React, { useState } from "react";
 import { Mail, Settings, LogOut, BarChart2, ShieldCheck, Users, User, ChevronDown } from "lucide-react";
 
 const ROLE_CONFIG = {
-  ultimate: { label: "Ultimate",  color: "bg-amber-100 text-amber-700 border-amber-200",  icon: ShieldCheck },
-  manager:  { label: "Manager",   color: "bg-violet-100 text-violet-700 border-violet-200", icon: Users },
-  rep:      { label: "Rep",       color: "bg-slate-100 text-slate-600 border-slate-200",   icon: User },
+  ultimate: { label: "Ultimate", color: "bg-amber-100 text-amber-700 border-amber-200", icon: ShieldCheck },
+  manager: { label: "Manager", color: "bg-violet-100 text-violet-700 border-violet-200", icon: Users },
+  rep: { label: "Rep", color: "bg-slate-100 text-slate-600 border-slate-200", icon: User },
 };
 
 export default function Header({ onOpenSettings, onOpenDashboard, onOpenAdmin, userProfile, onSignOut }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const role   = userProfile?.role || "rep";
-  const cfg    = ROLE_CONFIG[role] || ROLE_CONFIG.rep;
+  const role = userProfile?.role || "rep";
+  const cfg = ROLE_CONFIG[role] || ROLE_CONFIG.rep;
   const RoleIcon = cfg.icon;
   const initials = userProfile?.full_name
     ? userProfile.full_name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()
@@ -40,18 +40,17 @@ export default function Header({ onOpenSettings, onOpenDashboard, onOpenAdmin, u
         {(role === "ultimate" || role === "manager") && onOpenAdmin && (
           <button
             onClick={onOpenAdmin}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors border ${
-              role === "ultimate"
-                ? "text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200"
-                : "text-violet-700 bg-violet-50 hover:bg-violet-100 border-violet-200"
-            }`}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors border ${role === "ultimate"
+              ? "text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200"
+              : "text-violet-700 bg-violet-50 hover:bg-violet-100 border-violet-200"
+              }`}
             title="Manage Access"
           >
             <ShieldCheck className="w-4 h-4" /> {role === "ultimate" ? "Admin" : "Manage Reps"}
           </button>
         )}
 
-        {/* Dashboard button — ALL roles see this (reps see their own history) */}
+        {/* Dashboard button ALL roles see this (reps see their own history) */}
         {onOpenDashboard && (
           <button
             onClick={onOpenDashboard}

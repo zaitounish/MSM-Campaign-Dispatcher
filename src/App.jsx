@@ -146,7 +146,7 @@ function AppInner({ userProfile, onSignOut }) {
 
     return targetMerchants.map(m => {
       // Use saved subject override (may contain {Store Name}/{DM Name} tokens from
-      // "Apply to All" save — these get re-resolved below per merchant)
+      // "Apply to All" save these get re-resolved below per merchant)
       const rawSubject = m.subjectOverride || buildEmailSubject(m, selectedPromos);
       const subject = rawSubject
         .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
@@ -162,16 +162,16 @@ function AppInner({ userProfile, onSignOut }) {
         // Use independent clean override if set, otherwise fall back to same HTML
         const cleanHtml = m.cleanOverride
           ? injectDeepLinks(m.cleanOverride, dlMap)
-              .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
-              .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there")
+            .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
+            .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there")
           : html;
         return {
           merchantId: m.id, subject,
-          htmlBody:      html,
-          richBody:      wrapForRichEmail(html),
-          cleanBody:     cleanHtml,
+          htmlBody: html,
+          richBody: wrapForRichEmail(html),
+          cleanBody: cleanHtml,
           plainTextBody: htmlToPlainText(html),
-          tokenBody:     sharedTokenBody,
+          tokenBody: sharedTokenBody,
           dlMap,
         };
       }
@@ -183,16 +183,16 @@ function AppInner({ userProfile, onSignOut }) {
           .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there");
         const cleanHtml = m.cleanOverride
           ? injectDeepLinks(m.cleanOverride, dlMap)
-              .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
-              .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there")
+            .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
+            .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there")
           : html;
         return {
           merchantId: m.id, subject,
-          htmlBody:      html,
-          richBody:      wrapForRichEmail(html),
-          cleanBody:     cleanHtml,
+          htmlBody: html,
+          richBody: wrapForRichEmail(html),
+          cleanBody: cleanHtml,
           plainTextBody: htmlToPlainText(html),
-          tokenBody:     sharedTokenBody,
+          tokenBody: sharedTokenBody,
           dlMap,
         };
       }
@@ -202,16 +202,16 @@ function AppInner({ userProfile, onSignOut }) {
       return {
         merchantId: m.id,
         subject,
-        htmlBody:      rawHtml,
-        richBody:      wrapForRichEmail(rawHtml),
+        htmlBody: rawHtml,
+        richBody: wrapForRichEmail(rawHtml),
         // Use independent clean override if the rep edited Clean separately
-        cleanBody:     m.cleanOverride
+        cleanBody: m.cleanOverride
           ? injectDeepLinks(m.cleanOverride, dlMap)
-              .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
-              .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there")
+            .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
+            .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there")
           : compileBlocksToCleanHtml(resolvedGlobalBlocks, dlMap, m),
         plainTextBody: compileBlocksToText(resolvedGlobalBlocks, dlMap, m),
-        tokenBody:     sharedTokenBody,
+        tokenBody: sharedTokenBody,
         dlMap,
       };
     });

@@ -40,8 +40,8 @@ const copyHtmlToClipboard = async (draft) => {
 
 // GAS script the user deploys once to enable rich HTML drafts.
 // Uses e.parameter (form-encoded POST) so the browser can send Google
-// session cookies automatically — no OAuth setup needed.
-const GAS_SCRIPT = `// ─── MSM Campaign Dispatcher — Gmail Drafts Bridge ───────────────────────────
+// session cookies automatically no OAuth setup needed.
+const GAS_SCRIPT = `// ─── MSM Campaign Dispatcher Gmail Drafts Bridge ───────────────────────────
 // Deploy as a Web App:
 //   Execute as : Me
 //   Who has access : Anyone within DoorDash
@@ -55,9 +55,21 @@ function doGet(e) {
 }
 
 function doPost(e) {
-  // Reads form-encoded fields sent by the hidden <form> POST
   var action = e.parameter.action || "draft";
-  var emails = JSON.parse(e.parameter.emails || "[]");
+  var emails = [];
+  
+  try {
+    if (e.parameter.payload) {
+      // Decode Base64 safely to preserve UTF-8 emojis
+      var decodedBytes = Utilities.base64Decode(e.parameter.payload);
+      var jsonStr = Utilities.newBlob(decodedBytes).getDataAsString();
+      emails = JSON.parse(jsonStr);
+    } else {
+      emails = JSON.parse(e.parameter.emails || "[]");
+    }
+  } catch (err) {
+    // silently fail back to empty array
+  }
 
   emails.forEach(function(email) {
     var opts = {
@@ -194,11 +206,11 @@ export default function DeliveryPanel({
     }
   };
 
-  // ── GAS Bridge — hidden form POST ────────────────────────────────────────────
+  // ── GAS Bridge hidden form POST ────────────────────────────────────────────
   // We use a hidden <form> + <iframe> instead of fetch() so the browser
   // automatically includes the rep's Google session cookies in the request.
   // This lets GAS authenticate via "Anyone within DoorDash" without any
-  // OAuth setup. The response lands in the invisible iframe — we never read
+  // OAuth setup. The response lands in the invisible iframe we never read
   // it cross-origin, but the drafts are created in the rep's Gmail.
   const handleGasDraft = () => {
     if (!repSettings.gasUrl) {
@@ -248,8 +260,13 @@ export default function DeliveryPanel({
       form.appendChild(input);
     };
 
+    // Encode the JSON string to Base64 to safely preserve emojis (like 🚀)
+    // without them getting corrupted by the browser's form URL-encoding.
+    const jsonStr = JSON.stringify(payloads);
+    const base64Payload = window.btoa(unescape(encodeURIComponent(jsonStr)));
+
     addField("action", "draft");
-    addField("emails", JSON.stringify(payloads));
+    addField("payload", base64Payload);
 
     document.body.appendChild(form);
     form.submit();
@@ -284,7 +301,7 @@ export default function DeliveryPanel({
   };
 
   // Open the GAS URL directly in a new tab so the rep can grant Gmail
-  // permissions on first use (one-time step — subsequent form POSTs are silent)
+  // permissions on first use (one-time step subsequent form POSTs are silent)
   const handleAuthorizeGas = () => {
     if (!repSettings.gasUrl) {
       setSendStatus({ type: "error", msg: "Paste your Web App URL into ⚙ Settings first." });
@@ -325,7 +342,7 @@ export default function DeliveryPanel({
   return (
     <div className="bg-white border-t border-slate-200 p-8 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.05)] mt-12 mb-16 rounded-3xl mx-6">
 
-      {/* Dispatch mode toggle — all roles see this */}
+      {/* Dispatch mode toggle all roles see this */}
       <div className="max-w-4xl mx-auto mb-6 bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4">
         <div className="flex items-center justify-between gap-4 flex-col md:flex-row">
           <div className="flex items-center gap-3">
@@ -367,7 +384,7 @@ export default function DeliveryPanel({
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-            {/* Export — manager/ultimate only */}
+            {/* Export manager/ultimate only */}
             {!isRep && (
               <button onClick={handleExport}
                 className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition-colors text-sm">
@@ -375,7 +392,7 @@ export default function DeliveryPanel({
               </button>
             )}
 
-            {/* Gmail Drafts via GAS — manager/ultimate only */}
+            {/* Gmail Drafts via GAS manager/ultimate only */}
             {!isRep && (
               <button onClick={handleGasDraft} disabled={isSending}
                 className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md disabled:opacity-60 text-sm">
@@ -384,7 +401,7 @@ export default function DeliveryPanel({
               </button>
             )}
 
-            {/* Open One by One — all roles */}
+            {/* Open One by One all roles */}
             <button onClick={handleOpenGmailQueue}
               className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-dd-red hover:bg-[#ff3019] text-white transition-all shadow-md text-sm">
               <Mail className="w-4 h-4" /> Open One by One
@@ -394,7 +411,7 @@ export default function DeliveryPanel({
           </div>
         </div>
 
-        {/* Gmail info + GAS setup — manager/ultimate only */}
+        {/* Gmail info + GAS setup manager/ultimate only */}
         {!isRep && (
           <>
             <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-5 py-4 text-xs text-blue-800">
@@ -429,7 +446,7 @@ export default function DeliveryPanel({
                     <li>Set <em>Execute as</em> = <strong>Me</strong>, <em>Who has access</em> = <strong>Anyone within DoorDash</strong>.</li>
                     <li>Click Deploy, authorize Gmail permissions, and <strong>copy the Web App URL</strong>.</li>
                     <li>Paste that URL into <strong>⚙ Settings → Google Apps Script URL</strong>.</li>
-                    <li className="font-semibold text-slate-800">Click the <span className="bg-emerald-100 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md text-xs">Authorize GAS</span> button below — this opens your script once so Google records your approval. Only needed the first time.</li>
+                    <li className="font-semibold text-slate-800">Click the <span className="bg-emerald-100 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md text-xs">Authorize GAS</span> button below this opens your script once so Google records your approval. Only needed the first time.</li>
                   </ol>
 
                   {/* Authorize button */}
@@ -457,7 +474,7 @@ export default function DeliveryPanel({
 
                   {/* How it works note */}
                   <p className="text-[11px] text-slate-400 leading-relaxed">
-                    <strong>How it works:</strong> Instead of a network API call, the app submits a hidden browser form to your GAS URL. This automatically includes your DoorDash Google session cookies, so GAS authenticates you silently — no CORS issues, no IT approvals needed.
+                    <strong>How it works:</strong> Instead of a network API call, the app submits a hidden browser form to your GAS URL. This automatically includes your DoorDash Google session cookies, so GAS authenticates you silently no CORS issues, no IT approvals needed.
                   </p>
                 </div>
               )}

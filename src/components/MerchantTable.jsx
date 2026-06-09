@@ -64,7 +64,7 @@ export default function MerchantTable({
   const [excludeFeedback, setExcludeFeedback] = useState(null);
 
   // ── INDEPENDENT Exclude filter state (does NOT affect the main table filter) ──
-  // These are used ONLY to identify merchants to deselect — they never filter the
+  // These are used ONLY to identify merchants to deselect they never filter the
   // visible table. The Smart Exclude flow is: pick criteria → see count → press
   // "Exclude X" → those merchants get deselected from the full merchant list.
   const [excludeStatusFilters, setExcludeStatusFilters] = useState({});
@@ -276,7 +276,7 @@ export default function MerchantTable({
     setExcludeFeedback({ excludedCount, totalCount: inputIds.size });
   };
 
-  // ── Smart Exclude — derived: merchants to deselect based on exclude-only filters ──
+  // ── Smart Exclude derived: merchants to deselect based on exclude-only filters ──
   // Built from the FULL merchants array so the visible table is NEVER affected.
   //
   // LOGIC:
@@ -297,7 +297,7 @@ export default function MerchantTable({
 
     return merchants.filter((m, idx) => {
       const rowData = getMerchantRowData(m, idx);
-      // If there's no row analytics data we cannot match criteria — skip
+      // If there's no row analytics data we cannot match criteria skip
       if (!rowData) return false;
 
       // ── Status column checks (OR across columns, OR within each column's values) ──
@@ -500,8 +500,8 @@ export default function MerchantTable({
                 key={tab.id}
                 onClick={() => setSelectPanelTab(tab.id)}
                 className={`text-xs font-bold px-4 py-2 rounded-t-lg border-b-2 transition-all ${selectPanelTab === tab.id
-                    ? "border-violet-600 text-violet-700 bg-white"
-                    : "border-transparent text-slate-500 hover:text-slate-700"
+                  ? "border-violet-600 text-violet-700 bg-white"
+                  : "border-transparent text-slate-500 hover:text-slate-700"
                   }`}
               >
                 {tab.label}
@@ -624,8 +624,8 @@ export default function MerchantTable({
                 key={tab.id}
                 onClick={() => setExcludePanelTab(tab.id)}
                 className={`text-xs font-bold px-4 py-2 rounded-t-lg border-b-2 transition-all ${excludePanelTab === tab.id
-                    ? "border-rose-600 text-rose-700 bg-white"
-                    : "border-transparent text-slate-500 hover:text-slate-700"
+                  ? "border-rose-600 text-rose-700 bg-white"
+                  : "border-transparent text-slate-500 hover:text-slate-700"
                   }`}
               >
                 {tab.label}
@@ -651,7 +651,7 @@ export default function MerchantTable({
                   </div>
                   <div className="space-y-3">
                     {dynConfig.statusCols.map(col => {
-                      // Use INDEPENDENT exclude filters — not the main statusFilters!
+                      // Use INDEPENDENT exclude filters not the main statusFilters!
                       const selected = excludeStatusFilters[col.col] || new Set();
                       return (
                         <CollapsibleFilterGroup key={col.col} title={col.rawHeader} defaultExpanded={selected.size > 0} activeCount={selected.size} accentColor="rose">
@@ -700,7 +700,7 @@ export default function MerchantTable({
               ) : (
                 <p className="text-sm text-slate-500 italic">No dynamic column filters detected. Use Bulk Exclude tab to deselect by IDs.</p>
               )}
-              {/* Exclude action — targets ONLY the identified merchants, not the visible filtered list */}
+              {/* Exclude action targets ONLY the identified merchants, not the visible filtered list */}
               <div className="flex items-center gap-3 pt-1 border-t border-rose-100">
                 <button
                   onClick={handleApplySmartExclude}
@@ -916,8 +916,8 @@ function FilterChip({ label, active, onClick, variant }) {
     <button
       onClick={onClick}
       className={`text-xs font-bold px-2.5 py-1 rounded-full transition-all border ${active
-          ? activeClass
-          : "bg-white text-slate-600 border-slate-300 hover:border-slate-400"
+        ? activeClass
+        : "bg-white text-slate-600 border-slate-300 hover:border-slate-400"
         }`}
     >
       {label}
@@ -957,10 +957,10 @@ function CollapsibleFilterGroup({ title, children, defaultExpanded = false, acti
 
         {/* Right: +/- pill */}
         <span className={`flex-shrink-0 flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full border transition-all ${expanded
-            ? "bg-slate-100 text-slate-600 border-slate-200"
-            : hasActive
-              ? pillActiveText
-              : "bg-slate-50 text-slate-500 border-slate-200 group-hover:border-slate-300"
+          ? "bg-slate-100 text-slate-600 border-slate-200"
+          : hasActive
+            ? pillActiveText
+            : "bg-slate-50 text-slate-500 border-slate-200 group-hover:border-slate-300"
           }`}>
           <span className="text-base leading-none" style={{ lineHeight: 1 }}>
             {expanded ? "−" : "+"}

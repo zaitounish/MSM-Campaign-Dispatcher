@@ -6,34 +6,34 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
     repId: repSettings.repId || "",
     gasUrl: repSettings.gasUrl || "",
     geminiApiKey: repSettings.geminiApiKey || "",
-    // Legacy structured fields — kept so existing data isn't lost
+    // Legacy structured fields kept so existing data isn't lost
     firstName: repSettings.firstName || "",
     lastName: repSettings.lastName || "",
     title: repSettings.title || "Merchant Success Manager",
     phone: repSettings.phone || "",
   });
 
-  // Signature is rich HTML (images + formatting) — managed via ref to avoid
+  // Signature is rich HTML (images + formatting) managed via ref to avoid
   // React-controlled cursor-jump issues with contentEditable
   const signatureRef = useRef(null);
   const [sigEmpty, setSigEmpty] = useState(!repSettings.signature);
 
   // Re-sync formData + signature every time the modal opens.
   // The component unmounts on close (if (!isOpen) return null below), so a
-  // [] dependency would only fire on the very first mount — missing every
+  // [] dependency would only fire on the very first mount missing every
   // subsequent re-open. isOpen as dependency ensures the seed always runs.
   useEffect(() => {
     if (!isOpen) return;
 
     // Sync text fields
     setFormData({
-      repId:        repSettings.repId        || "",
-      gasUrl:       repSettings.gasUrl       || "",
+      repId: repSettings.repId || "",
+      gasUrl: repSettings.gasUrl || "",
       geminiApiKey: repSettings.geminiApiKey || "",
-      firstName:    repSettings.firstName    || "",
-      lastName:     repSettings.lastName     || "",
-      title:        repSettings.title        || "Merchant Success Manager",
-      phone:        repSettings.phone        || "",
+      firstName: repSettings.firstName || "",
+      lastName: repSettings.lastName || "",
+      title: repSettings.title || "Merchant Success Manager",
+      phone: repSettings.phone || "",
     });
 
     // Seed the contentEditable signature div
@@ -85,7 +85,7 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
         {/* ── Scrollable body ── */}
         <div className="flex-1 overflow-y-auto p-8 space-y-6">
 
-          {/* Email Signature — rich paste from Gmail (images supported) */}
+          {/* Email Signature rich paste from Gmail (images supported) */}
           <div className="space-y-3">
             <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
               <FileText className="w-4 h-4" /> Email Signature
@@ -170,7 +170,7 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
 
         </div>
 
-        {/* ── Footer — always visible ── */}
+        {/* ── Footer always visible ── */}
         <div className="px-8 py-5 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 shrink-0">
           {formData.repId && (
             <button
