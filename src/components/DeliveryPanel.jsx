@@ -87,6 +87,16 @@ function doPost(e) {
   return ContentService
     .createTextOutput(JSON.stringify({ ok: true, count: emails.length }))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ─── OPTIONAL HELPER ─────────────────────────────────────────────────────────
+// If you ever want to quickly send ALL drafts sitting in your Gmail Drafts folder,
+// select "sendAllMyDrafts" from the dropdown at the top of the editor and click Run.
+function sendAllMyDrafts() {
+  var drafts = GmailApp.getDrafts();
+  for (var i = 0; i < drafts.length; i++) {
+    drafts[i].send();
+  }
 }`;
 
 export default function DeliveryPanel({
