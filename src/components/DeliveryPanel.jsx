@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import * as XLSX from "xlsx";
 import { logEmailSend } from "../lib/supabase";
 import {
   DownloadCloud, CheckCircle2, Layers, FileText,
@@ -37,29 +38,36 @@ const copyHtmlToClipboard = async (draft) => {
   }
 };
 
-// GAS script the user deploys once to enable rich HTML drafts
-const GAS_SCRIPT = `// 1. Go to script.google.com → New Project
-// 2. Paste this code, replacing any existing content
-// 3. Click Deploy → New Deployment → Web App
-//    - Execute as: Me
-//    - Who has access: Anyone within DoorDash  ← (your Google Workspace domain)
-// 4. Click Deploy → authorize → copy the Web App URL → paste into Settings
+// GAS script the user deploys once to enable rich HTML drafts.
+// Uses e.parameter (form-encoded POST) so the browser can send Google
+// session cookies automatically — no OAuth setup needed.
+const GAS_SCRIPT = `// ─── MSM Campaign Dispatcher — Gmail Drafts Bridge ───────────────────────────
+// Deploy as a Web App:
+//   Execute as : Me
+//   Who has access : Anyone within DoorDash
+// After deploying, open the Web App URL once in your browser to grant Gmail
+// permissions, then paste the URL into ⚙ Settings → Google Apps Script URL.
+// ─────────────────────────────────────────────────────────────────────────────
 function doPost(e) {
-  const { action, emails } = JSON.parse(e.postData.contents);
+  // Reads form-encoded fields sent by the hidden <form> POST
+  var action = e.parameter.action || "draft";
+  var emails = JSON.parse(e.parameter.emails || "[]");
+
   emails.forEach(function(email) {
-    const opts = {
+    var opts = {
       cc:       email.cc || "",
-      htmlBody: email.htmlBody,
+      htmlBody: email.htmlBody || "",
       name:     email.name || "DoorDash Merchant Success",
     };
     if (action === "draft") {
-      GmailApp.createDraft(email.to, email.subject, email.plainTextBody, opts);
+      GmailApp.createDraft(email.to, email.subject, email.plainTextBody || "", opts);
     } else {
-      GmailApp.sendEmail(email.to, email.subject, email.plainTextBody, opts);
+      GmailApp.sendEmail(email.to, email.subject, email.plainTextBody || "", opts);
     }
   });
+
   return ContentService
-    .createTextOutput(JSON.stringify({ ok: true }))
+    .createTextOutput(JSON.stringify({ ok: true, count: emails.length }))
     .setMimeType(ContentService.MimeType.JSON);
 }`;
 
@@ -119,25 +127,6 @@ export default function DeliveryPanel({
     setClipStatus({});
   };
 
-  // ── Open ALL: opens first tab immediately, queue shows rest for rapid clicking ──
-  // Browsers block window.open() after the first call per user gesture (popup
-  // blocker). We open tab #1 immediately, then show the queue so the user can
-  // rapidly click the remaining ones.
-  const handleOpenAllInGmail = () => {
-    const items = buildTargets();
-    if (items.length === 0) return;
-    // Open first tab right now (within the user gesture)
-    const firstUrl = buildGmailComposeUrl(items[0]);
-    window.open(firstUrl, "_blank", "noopener,noreferrer");
-    copyHtmlToClipboard(items[0].draft).then(ok =>
-      setClipStatus(p => ({ ...p, 0: ok ? "done" : "error" }))
-    );
-    // Show queue with first marked as opened, all others waiting
-    const opened = new Set([0]);
-    setQueue({ items, opened, allOpened: true, rapidMode: true });
-    setSendStatus(null);
-    setClipStatus({ 0: "copying" });
-  };
 
   const [clipStatus, setClipStatus] = useState({}); // idx -> 'copying'|'done'|'error'
 
@@ -199,36 +188,78 @@ export default function DeliveryPanel({
     }
   };
 
-  // ── GAS Bridge (HTML rich drafts) ────────────────────────────────────────────
-  const handleGasDraft = async () => {
+  // ── GAS Bridge — hidden form POST ────────────────────────────────────────────
+  // We use a hidden <form> + <iframe> instead of fetch() so the browser
+  // automatically includes the rep's Google session cookies in the request.
+  // This lets GAS authenticate via "Anyone within DoorDash" without any
+  // OAuth setup. The response lands in the invisible iframe — we never read
+  // it cross-origin, but the drafts are created in the rep's Gmail.
+  const handleGasDraft = () => {
     if (!repSettings.gasUrl) {
-      setSendStatus({ type: "error", msg: "No GAS URL in Settings. See setup instructions below." });
+      setSendStatus({ type: "error", msg: "No GAS URL configured. Expand the setup guide below and paste your Web App URL into ⚙ Settings." });
       setGasExpanded(true);
       return;
     }
     setIsSending(true);
     setSendStatus(null);
+
     const senderName = `${repSettings.firstName || ""} ${repSettings.lastName || ""}`.trim() || "DoorDash Merchant Success";
     const targets = buildTargets();
     const payloads = targets.map(t => ({
       to: t.to,
       cc: t.cc,
       subject: t.draft.subject,
-      // Rich mode sends fully-wrapped branded HTML; Clean sends personal-email HTML
       htmlBody: emailFormat === "plain"
         ? (t.draft.cleanBody || t.draft.htmlBody)
         : (t.draft.richBody || t.draft.htmlBody),
       plainTextBody: t.draft.plainTextBody,
       name: senderName,
     }));
-    try {
-      await fetch(repSettings.gasUrl, {
-        method: "POST", mode: "no-cors",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "draft", emails: payloads }),
+
+    // Ensure a persistent hidden iframe exists for receiving the GAS response
+    const FRAME_ID = "__gas_bridge_frame__";
+    let iframe = document.getElementById(FRAME_ID);
+    if (!iframe) {
+      iframe = document.createElement("iframe");
+      iframe.id = FRAME_ID;
+      iframe.name = FRAME_ID;
+      iframe.style.cssText = "position:fixed;width:1px;height:1px;top:-9999px;left:-9999px;border:0;opacity:0;pointer-events:none;";
+      document.body.appendChild(iframe);
+    }
+
+    // Build a hidden form targeting the iframe
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = repSettings.gasUrl;
+    form.target = FRAME_ID;
+    form.style.display = "none";
+
+    const addField = (name, value) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    };
+
+    addField("action", "draft");
+    addField("emails", JSON.stringify(payloads));
+
+    document.body.appendChild(form);
+    form.submit();
+    // Clean up the form element immediately after submit
+    requestAnimationFrame(() => document.body.removeChild(form));
+
+    // GAS typically processes within 3–8 seconds.
+    // We can't read the iframe response cross-origin, so we show a
+    // "check your drafts" message after a short delay.
+    setTimeout(() => {
+      setIsSending(false);
+      setSendStatus({
+        type: "success",
+        msg: `Submitted ${payloads.length} ${emailFormat === "plain" ? "plain-text" : "rich HTML"} draft${payloads.length > 1 ? "s" : ""} to GAS. Check your Gmail Drafts folder in ~5 seconds to confirm they arrived.`,
       });
-      setSendStatus({ type: "success", msg: `Pushed ${payloads.length} ${emailFormat === "plain" ? "plain-text" : "rich HTML"} draft${payloads.length > 1 ? "s" : ""} to your Gmail Drafts folder.` });
-      // Log each send event (fire-and-forget)
+      // Log each send event
       targets.forEach(t => {
         logEmailSend({
           repEmail: userProfile?.email || repSettings?.email || "",
@@ -243,20 +274,34 @@ export default function DeliveryPanel({
           emailFormat,
         });
       });
-    } catch (err) {
-      setSendStatus({ type: "error", msg: err.message || "Network error." });
-    } finally {
-      setIsSending(false);
+    }, 1500);
+  };
+
+  // Open the GAS URL directly in a new tab so the rep can grant Gmail
+  // permissions on first use (one-time step — subsequent form POSTs are silent)
+  const handleAuthorizeGas = () => {
+    if (!repSettings.gasUrl) {
+      setSendStatus({ type: "error", msg: "Paste your Web App URL into ⚙ Settings first." });
+      return;
     }
+    window.open(repSettings.gasUrl, "_blank", "noopener,noreferrer");
+    setSendStatus({ type: "success", msg: "GAS opened in a new tab. If you see a Google permissions screen, click Allow. After that, Gmail Drafts will work silently." });
   };
 
   // ── Export Excel ─────────────────────────────────────────────────────────────
   const handleExport = () => {
-    const XLSX = window.XLSX;
-    if (!XLSX) { alert("Excel utility not loaded."); return; }
-    const rows = [["Merchant", "To", "CC", "Subject"]];
-    buildTargets().forEach(t => rows.push([t.label, t.to, t.cc, t.draft.subject]));
+    const rows = [["Merchant", "To", "CC", "Subject", "Deep Links"]];
+    buildTargets().forEach(t => {
+      const dlLinks = Object.entries(t.draft.dlMap || {})
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(" | ");
+      rows.push([t.label, t.to, t.cc, t.draft.subject, dlLinks]);
+    });
     const ws = XLSX.utils.aoa_to_sheet(rows);
+    // Auto-size columns
+    ws["!cols"] = rows[0].map((_, ci) => ({
+      wch: Math.max(...rows.map(r => String(r[ci] || "").length), 12),
+    }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Dispatch");
     XLSX.writeFile(wb, `Campaign_${new Date().toISOString().split("T")[0]}.xlsx`);
@@ -339,13 +384,7 @@ export default function DeliveryPanel({
               <Mail className="w-4 h-4" /> Open One by One
             </button>
 
-            {/* Open All — manager/ultimate only */}
-            {!isRep && (
-              <button onClick={handleOpenAllInGmail}
-                className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-white transition-all shadow-md text-sm">
-                <ExternalLink className="w-4 h-4" /> Open All ({totalCount})
-              </button>
-            )}
+
           </div>
         </div>
 
@@ -375,15 +414,31 @@ export default function DeliveryPanel({
 
               {gasExpanded && (
                 <div className="px-5 py-5 bg-white space-y-4 border-t border-slate-200 text-sm text-slate-700">
+
+                  {/* Step-by-step instructions */}
                   <ol className="list-decimal list-inside space-y-2 text-slate-600">
                     <li>Go to <a href="https://script.google.com" target="_blank" rel="noreferrer" className="text-blue-600 underline font-semibold">script.google.com</a> and create a <strong>New Project</strong>.</li>
                     <li>Delete any existing code and paste the script below.</li>
                     <li>Click <strong>Deploy → New Deployment → Web App</strong>.</li>
-                    <li>Set <em>Execute as</em> = <strong>Me</strong>, <em>Who has access</em> = <strong>Anyone</strong>.</li>
-                    <li>Click Deploy, authorize permissions, and <strong>copy the Web App URL</strong>.</li>
+                    <li>Set <em>Execute as</em> = <strong>Me</strong>, <em>Who has access</em> = <strong>Anyone within DoorDash</strong>.</li>
+                    <li>Click Deploy, authorize Gmail permissions, and <strong>copy the Web App URL</strong>.</li>
                     <li>Paste that URL into <strong>⚙ Settings → Google Apps Script URL</strong>.</li>
+                    <li className="font-semibold text-slate-800">Click the <span className="bg-emerald-100 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md text-xs">Authorize GAS</span> button below — this opens your script once so Google records your approval. Only needed the first time.</li>
                   </ol>
 
+                  {/* Authorize button */}
+                  <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                    <div className="flex-1">
+                      <p className="text-xs font-bold text-amber-800">⚡ First-time authorization required</p>
+                      <p className="text-xs text-amber-700 mt-0.5">Opens your GAS script in a new tab. If Google shows a permissions screen, click <strong>Allow</strong>. Only needed once per browser.</p>
+                    </div>
+                    <button onClick={handleAuthorizeGas}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-colors whitespace-nowrap shadow-sm">
+                      <ExternalLink className="w-3 h-3" /> Authorize GAS
+                    </button>
+                  </div>
+
+                  {/* Script code block */}
                   <div className="relative">
                     <pre className="bg-slate-900 text-green-300 rounded-xl p-4 text-xs overflow-x-auto leading-relaxed font-mono whitespace-pre">
                       {GAS_SCRIPT}
@@ -393,6 +448,11 @@ export default function DeliveryPanel({
                       {copied ? <><Check className="w-3 h-3" /> Copied!</> : <><Copy className="w-3 h-3" /> Copy</>}
                     </button>
                   </div>
+
+                  {/* How it works note */}
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    <strong>How it works:</strong> Instead of a network API call, the app submits a hidden browser form to your GAS URL. This automatically includes your DoorDash Google session cookies, so GAS authenticates you silently — no CORS issues, no IT approvals needed.
+                  </p>
                 </div>
               )}
             </div>
