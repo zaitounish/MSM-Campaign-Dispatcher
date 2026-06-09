@@ -2,7 +2,55 @@ import React from "react";
 import { Settings2, DollarSign, Clock, Users, ArrowRight } from "lucide-react";
 import { PROMO_CATALOG } from "./PromoSelector";
 
-export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromoConfigs }) {
+// ── Exported validator — used by App.jsx to gate the next-step button ──────────
+// Returns an array of human-readable error strings.
+// Empty array = all configs valid.
+export function getPromoConfigErrors(selectedPromos, promoConfigs, isUltimate) {
+  if (isUltimate) return []; // Ultimate has no restrictions
+  const errors = [];
+  if (selectedPromos.includes("discount")) {
+    const cfg = promoConfigs["discount"] || {};
+    const discountType = cfg.discountType || "percentage";
+    const mst = parseFloat(cfg.minSubtotal);
+
+    // Min subtotal must be at least $5
+    if (!isNaN(mst) && mst < 5) {
+      errors.push("Discount: Minimum subtotal must be at least $5.");
+    }
+    if (isNaN(mst) || cfg.minSubtotal === "") {
+      errors.push("Discount: Please enter a minimum subtotal.");
+    }
+
+    if (discountType === "dollar" && !isNaN(mst) && mst >= 5) {
+      const dollarVal = parseFloat(cfg.dollarAmount);
+      const minDollar = Math.ceil(mst * 0.10);
+      if (isNaN(dollarVal) || cfg.dollarAmount === "") {
+        errors.push("Discount: Please enter a discount amount.");
+      } else if (dollarVal < minDollar) {
+        errors.push(`Discount: Dollar off amount must be at least $${minDollar} (10% of $${mst} min subtotal).`);
+      }
+    }
+  }
+  return errors;
+}
+
+export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromoConfigs, userProfile }) {
+  const isUltimate = userProfile?.role === "ultimate";
+
+  // ── Portal-accurate discount tier math ──────────────────────────────────────
+  // Reverse-engineered from DoorDash merchant portal behavior:
+  //   first = ceil(minSubtotal × (pct + 0.05))
+  //   step  = ceil(minSubtotal × 0.05)
+  //   tiers = [first, first+step, first+step×2]
+  const computePortalTiers = (pct, minSubtotal) => {
+    const p = parseFloat(pct) / 100;
+    const m = parseFloat(minSubtotal);
+    if (!p || !m || isNaN(p) || isNaN(m)) return null;
+    const first = Math.ceil(m * (p + 0.05));
+    const step = Math.ceil(m * 0.05);
+    return [first, first + step, first + step * 2];
+  };
+
   if (selectedPromos.length === 0) return null;
 
   const updateConfig = (promoId, field, value) => {
@@ -53,8 +101,8 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
                     <button
                       onClick={() => updateConfig(promo.id, "isCartLevel", false)}
                       className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${!getConfig(promo.id, "isCartLevel")
-                          ? "bg-white text-slate-900 shadow-sm border border-slate-200"
-                          : "text-slate-500 hover:text-slate-700"
+                        ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                        : "text-slate-500 hover:text-slate-700"
                         }`}
                     >
                       Item Promotion
@@ -62,8 +110,8 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
                     <button
                       onClick={() => updateConfig(promo.id, "isCartLevel", true)}
                       className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${getConfig(promo.id, "isCartLevel")
-                          ? "bg-white text-slate-900 shadow-sm border border-slate-200"
-                          : "text-slate-500 hover:text-slate-700"
+                        ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                        : "text-slate-500 hover:text-slate-700"
                         }`}
                     >
                       Spend X Get Y
@@ -100,7 +148,7 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
                     <label className="block text-sm font-semibold text-slate-700 mb-1.5">Minimum Subtotal</label>
                     <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
                       <DollarSign className="w-4 h-4 text-slate-400 mr-1" />
-                      <select 
+                      <select
                         value={getConfig(promo.id, "minSubtotal") || "25"}
                         onChange={e => updateConfig(promo.id, "minSubtotal", e.target.value)}
                         className="outline-none bg-transparent w-full text-slate-700 sm:text-sm cursor-pointer"
@@ -128,7 +176,6 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
                         className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
                       />
                     </div>
-                    <p className="text-xs text-slate-400 mt-1.5">This will map to the `abv` URL parameter (e.g. 1000 for $10).</p>
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1.5">Target Audience</label>
@@ -163,8 +210,8 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
                           <button
                             onClick={() => updateConfig(promo.id, "discountType", "percentage")}
                             className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${discountType === "percentage"
-                                ? "bg-white text-slate-900 shadow-sm border border-slate-200"
-                                : "text-slate-500 hover:text-slate-700"
+                              ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                              : "text-slate-500 hover:text-slate-700"
                               }`}
                           >
                             % Percentage Off
@@ -172,8 +219,8 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
                           <button
                             onClick={() => updateConfig(promo.id, "discountType", "dollar")}
                             className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${discountType === "dollar"
-                                ? "bg-white text-slate-900 shadow-sm border border-slate-200"
-                                : "text-slate-500 hover:text-slate-700"
+                              ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                              : "text-slate-500 hover:text-slate-700"
                               }`}
                           >
                             $ Dollar Off
@@ -199,88 +246,168 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
                       </div>
                     </div>
 
-                    {/* ── Mode 1: Percentage Off (pt=pdws) ── */}
+                    {/* ── Mode 1: Percentage Off ── */}
                     {discountType === "percentage" && (
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div>
-                          <label className="block text-sm font-semibold text-slate-700 mb-1.5">Percentage Amount</label>
-                          <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
-                            <span className="text-slate-400 mr-1 font-bold">%</span>
-                            <input
-                              type="number"
-                              placeholder="e.g. 20"
-                              min="1" max="100"
-                              value={getConfig(promo.id, "percentageAmount")}
-                              onChange={e => updateConfig(promo.id, "percentageAmount", e.target.value)}
-                              className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
-                            />
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+                          {/* Percentage selector */}
+                          <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-1.5">Percentage Amount</label>
+                            {isUltimate ? (
+                              // Ultimate: free-form input
+                              <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
+                                <span className="text-slate-400 mr-1 font-bold">%</span>
+                                <input
+                                  type="number"
+                                  placeholder="e.g. 20"
+                                  min="1" max="100"
+                                  value={getConfig(promo.id, "percentageAmount")}
+                                  onChange={e => updateConfig(promo.id, "percentageAmount", e.target.value)}
+                                  className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
+                                />
+                              </div>
+                            ) : (
+                              // Rep / Manager: locked to 15 / 20 / 25
+                              <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
+                                <span className="text-slate-400 mr-1 font-bold">%</span>
+                                <select
+                                  value={getConfig(promo.id, "percentageAmount") || "20"}
+                                  onChange={e => updateConfig(promo.id, "percentageAmount", e.target.value)}
+                                  className="outline-none bg-transparent w-full text-slate-700 sm:text-sm cursor-pointer"
+                                >
+                                  <option value="15">15%</option>
+                                  <option value="20">20%</option>
+                                  <option value="25">25%</option>
+                                </select>
+                              </div>
+                            )}
+                            {/* <p className="text-xs text-slate-400 mt-1">Maps to <code>cpo</code></p> */}
                           </div>
-                          <p className="text-xs text-slate-400 mt-1">Maps to <code>cpo</code> (raw integer, not cents)</p>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-slate-700 mb-1.5">Min Subtotal</label>
-                          <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
-                            <DollarSign className="w-4 h-4 text-slate-400 mr-1" />
-                            <input
-                              type="number"
-                              placeholder="e.g. 30"
-                              value={getConfig(promo.id, "minSubtotal")}
-                              onChange={e => updateConfig(promo.id, "minSubtotal", e.target.value)}
-                              className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
-                            />
+
+                          {/* Min subtotal */}
+                          <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-1.5">Min Subtotal</label>
+                            <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
+                              <DollarSign className="w-4 h-4 text-slate-400 mr-1" />
+                              <input
+                                type="number"
+                                placeholder="e.g. 20"
+                                min={isUltimate ? "0" : "5"}
+                                step="1"
+                                value={getConfig(promo.id, "minSubtotal")}
+                                onChange={e => {
+                                  const val = parseFloat(e.target.value);
+                                  if (!isUltimate && val < 5) return;
+                                  updateConfig(promo.id, "minSubtotal", e.target.value);
+                                }}
+                                className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
+                              />
+                            </div>
+                            {/* <p className="text-xs text-slate-400 mt-1">Maps to <code>mst</code> (×100 → cents){!isUltimate && " · min $5"}</p> */}
                           </div>
-                          <p className="text-xs text-slate-400 mt-1">Maps to <code>mst</code> (×100 → cents)</p>
                         </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-slate-700 mb-1.5">Max Discount Cap</label>
-                          <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
-                            <DollarSign className="w-4 h-4 text-slate-400 mr-1" />
-                            <input
-                              type="number"
-                              placeholder="e.g. 10"
-                              value={getConfig(promo.id, "maxDiscount")}
-                              onChange={e => updateConfig(promo.id, "maxDiscount", e.target.value)}
-                              className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
-                            />
+
+                        {/* ── Portal tier preview (rep/manager only) ── */}
+                        {!isUltimate && (() => {
+                          const pct = getConfig(promo.id, "percentageAmount") || "20";
+                          const mst = getConfig(promo.id, "minSubtotal");
+                          const tiers = mst ? computePortalTiers(pct, mst) : null;
+                          return tiers ? (
+                            <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+                              <p className="text-xs font-bold text-blue-700 mb-2">📊 Portal-generated discount tiers (DoorDash will offer these 3 options)</p>
+                              <div className="flex gap-3">
+                                {tiers.map((t, i) => (
+                                  <div key={i} className="flex-1 bg-white border border-blue-200 rounded-lg py-2 text-center">
+                                    <p className="text-lg font-black text-dd-red">${t}</p>
+                                    <p className="text-[10px] text-slate-400 font-semibold">Tier {i + 1}</p>
+                                  </div>
+                                ))}
+                              </div>
+                              <p className="text-[10px] text-slate-400 mt-2">These match what the DoorDash merchant portal auto-generates for {pct}% off with a ${mst} min.</p>
+                            </div>
+                          ) : (
+                            /* <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg">
+                              ⚠️ Enter a Min Subtotal to preview the portal discount tiers.
+                            </p> */ null
+                          );
+                        })()}
+
+                        {/* Max discount cap — ultimate only */}
+                        {isUltimate && (
+                          <div className="max-w-xs">
+                            <label className="block text-sm font-semibold text-slate-700 mb-1.5">Max Discount Cap</label>
+                            <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
+                              <DollarSign className="w-4 h-4 text-slate-400 mr-1" />
+                              <input
+                                type="number"
+                                placeholder="e.g. 10"
+                                value={getConfig(promo.id, "maxDiscount")}
+                                onChange={e => updateConfig(promo.id, "maxDiscount", e.target.value)}
+                                className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
+                              />
+                            </div>
+                            {/* <p className="text-xs text-slate-400 mt-1">Maps to <code>cmpv</code> (×100 → cents)</p> */}
                           </div>
-                          <p className="text-xs text-slate-400 mt-1">Maps to <code>cmpv</code> (×100 → cents)</p>
-                        </div>
+                        )}
                       </div>
                     )}
 
-                    {/* ── Mode 2: Dollar Off (pt=dvdws) ── */}
-                    {discountType === "dollar" && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-semibold text-slate-700 mb-1.5">Discount Amount</label>
-                          <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
-                            <DollarSign className="w-4 h-4 text-slate-400 mr-1" />
-                            <input
-                              type="number"
-                              placeholder="e.g. 6"
-                              value={getConfig(promo.id, "dollarAmount")}
-                              onChange={e => updateConfig(promo.id, "dollarAmount", e.target.value)}
-                              className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
-                            />
+                    {/* ── Mode 2: Dollar Off ── */}
+                    {discountType === "dollar" && (() => {
+                      const mst = parseFloat(getConfig(promo.id, "minSubtotal")) || 0;
+                      const minDollar = !isUltimate && mst > 0 ? Math.ceil(mst * 0.10) : null;
+                      const dollarVal = parseFloat(getConfig(promo.id, "dollarAmount")) || 0;
+                      const tooLow = minDollar !== null && dollarVal > 0 && dollarVal < minDollar;
+                      return (
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Discount Amount</label>
+                              <div className={`flex items-center bg-white border rounded-lg px-3 py-2 focus-within:ring-1 transition-all ${tooLow ? "border-red-400 focus-within:border-red-500 focus-within:ring-red-400" : "border-slate-300 focus-within:border-dd-red focus-within:ring-dd-red"}`}>
+                                <DollarSign className="w-4 h-4 text-slate-400 mr-1" />
+                                <input
+                                  type="number"
+                                  placeholder="e.g. 6"
+                                  min={minDollar ?? 1}
+                                  value={getConfig(promo.id, "dollarAmount")}
+                                  onChange={e => updateConfig(promo.id, "dollarAmount", e.target.value)}
+                                  className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
+                                />
+                              </div>
+                              {tooLow && (
+                                <p className="text-xs text-red-500 mt-1 font-semibold">⚠️ Must be at least ${minDollar} (10% of ${mst} min subtotal)</p>
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Min Subtotal</label>
+                              <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
+                                <DollarSign className="w-4 h-4 text-slate-400 mr-1" />
+                                <input
+                                  type="number"
+                                  placeholder="e.g. 30"
+                                  min={isUltimate ? "0" : "5"}
+                                  value={getConfig(promo.id, "minSubtotal")}
+                                  onChange={e => {
+                                    const val = parseFloat(e.target.value);
+                                    if (!isUltimate && val < 5) return;
+                                    updateConfig(promo.id, "minSubtotal", e.target.value);
+                                  }}
+                                  className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
+                                />
+                              </div>
+                              {/* <p className="text-xs text-slate-400 mt-1">Maps to <code>mst</code> (×100 → cents){!isUltimate && " · min $5"}. <strong>No cap in this mode.</strong></p> */}
+                            </div>
                           </div>
-                          <p className="text-xs text-slate-400 mt-1">Maps to <code>cfo</code> (×100 → cents)</p>
+                          {/* Dollar off rule note for rep/manager */}
+                          {/* {!isUltimate && (
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                              <p className="text-xs text-amber-700"><strong>Dollar Off rule:</strong> The discount cannot be less than 10% of the minimum subtotal. Set the Min Subtotal first to see the minimum allowed discount.</p>
+                            </div>
+                          )} */}
                         </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-slate-700 mb-1.5">Min Subtotal</label>
-                          <div className="flex items-center bg-white border border-slate-300 rounded-lg px-3 py-2 focus-within:border-dd-red focus-within:ring-1 focus-within:ring-dd-red transition-all">
-                            <DollarSign className="w-4 h-4 text-slate-400 mr-1" />
-                            <input
-                              type="number"
-                              placeholder="e.g. 30"
-                              value={getConfig(promo.id, "minSubtotal")}
-                              onChange={e => updateConfig(promo.id, "minSubtotal", e.target.value)}
-                              className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
-                            />
-                          </div>
-                          <p className="text-xs text-slate-400 mt-1">Maps to <code>mst</code> (×100 → cents). <strong>No cap in this mode.</strong></p>
-                        </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                   </div>
                 );

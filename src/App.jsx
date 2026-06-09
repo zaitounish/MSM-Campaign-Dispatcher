@@ -4,7 +4,7 @@ import StepIndicator from "./components/StepIndicator";
 import UploadZone from "./components/UploadZone";
 import MerchantTable from "./components/MerchantTable";
 import PromoSelector from "./components/PromoSelector";
-import PromoCustomizer from "./components/PromoCustomizer";
+import PromoCustomizer, { getPromoConfigErrors } from "./components/PromoCustomizer";
 import EmailPreview from "./components/EmailPreview";
 import DeliveryPanel from "./components/DeliveryPanel";
 import RepSettingsModal from "./components/RepSettingsModal";
@@ -298,17 +298,37 @@ function AppInner({ userProfile, onSignOut }) {
             </div>
 
             <PromoSelector selectedPromos={selectedPromos} setSelectedPromos={setSelectedPromos} />
-            <PromoCustomizer selectedPromos={selectedPromos} promoConfigs={promoConfigs} setPromoConfigs={setPromoConfigs} />
+            <PromoCustomizer selectedPromos={selectedPromos} promoConfigs={promoConfigs} setPromoConfigs={setPromoConfigs} userProfile={userProfile} />
 
-            <div className="flex justify-end pt-8">
-              <button
-                onClick={() => setPhase("deliver")}
-                disabled={selectedPromos.length === 0}
-                className="flex items-center gap-2 px-8 py-3.5 bg-dd-red text-white font-bold rounded-xl shadow-md hover:bg-dd-red-dark hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0 disabled:cursor-not-allowed"
-              >
-                Preview & Send Emails
-                <ArrowRight className="w-5 h-5" />
-              </button>
+            <div className="flex flex-col items-end gap-3 pt-8">
+              {/* Promo config error gate — reps & managers only */}
+              {(() => {
+                const isUltimate = userProfile?.role === "ultimate";
+                const promoErrors = getPromoConfigErrors(selectedPromos, promoConfigs, isUltimate);
+                const canProceed = selectedPromos.length > 0 && promoErrors.length === 0;
+                return (
+                  <>
+                    {promoErrors.length > 0 && (
+                      <div className="w-full bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                        <p className="text-xs font-bold text-red-700 mb-1">⛔ Fix the following before continuing:</p>
+                        <ul className="list-disc list-inside space-y-0.5">
+                          {promoErrors.map((e, i) => (
+                            <li key={i} className="text-xs text-red-600">{e}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => setPhase("deliver")}
+                      disabled={!canProceed}
+                      className="flex items-center gap-2 px-8 py-3.5 bg-dd-red text-white font-bold rounded-xl shadow-md hover:bg-dd-red-dark hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0 disabled:cursor-not-allowed"
+                    >
+                      Preview &amp; Send Emails
+                      <ArrowRight className="w-5 h-5" />
+                    </button>
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}
