@@ -41,7 +41,7 @@ const copyHtmlToClipboard = async (draft) => {
 // GAS script the user deploys once to enable rich HTML drafts.
 // Uses e.parameter (form-encoded POST) so the browser can send Google
 // session cookies automatically no OAuth setup needed.
-const GAS_SCRIPT = `// ─── MSM Campaign Dispatcher Gmail Drafts Bridge ───────────────────────────
+const GAS_SCRIPT = `// ─── MSM Campaign Dispatcher — Gmail Drafts Bridge ───────────────────────────
 // Deploy as a Web App:
 //   Execute as : Me
 //   Who has access : Anyone within DoorDash
@@ -59,12 +59,11 @@ function doPost(e) {
   var emails = [];
   
   try {
+    // MUST use payload_encoded to prevent emojis like 🚀 from turning into 
     if (e.parameter.payload_encoded) {
-      // Decode the URL-encoded JSON string safely using native JS
       var jsonStr = decodeURIComponent(e.parameter.payload_encoded);
       emails = JSON.parse(jsonStr);
     } else if (e.parameter.payload) {
-      // fallback for the previous base64 approach
       var decodedBytes = Utilities.base64Decode(e.parameter.payload);
       var jsonStr = Utilities.newBlob(decodedBytes).getDataAsString();
       emails = JSON.parse(jsonStr);
@@ -93,14 +92,34 @@ function doPost(e) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ─── OPTIONAL HELPER ─────────────────────────────────────────────────────────
-// If you ever want to quickly send ALL drafts sitting in your Gmail Drafts folder,
-// select "sendAllMyDrafts" from the dropdown at the top of the editor and click Run.
+// Optional helper to quickly blast out existing drafts, with a limit!
 function sendAllMyDrafts() {
+  var MAX_SENDS = 50; // Change this number to whatever limit you want
+  
   var drafts = GmailApp.getDrafts();
+  var sentCount = 0;
+  
   for (var i = 0; i < drafts.length; i++) {
+    // Stop the loop if we've reached our maximum allowed sends
+    if (sentCount >= MAX_SENDS) {
+      Logger.log("Reached maximum limit of " + MAX_SENDS + " sends. Stopping.");
+      break; 
+    }
+    
+    // SAFETY CHECK: Get the "To" address of this specific draft
+    var toAddress = drafts[i].getMessage().getTo();
+    
+    // If the "To" address is empty or just spaces, stop the entire script!
+    if (!toAddress || toAddress.trim() === "") {
+      Logger.log("⚠️ Draft missing recipient! Stopping early for safety at email " + (i + 1));
+      break; 
+    }
+    
     drafts[i].send();
+    sentCount++;
   }
+  
+  Logger.log("Finished! Total emails sent this run: " + sentCount);
 }`;
 
 export default function DeliveryPanel({
