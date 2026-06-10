@@ -15,11 +15,13 @@ const ROLE_CONFIG = {
 
 // ── Permission helpers ──────────────────────────────────────────────────────
 // Which roles can "actor" add to the whitelist?
-const addableRoles = (actorRole) => {
-  if (actorRole === "ultimate") return ["rep", "manager"];
-  if (actorRole === "manager") return ["rep"];
-  return [];
-};
+// TODO: Re-enable when add-user feature is brought back
+// const addableRoles = (actorRole) => {
+//   if (actorRole === "ultimate") return ["rep", "manager"];
+//   if (actorRole === "manager") return ["rep"];
+//   return [];
+// };
+const addableRoles = (_actorRole) => []; // temporarily disabled — no role can add users
 
 // Can actor delete/suspend target?
 const canDelete = (actorRole, targetRole) => {
@@ -118,18 +120,18 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
   const [saving, setSaving] = useState(null);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [showAdd, setShowAdd] = useState(false);
-
-  const [newEmail, setNewEmail] = useState("");
-  const [newName, setNewName] = useState("");
-  const [newRole, setNewRole] = useState(addableRoles(actorRole)[0] || "rep");
-  const [newRepId, setNewRepId] = useState("");
-  // manager_id: for ultimate assigning a rep to a manager; for manager it auto-fills to their own ID
-  const [newManagerId, setNewManagerId] = useState("");
-  const [sendInvite, setSendInvite] = useState(true);
-  const [addError, setAddError] = useState("");
-  const [addLoading, setAddLoading] = useState(false);
-  const [addSuccess, setAddSuccess] = useState("");
+  // TODO: Re-enable showAdd and add-user form state when feature is brought back
+  // const [showAdd, setShowAdd] = useState(false);
+  // const [newEmail, setNewEmail] = useState("");
+  // const [newName, setNewName] = useState("");
+  // const [newRole, setNewRole] = useState(addableRoles(actorRole)[0] || "rep");
+  // const [newRepId, setNewRepId] = useState("");
+  // // manager_id: for ultimate assigning a rep to a manager; for manager it auto-fills to their own ID
+  // const [newManagerId, setNewManagerId] = useState("");
+  // const [sendInvite, setSendInvite] = useState(true);
+  // const [addError, setAddError] = useState("");
+  // const [addLoading, setAddLoading] = useState(false);
+  // const [addSuccess, setAddSuccess] = useState("");
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -196,68 +198,69 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
     setSaving(null);
   };
 
+  // TODO: Re-enable handleAddUser when add-user feature is brought back
   // ── Add user ──────────────────────────────────────────────────────────────
-  const handleAddUser = async (e) => {
-    e.preventDefault();
-    const email = newEmail.trim().toLowerCase();
-    if (!email) { setAddError("Email is required."); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setAddError("Enter a valid email address."); return; }
-    if (!addableRoles(actorRole).includes(newRole)) { setAddError("You cannot assign this role."); return; }
-
-    setAddLoading(true);
-    setAddError("");
-    setAddSuccess("");
-
-    const { data, error: err } = await supabase
-      .from("reps_whitelist")
-      .insert({
-        email,
-        full_name: newName.trim() || null,
-        role: newRole,
-        rep_id: newRepId.trim() || null,
-        is_active: true,
-        // Only Ultimate can assign a rep to a manager.
-        // Managers adding reps do NOT auto-assign themselves that is
-        // exclusively an Ultimate admin action.
-        manager_id: actorRole === "ultimate" ? (newManagerId || null) : null,
-      })
-      .select()
-      .single();
-
-    if (err) {
-      setAddLoading(false);
-      setAddError(err.code === "23505"
-        ? "This email is already in the whitelist."
-        : err.message);
-      return;
-    }
-
-    setUsers(prev => [data, ...prev]);
-
-    // Send invitation email via GAS bridge
-    let inviteNote = "";
-    if (sendInvite) {
-      if (!gasUrl) {
-        inviteNote = " (invitation not sent | no GAS URL configured in Settings)";
-      } else {
-        const result = await sendInviteEmail({
-          toEmail: email,
-          toName: newName.trim() || "",
-          senderName,
-          gasUrl,
-          toolUrl,
-        });
-        inviteNote = result.ok
-          ? " · Invitation pushed to your Gmail Drafts ✓"
-          : " · Invitation email failed | check your GAS URL in Settings";
-      }
-    }
-
-    setAddSuccess(`${email} added as ${ROLE_CONFIG[newRole].label}${inviteNote}`);
-    setAddLoading(false);
-    setNewEmail(""); setNewName(""); setNewRole(addableRoles(actorRole)[0] || "rep"); setNewRepId(""); setNewManagerId("");
-    setTimeout(() => { setShowAdd(false); setAddSuccess(""); }, 4000);
-  };
+  // const handleAddUser = async (e) => {
+  //   e.preventDefault();
+  //   const email = newEmail.trim().toLowerCase();
+  //   if (!email) { setAddError("Email is required."); return; }
+  //   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setAddError("Enter a valid email address."); return; }
+  //   if (!addableRoles(actorRole).includes(newRole)) { setAddError("You cannot assign this role."); return; }
+  //
+  //   setAddLoading(true);
+  //   setAddError("");
+  //   setAddSuccess("");
+  //
+  //   const { data, error: err } = await supabase
+  //     .from("reps_whitelist")
+  //     .insert({
+  //       email,
+  //       full_name: newName.trim() || null,
+  //       role: newRole,
+  //       rep_id: newRepId.trim() || null,
+  //       is_active: true,
+  //       // Only Ultimate can assign a rep to a manager.
+  //       // Managers adding reps do NOT auto-assign themselves that is
+  //       // exclusively an Ultimate admin action.
+  //       manager_id: actorRole === "ultimate" ? (newManagerId || null) : null,
+  //     })
+  //     .select()
+  //     .single();
+  //
+  //   if (err) {
+  //     setAddLoading(false);
+  //     setAddError(err.code === "23505"
+  //       ? "This email is already in the whitelist."
+  //       : err.message);
+  //     return;
+  //   }
+  //
+  //   setUsers(prev => [data, ...prev]);
+  //
+  //   // Send invitation email via GAS bridge
+  //   let inviteNote = "";
+  //   if (sendInvite) {
+  //     if (!gasUrl) {
+  //       inviteNote = " (invitation not sent | no GAS URL configured in Settings)";
+  //     } else {
+  //       const result = await sendInviteEmail({
+  //         toEmail: email,
+  //         toName: newName.trim() || "",
+  //         senderName,
+  //         gasUrl,
+  //         toolUrl,
+  //       });
+  //       inviteNote = result.ok
+  //         ? " · Invitation pushed to your Gmail Drafts ✓"
+  //         : " · Invitation email failed | check your GAS URL in Settings";
+  //     }
+  //   }
+  //
+  //   setAddSuccess(`${email} added as ${ROLE_CONFIG[newRole].label}${inviteNote}`);
+  //   setAddLoading(false);
+  //   setNewEmail(""); setNewName(""); setNewRole(addableRoles(actorRole)[0] || "rep"); setNewRepId(""); setNewManagerId("");
+  //   setTimeout(() => { setShowAdd(false); setAddSuccess(""); }, 4000);
+  // };
 
   // Build a manager lookup for the table display
   const managerLookup = useMemo(() => {
@@ -331,12 +334,13 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
           </div>
 
           {/* Your role notice */}
-          {actorRole === "manager" && (
+          {/* TODO: Re-enable manager notice when add-user feature is brought back */}
+          {/* {actorRole === "manager" && (
             <div className="flex items-center gap-2 text-xs bg-violet-50 border border-violet-200 text-violet-700 rounded-xl px-4 py-3">
               <Users className="w-3.5 h-3.5 shrink-0" />
               As a Manager, you can <strong>add Reps</strong> only. Suspending, deleting, or changing roles requires an Ultimate admin.
             </div>
-          )}
+          )} */
 
           {/* Toolbar */}
           <div className="flex items-center gap-3">
@@ -349,7 +353,8 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                 className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all"
               />
             </div>
-            {canAddUsers && (
+            {/* TODO: Re-enable Add User button when feature is brought back */}
+            {/* {canAddUsers && (
               <button
                 onClick={() => setShowAdd(v => !v)}
                 className="flex items-center gap-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm rounded-xl transition-all shadow-md shadow-amber-200"
@@ -357,18 +362,19 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                 <UserPlus className="w-4 h-4" />
                 {showAdd ? "Cancel" : "Add User"}
               </button>
-            )}
+            )} */}
           </div>
 
+          {/* TODO: Re-enable success banner and add-user form when feature is brought back */}
           {/* Success banner */}
-          {addSuccess && (
+          {/* {addSuccess && (
             <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
               <Check className="w-4 h-4 shrink-0" /> {addSuccess}
             </div>
-          )}
+          )} */}
 
           {/* Add user form */}
-          {showAdd && canAddUsers && (
+          {/* {showAdd && canAddUsers && (
             <form onSubmit={handleAddUser}
               className="bg-amber-50 border border-amber-200 rounded-2xl p-5 space-y-4">
               <h3 className="font-bold text-amber-900 text-sm">New Whitelist Entry</h3>
@@ -413,7 +419,6 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                     className="w-full border border-amber-300 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber-500 bg-white font-mono"
                   />
                 </div>
-                {/* Manager assignment ultimate only; manager auto-assigns themselves */}
                 {actorRole === "ultimate" && newRole === "rep" && managerUsers.length > 0 && (
                   <div>
                     <label className="block text-xs font-bold text-amber-800 mb-1">Assign to Manager (optional)</label>
@@ -429,9 +434,8 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                     </select>
                   </div>
                 )}
-              </div>{/* end grid */}
+              </div>
 
-              {/* Invitation toggle */}
               <label className="flex items-center gap-3 cursor-pointer select-none">
                 <div
                   onClick={() => setSendInvite(v => !v)}
@@ -464,7 +468,7 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                 Add to Whitelist{sendInvite ? " & Send Invite" : ""}
               </button>
             </form>
-          )}
+          )} */
 
           {error && (
             <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
