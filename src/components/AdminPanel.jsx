@@ -340,7 +340,7 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
               <Users className="w-3.5 h-3.5 shrink-0" />
               As a Manager, you can <strong>add Reps</strong> only. Suspending, deleting, or changing roles requires an Ultimate admin.
             </div>
-          )} */
+          )} */}
 
           {/* Toolbar */}
           <div className="flex items-center gap-3">
@@ -468,7 +468,7 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                 Add to Whitelist{sendInvite ? " & Send Invite" : ""}
               </button>
             </form>
-          )} */
+          )} */}
 
           {error && (
             <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
