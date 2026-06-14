@@ -194,21 +194,52 @@ export default function SendLogDashboard({ userProfile, onClose }) {
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
+
+    let allowedEmails = null;
+    if (role === "manager" && userProfile?.id) {
+      // Find my team's emails
+      const { data: team } = await supabase
+        .from("reps_whitelist")
+        .select("email")
+        .eq("manager_id", userProfile.id);
+      
+      allowedEmails = [userProfile?.email];
+      if (team) {
+        team.forEach(t => {
+          if (t.email) allowedEmails.push(t.email);
+        });
+      }
+    }
+
     let query = supabase
       .from("email_send_log")
       .select("*")
       .order("sent_at", { ascending: false })
       .limit(500);
 
-    // RLS enforces on the server; UI filter for additional scoping
-    if (isRep) {
+    // UI filter for additional scoping based on role
+    if (role === "rep") {
       // Rep only their own sends
       query = query.eq("rep_email", userProfile?.email);
-    } else if (repFilter !== "all") {
-      // Manager/Ultimate filtering by a specific rep
-      query = query.eq("rep_email", repFilter);
+    } else if (role === "manager") {
+      // Manager sees their team + themselves
+      if (repFilter !== "all") {
+        // Double check they aren't searching for an unauthorized email (enforce scope)
+        if (allowedEmails && allowedEmails.includes(repFilter)) {
+          query = query.eq("rep_email", repFilter);
+        } else {
+          // Fallback to their allowed scope if they try to bypass UI
+          query = query.in("rep_email", allowedEmails);
+        }
+      } else {
+        query = query.in("rep_email", allowedEmails);
+      }
+    } else if (role === "ultimate") {
+      // Ultimate sees everyone
+      if (repFilter !== "all") {
+        query = query.eq("rep_email", repFilter);
+      }
     }
-    // Manager/Ultimate with "all" selected: no extra filter (RLS allows all)
 
     const { data, error } = await query;
     if (!error && data) {
@@ -217,7 +248,7 @@ export default function SendLogDashboard({ userProfile, onClose }) {
       setReps(uniqueReps);
     }
     setLoading(false);
-  }, [isRep, repFilter, userProfile?.email]);
+  }, [role, repFilter, userProfile?.email, userProfile?.id]);
 
   useEffect(() => { fetchLogs(); fetchRepNames(); }, [fetchLogs, fetchRepNames]);
 

@@ -186,15 +186,21 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
     setSaving(null);
   };
 
-  // ── Assign / reassign manager (Ultimate only) ─────────────────────────────────
   const changeManager = async (user, managerId) => {
     if (actorRole !== "ultimate") return; // only Ultimate can do this
     setSaving(user.id);
+
+    // Look up the manager's human-readable name to store in the DB for easy viewing
+    const managerName = managerId 
+      ? (users.find(m => m.id === managerId)?.full_name || users.find(m => m.id === managerId)?.email || "Unknown")
+      : null;
+
     const { error: err } = await supabase
       .from("reps_whitelist")
-      .update({ manager_id: managerId || null })
+      .update({ manager_id: managerId || null, manager_name: managerName })
       .eq("id", user.id);
-    if (!err) setUsers(prev => prev.map(u => u.id === user.id ? { ...u, manager_id: managerId || null } : u));
+      
+    if (!err) setUsers(prev => prev.map(u => u.id === user.id ? { ...u, manager_id: managerId || null, manager_name: managerName } : u));
     setSaving(null);
   };
 
