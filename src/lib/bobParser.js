@@ -16,6 +16,7 @@ export const processSheetData = (json) => {
   const rawHeaders = json[headerRowIdx];
   const colMap = {
     merchantName: -1,
+    storeName: -1,     // separate fallback for "Store Name" column
     storeId: -1,
     businessId: -1,
     dmName: -1,
@@ -31,7 +32,16 @@ export const processSheetData = (json) => {
     if (!h) return;
     const normalized = String(h).toLowerCase().replace(/_/g, " ").trim().replace(/\s+/g, " ");
 
-    if (normalized.includes("merchant name") || normalized.includes("store name") || normalized.includes("business name")) {
+    // Business Name / Merchant Name → highest priority for the primary name
+    if (normalized.includes("business name") || normalized.includes("merchant name")) {
+      if (colMap.merchantName === -1) colMap.merchantName = idx;
+    }
+    // Store Name → separate fallback column
+    if (normalized.includes("store name")) {
+      if (colMap.storeName === -1) colMap.storeName = idx;
+    }
+    // Generic "name" fallback — only if neither of the above columns found yet
+    if (normalized === "name" || (normalized.endsWith(" name") && colMap.merchantName === -1 && colMap.storeName === -1)) {
       if (colMap.merchantName === -1) colMap.merchantName = idx;
     }
     if (normalized.includes("store id") || normalized === "sid") {
@@ -79,8 +89,11 @@ export const processSheetData = (json) => {
     // Ignore rows without a store ID or name
     if (!sId || sId === "0" || sId === "NaN" || sId === "-") continue;
 
+    // Business Name → Store Name → blank (resolved later)
+    const rawMerchantName = getVal(colMap.merchantName) || getVal(colMap.storeName) || "";
+
     parsedRows.push({
-      merchantName: getVal(colMap.merchantName) || "Unknown Merchant",
+      merchantName: rawMerchantName,
       storeId: sId,
       businessId: getVal(colMap.businessId),
       dmName: getVal(colMap.dmName),
@@ -93,28 +106,44 @@ export const processSheetData = (json) => {
     });
   }
 
-  // Two-Pass Deduplication Algorithm
+  // ── Two-Pass Deduplication Algorithm ────────────────────────────────────────
+  // Key change: dmEmails and storeEmails are now ARRAYS so we collect ALL
+  // email addresses from every sibling row — not just the first non-empty one.
   const pass1Map = new Map(); // by businessId
   const noBizIdRows = [];
 
   parsedRows.forEach((row) => {
     if (row.businessId && row.businessId.toLowerCase() !== "null" && row.businessId !== "0") {
       if (!pass1Map.has(row.businessId)) {
-        pass1Map.set(row.businessId, { ...row, sids: [row.storeId] });
+        pass1Map.set(row.businessId, {
+          ...row,
+          sids: [row.storeId],
+          dmEmails: row.dmEmail ? [row.dmEmail] : [],
+          storeEmails: row.storeEmail ? [row.storeEmail] : [],
+        });
       } else {
         const existing = pass1Map.get(row.businessId);
         if (!existing.sids.includes(row.storeId)) {
           existing.sids.push(row.storeId);
         }
-        // Supplement missing emails/names from siblings if needed
+        // Supplement missing fields from siblings
         if (!existing.dmName && row.dmName) existing.dmName = row.dmName;
-        if (!existing.dmEmail && row.dmEmail) existing.dmEmail = row.dmEmail;
-        if (!existing.storeEmail && row.storeEmail) existing.storeEmail = row.storeEmail;
+        // Accumulate ALL emails from every sibling row (fixes multi-location email loss)
+        if (row.dmEmail) {
+          row.dmEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+            .forEach(e => { if (!existing.dmEmails.includes(e)) existing.dmEmails.push(e); });
+        }
+        if (row.storeEmail) {
+          row.storeEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+            .forEach(e => { if (!existing.storeEmails.includes(e)) existing.storeEmails.push(e); });
+        }
         // Logical OR for opportunities
         if (isTruthy(row.slOpp)) existing.slOpp = "1";
         if (isTruthy(row.promoOpp)) existing.promoOpp = "1";
         if (isTruthy(row.loyalOpp)) existing.loyalOpp = "1";
         if (isTruthy(row.slCredit)) existing.slCredit = "1";
+        // Keep the best non-empty merchant name
+        if (!existing.merchantName && row.merchantName) existing.merchantName = row.merchantName;
       }
     } else {
       noBizIdRows.push(row);
@@ -128,37 +157,61 @@ export const processSheetData = (json) => {
     // If it has a valid DM Email, group by that
     if (row.dmEmail && validateEmail(row.dmEmail)) {
       if (!pass2Map.has(row.dmEmail)) {
-        pass2Map.set(row.dmEmail, { ...row, sids: [row.storeId] });
+        pass2Map.set(row.dmEmail, {
+          ...row,
+          sids: [row.storeId],
+          dmEmails: row.dmEmail ? [row.dmEmail] : [],
+          storeEmails: row.storeEmail ? [row.storeEmail] : [],
+        });
       } else {
         const existing = pass2Map.get(row.dmEmail);
         if (!existing.sids.includes(row.storeId)) {
           existing.sids.push(row.storeId);
         }
         if (!existing.dmName && row.dmName) existing.dmName = row.dmName;
-        if (!existing.storeEmail && row.storeEmail) existing.storeEmail = row.storeEmail;
+        if (row.storeEmail) {
+          row.storeEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+            .forEach(e => { if (!existing.storeEmails.includes(e)) existing.storeEmails.push(e); });
+        }
         if (isTruthy(row.slOpp)) existing.slOpp = "1";
         if (isTruthy(row.promoOpp)) existing.promoOpp = "1";
         if (isTruthy(row.loyalOpp)) existing.loyalOpp = "1";
         if (isTruthy(row.slCredit)) existing.slCredit = "1";
+        if (!existing.merchantName && row.merchantName) existing.merchantName = row.merchantName;
       }
     } else {
       // Group by storeEmail if dmEmail is missing
       if (row.storeEmail && validateEmail(row.storeEmail)) {
         if (!pass2Map.has(row.storeEmail)) {
-          pass2Map.set(row.storeEmail, { ...row, sids: [row.storeId] });
+          pass2Map.set(row.storeEmail, {
+            ...row,
+            sids: [row.storeId],
+            dmEmails: row.dmEmail ? [row.dmEmail] : [],
+            storeEmails: row.storeEmail ? [row.storeEmail] : [],
+          });
         } else {
           const existing = pass2Map.get(row.storeEmail);
           if (!existing.sids.includes(row.storeId)) {
             existing.sids.push(row.storeId);
           }
+          if (row.dmEmail) {
+            row.dmEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+              .forEach(e => { if (!existing.dmEmails.includes(e)) existing.dmEmails.push(e); });
+          }
           if (isTruthy(row.slOpp)) existing.slOpp = "1";
           if (isTruthy(row.promoOpp)) existing.promoOpp = "1";
           if (isTruthy(row.loyalOpp)) existing.loyalOpp = "1";
           if (isTruthy(row.slCredit)) existing.slCredit = "1";
+          if (!existing.merchantName && row.merchantName) existing.merchantName = row.merchantName;
         }
       } else {
         // No valid emails to group on, keep isolated
-        finalResults.push({ ...row, sids: [row.storeId] });
+        finalResults.push({
+          ...row,
+          sids: [row.storeId],
+          dmEmails: row.dmEmail ? [row.dmEmail] : [],
+          storeEmails: row.storeEmail ? [row.storeEmail] : [],
+        });
       }
     }
   });
@@ -167,9 +220,12 @@ export const processSheetData = (json) => {
 
   // Formatting final targets schema
   return finalResults.map((target) => {
-    // Collect all raw email candidates
-    const rawCandidates = [target.dmEmail, target.storeEmail]
-      .filter(Boolean)
+    // Collect ALL raw email candidates from both dmEmails and storeEmails arrays.
+    // These were accumulated across every sibling/duplicate row during dedup.
+    const rawCandidates = [
+      ...(target.dmEmails || (target.dmEmail ? [target.dmEmail] : [])),
+      ...(target.storeEmails || (target.storeEmail ? [target.storeEmail] : [])),
+    ]
       .flatMap(e => e.split(/[,\s]+/).map(ex => ex.trim().toLowerCase()).filter(Boolean));
 
     // Separate valid from invalid so we can surface bad ones to the rep
@@ -191,9 +247,14 @@ export const processSheetData = (json) => {
       emailStatus = "missing";
     }
 
+    // Business Name fallback chain: merchantName → Store #ID → (never "Unknown Merchant")
+    const resolvedName = target.merchantName && target.merchantName.trim()
+      ? target.merchantName.trim()
+      : `Store #${target.sids[0] || "?"}`;
+
     return {
       id: crypto.randomUUID(),
-      merchantName: target.merchantName,
+      merchantName: resolvedName,
       businessId: target.businessId || "",
       sids: target.sids.join(","),
       emails,

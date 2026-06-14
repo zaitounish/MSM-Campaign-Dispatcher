@@ -124,6 +124,46 @@ export const deInterpolateMerchant = (html, merchant = {}) => {
   return result;
 };
 
+/**
+ * Formats a raw DM name value from a BOB spreadsheet into a friendly first name.
+ *
+ * Rules applied in order:
+ *  1. If the raw value is mostly digits (phone number), return null → fall back to store greeting
+ *  2. Take only the first word (first name)
+ *  3. Title-case: lowercase the whole word, then capitalize the first letter
+ *  4. Return null if nothing valid remains
+ *
+ * Examples:
+ *   "JOHN CENA"      → "John"
+ *   "alice jones"    → "Alice"
+ *   "555-123-4567"   → null
+ *   ""               → null
+ *
+ * @param {string} raw - the raw dmName string from the spreadsheet
+ * @returns {string|null}
+ */
+export function formatDmName(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  // Filter: if the value is mostly digits / phone-number-like, discard it
+  // A token is considered a "phone number" if more than half its characters are digits or common phone separators
+  const digitCount = (trimmed.match(/[\d\-().+\s]/g) || []).length;
+  if (digitCount / trimmed.length > 0.5) return null;
+
+  // Take only the first word
+  const firstWord = trimmed.split(/\s+/)[0];
+  if (!firstWord) return null;
+
+  // Strip any trailing punctuation (e.g. "John," or "John.")
+  const clean = firstWord.replace(/[^a-zA-Z'-]/g, "");
+  if (!clean) return null;
+
+  // Title-case: first letter uppercase, rest lowercase
+  return clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
+}
+
 // ─── Block type enum ───────────────────────────────────────────────────────────
 export const BLOCK_TYPES = {
   TEXT: "text",
@@ -231,7 +271,7 @@ export const generateInitialBlocks = (selectedPromos, promoConfigs, repSettings)
   // 1. Intro text block
   blocks.push(createBlock(BLOCK_TYPES.TEXT, {
     label: "Intro",
-    html: `<p>Hi {Store Name} team, hope you're doing well!</p><p>I'm reaching out because I've identified some opportunities to help you grow your business and increase your visibility on DoorDash.</p>`,
+    html: `<p>Hi {DM Name}, hope you're doing well!</p><p>I'm reaching out because I've identified some opportunities to help you grow your business and increase your visibility on DoorDash.</p>`,
   }));
 
   // 2. Credit banner (conditional)
@@ -296,9 +336,15 @@ export const buildEmailSubject = (merchant, selectedPromos) => {
 // ─── Variable interpolation ────────────────────────────────────────────────────
 const _interpolate = (html, merchant) => {
   if (!html) return "";
+  const formattedDm = formatDmName(merchant?.dmName);
+  // If no valid DM first name, fall back to "{Store Name} team" so the greeting
+  // reads "Hi Burger King team" rather than just "Hi Burger King"
+  const dmFallback = merchant?.merchantName
+    ? `${merchant.merchantName} team`
+    : "there";
   return html
     .replace(/\{Store\s*Name\}/gi, merchant?.merchantName || "Merchant Partner")
-    .replace(/\{DM\s*Name\}/gi, merchant?.dmName || merchant?.merchantName || "there");
+    .replace(/\{DM\s*Name\}/gi, formattedDm || dmFallback);
 };
 
 // ─── Resolve deep link for a PROMO block ──────────────────────────────────────

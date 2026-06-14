@@ -296,11 +296,7 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
                                 min={isUltimate ? "0" : "5"}
                                 step="1"
                                 value={getConfig(promo.id, "minSubtotal")}
-                                onChange={e => {
-                                  const val = parseFloat(e.target.value);
-                                  if (!isUltimate && val < 5) return;
-                                  updateConfig(promo.id, "minSubtotal", e.target.value);
-                                }}
+                                onChange={e => updateConfig(promo.id, "minSubtotal", e.target.value)}
                                 className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
                               />
                             </div>
@@ -388,23 +384,12 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
                                   placeholder="e.g. 30"
                                   min={isUltimate ? "0" : "5"}
                                   value={getConfig(promo.id, "minSubtotal")}
-                                  onChange={e => {
-                                    const val = parseFloat(e.target.value);
-                                    if (!isUltimate && val < 5) return;
-                                    updateConfig(promo.id, "minSubtotal", e.target.value);
-                                  }}
+                                  onChange={e => updateConfig(promo.id, "minSubtotal", e.target.value)}
                                   className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"
                                 />
                               </div>
-                              {/* <p className="text-xs text-slate-400 mt-1">Maps to <code>mst</code> (×100 → cents){!isUltimate && " · min $5"}. <strong>No cap in this mode.</strong></p> */}
                             </div>
                           </div>
-                          {/* Dollar off rule note for rep/manager */}
-                          {/* {!isUltimate && (
-                            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-                              <p className="text-xs text-amber-700"><strong>Dollar Off rule:</strong> The discount cannot be less than 10% of the minimum subtotal. Set the Min Subtotal first to see the minimum allowed discount.</p>
-                            </div>
-                          )} */}
                         </div>
                       );
                     })()}

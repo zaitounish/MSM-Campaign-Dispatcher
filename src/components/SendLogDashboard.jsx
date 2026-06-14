@@ -270,7 +270,10 @@ export default function SendLogDashboard({ userProfile, onClose }) {
       : "Your team's activity";
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-start justify-center p-4 pt-16 overflow-y-auto">
+    <div 
+      className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-start justify-center p-4 pt-16 overflow-y-auto"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl mb-8 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
 
         {/* ── Header ── */}

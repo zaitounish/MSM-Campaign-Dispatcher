@@ -153,11 +153,13 @@ export default function BlockTextEditor({ html, onChange, minHeight = 100 }) {
 
       {/* ── Inline link URL bar ── */}
       {linkOpen && (
-        <div
-          ref={linkRef}
-          className="flex items-center gap-2 px-3 py-2 bg-blue-50 border-b border-blue-200 animate-in slide-in-from-top-1 duration-100"
-        >
-          <Link className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+        <>
+          <div className="fixed inset-0 z-10" onMouseDown={(e) => { e.preventDefault(); cancelLink(); }} />
+          <div
+            ref={linkRef}
+            className="flex items-center gap-2 px-3 py-2 bg-blue-50 border-b border-blue-200 animate-in slide-in-from-top-1 duration-100 relative z-20"
+          >
+            <Link className="w-3.5 h-3.5 text-blue-500 shrink-0" />
           <input
             value={linkUrl}
             onChange={e => setLinkUrl(e.target.value)}
@@ -181,6 +183,7 @@ export default function BlockTextEditor({ html, onChange, minHeight = 100 }) {
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
+        </>
       )}
 
       {/* ── Editing surface ── */}

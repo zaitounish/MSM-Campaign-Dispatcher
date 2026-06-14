@@ -257,8 +257,10 @@ function AddBlockButton({ onAddText, onAddDivider }) {
 
       {/* Popover */}
       {open && (
-        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-30 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 flex items-center gap-1 animate-in zoom-in-95 duration-100">
-          <button
+        <>
+          <div className="fixed inset-0 z-20" onMouseDown={(e) => { e.preventDefault(); setOpen(false); }} />
+          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-30 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 flex items-center gap-1 animate-in zoom-in-95 duration-100">
+            <button
             onClick={() => { onAddText(); setOpen(false); }}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 rounded-lg transition-colors whitespace-nowrap"
           >
@@ -272,6 +274,7 @@ function AddBlockButton({ onAddText, onAddDivider }) {
             <Minus className="w-3.5 h-3.5 text-slate-500" /> Divider Line
           </button>
         </div>
+        </>
       )}
     </div>
   );

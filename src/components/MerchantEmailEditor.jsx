@@ -3,9 +3,10 @@ import {
   X, Save, Users, User, Mail, Bold, Italic, Underline, Strikethrough,
   AlignLeft, AlignCenter, AlignRight, Quote, Indent, Outdent, Palette, Highlighter,
   List, ListOrdered, Link, Check, Sparkles, Loader2, Wand2, RefreshCw,
-  ChevronDown, Minus, UserCircle,
+  ChevronDown, Minus, UserCircle, Type,
 } from "lucide-react";
 import { wrapForRichEmail, deInjectDeepLinks, deInterpolateMerchant } from "../lib/emailBlockEngine";
+import { sanitizeHtml } from "../lib/sanitize";
 
 /**
  * MerchantEmailEditor (v4 | Dual-Mode WYSIWYG)
@@ -43,6 +44,7 @@ export default function MerchantEmailEditor({
   const savedRange = useRef(null);
   const subjectTitleRef = useRef(null); // ref for the "Edit Title" input
   const subjectFullRef = useRef(null); // ref for the "Full Subject" input
+  const toolbarRef = useRef(null);
 
   // ── Independent content storage for each mode ──────────────────────────────
   // These refs hold the most recent HTML for each mode so nothing is lost
@@ -62,6 +64,10 @@ export default function MerchantEmailEditor({
   const [linkUrl, setLinkUrl] = useState("https://");
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [colorType, setColorType] = useState("foreColor"); // "foreColor" | "hiliteColor"
+  const [fontFamily, setFontFamily] = useState("Arial");
+  const [fontFamilyOpen, setFontFamilyOpen] = useState(false);
+  const [fontSize, setFontSize] = useState(14);
+  const [fontSizeOpen, setFontSizeOpen] = useState(false);
 
   // AI
   const [aiOpen, setAiOpen] = useState(false);
@@ -89,9 +95,52 @@ export default function MerchantEmailEditor({
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Inject a CSS baseline into the editor so its rendering matches the
+  // compiled email HTML exactly. This eliminates the spacing/font mismatch
+  // between the left editor panel and the right live preview.
+  //
+  // Rule: the email engine wraps TEXT blocks in:
+  //   <div style="font-family:sans-serif;font-size:14px;color:#333;line-height:1.6;margin:0 0 8px">
+  // So we mirror those exact values on <p> and <div> inside the editor.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.style.fontFamily = fontFamily + ", Arial, sans-serif";
+    editor.style.fontSize = "14px";
+    editor.style.lineHeight = "1.6";
+    editor.style.color = "#333";
+
+    // Inject a <style> sibling so child <p>/<div> margins also match
+    const container = editor.parentElement;
+    if (!container) return;
+    let styleEl = container.querySelector("[data-editor-reset]");
+    if (!styleEl) {
+      styleEl = document.createElement("style");
+      styleEl.setAttribute("data-editor-reset", "1");
+      container.insertBefore(styleEl, editor);
+    }
+    styleEl.textContent = `
+      [data-editor-root] p  { margin: 0 0 8px 0 !important; }
+      [data-editor-root] div { margin: 0 0 8px 0 !important; }
+      [data-editor-root] h1,
+      [data-editor-root] h2,
+      [data-editor-root] h3  { margin: 12px 0 6px 0 !important; }
+      [data-editor-root] br  { display: block; }
+    `;
+  }, [fontFamily]);
+
   // Update live preview on every keystroke
   const handleInput = () => {
     setLiveHtml(editorRef.current?.innerHTML || "");
+  };
+
+  // ── Close popovers on outside click (Overlay approach) ─────────────
+  const anyPopoverOpen = fontFamilyOpen || fontSizeOpen || colorPickerOpen || linkOpen;
+  const closePopovers = () => {
+    setColorPickerOpen(false);
+    setFontFamilyOpen(false);
+    setFontSizeOpen(false);
+    setLinkOpen(false);
   };
 
   // ── Mode switch: save current content then load the other mode ────────────
@@ -126,6 +175,30 @@ export default function MerchantEmailEditor({
 
   // ── execCommand ───────────────────────────────────────────────────────────────
   const exec = (cmd, val = null) => { editorRef.current?.focus(); document.execCommand(cmd, false, val); };
+
+  // ── Paste handler ──────────────────────────────────────────────────────────────
+  const handlePaste = (e) => {
+    e.preventDefault();
+    const clipHtml = e.clipboardData.getData("text/html");
+    const clipText = e.clipboardData.getData("text/plain");
+    let toInsert = clipHtml ? sanitizeHtml(clipHtml)
+      : clipText ? clipText.split("\n").map(l => `<p>${l || "<br>"}</p>`).join("") : "";
+    if (toInsert) {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+        const frag = document.createRange().createContextualFragment(toInsert);
+        range.insertNode(frag);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } else if (editorRef.current) {
+        editorRef.current.innerHTML += toInsert;
+      }
+      handleInput(); // sync live preview
+    }
+  };
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────────
   const handleKeyDown = (e) => {
@@ -175,9 +248,40 @@ export default function MerchantEmailEditor({
   };
 
   const openColorPicker = (type) => {
-    // Compare against the incoming type (not the stale state) to correctly toggle
+    savedRange.current = window.getSelection()?.getRangeAt(0) || null;
     setColorType(type);
-    setColorPickerOpen(prev => (colorType === type ? !prev : true));
+    setColorPickerOpen(v => !v);
+    setFontFamilyOpen(false);
+    setFontSizeOpen(false);
+  };
+
+  // Apply font size to the current selection using a reliable two-step technique:
+  // 1. execCommand("fontSize","7") wraps selection in <font size="7"> (unique marker)
+  // 2. Walk the DOM, find those markers, replace with <span style="font-size:Xpx">
+  // This keeps email HTML clean (no <font> tags in the final output).
+  const applyFontSize = (px) => {
+    editorRef.current?.focus();
+    setFontSize(px);
+    setFontSizeOpen(false);
+
+    // Use a unique marker value (7) so we can find exactly what we inserted
+    document.execCommand("fontSize", false, "7");
+
+    // Replace all <font size="7"> with <span style="font-size:Xpx">
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.querySelectorAll("font[size='7']").forEach(fontEl => {
+      const span = document.createElement("span");
+      span.style.fontSize = `${px}px`;
+      // Move children into the span
+      while (fontEl.firstChild) span.appendChild(fontEl.firstChild);
+      // Copy any other inline styles the font tag might have
+      if (fontEl.style.cssText) span.style.cssText += fontEl.style.cssText;
+      span.style.fontSize = `${px}px`; // ensure size is set
+      fontEl.replaceWith(span);
+    });
+
+    handleInput(); // sync live preview
   };
 
   // ── Subject builder ────────────────────────────────────────────────────────────
@@ -209,7 +313,17 @@ export default function MerchantEmailEditor({
     });
   };
 
-  // ── Save: always persist both modes ────────────────────────────────────────────
+  // ── Save & Cancel Safety ───────────────────────────────────────────────────────
+  const handleCancelSafe = () => {
+    const currentHtml = editorRef.current?.innerHTML || "";
+    if (currentHtml && currentHtml !== initialRichHtml && currentHtml !== initialCleanHtml) {
+      if (!window.confirm("You have unsaved changes. Are you sure you want to discard them?")) {
+        return;
+      }
+    }
+    onCancel();
+  };
+
   const handleSave = () => {
     // Flush the currently-active editor content to its ref before saving
     const currentHtml = editorRef.current?.innerHTML || "";
@@ -234,6 +348,15 @@ export default function MerchantEmailEditor({
   // ── AI: full email generation ─────────────────────────────────────────────────
   const runAI = async () => {
     if (!geminiApiKey || !aiPrompt.trim()) return;
+
+    // Safety check: warn if they have custom edits
+    const currentHtml = editorRef.current?.innerHTML || "";
+    if (currentHtml && currentHtml !== initialRichHtml && currentHtml !== initialCleanHtml) {
+      if (!window.confirm("This will completely overwrite your current email draft. Are you sure you want to continue?")) {
+        return;
+      }
+    }
+
     setAiStatus("loading");
     setAiError("");
 
@@ -279,10 +402,15 @@ Rules:
     }
   };
 
-  // Preview srcDoc always shows the live editor content with real URLs
+  // Preview srcDoc — mirrors the email's compiled CSS so spacing matches the editor
+  const PREVIEW_RESET = `
+    body { margin:0; padding:0; }
+    p { margin:0 0 8px 0; }
+    div { margin:0; }
+  `;
   const previewSrcDoc = editMode === "plain"
-    ? `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:32px;background:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">${liveHtml}</body></html>`
-    : `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0;background:#f1f5f9">${wrapForRichEmail(liveHtml)}</body></html>`;
+    ? `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${PREVIEW_RESET} body{padding:32px;background:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#333;}</style></head><body>${liveHtml}</body></html>`
+    : `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${PREVIEW_RESET}</style></head><body style="margin:0;padding:0;background:#f1f5f9">${wrapForRichEmail(liveHtml)}</body></html>`;
 
   return (
     <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -308,7 +436,7 @@ Rules:
               }
             </p>
           </div>
-          <button onClick={onCancel} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
+          <button onClick={handleCancelSafe} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -417,7 +545,10 @@ Rules:
             </div>
 
             {/* Toolbar */}
-            <div className="px-4 py-2 border-b border-slate-200 bg-slate-50 flex items-center gap-0.5 flex-wrap shrink-0">
+            {anyPopoverOpen && (
+              <div className="fixed inset-0 z-10" onMouseDown={(e) => { e.preventDefault(); closePopovers(); }} />
+            )}
+            <div ref={toolbarRef} className="px-4 py-2 border-b border-slate-200 bg-slate-50 flex items-center gap-0.5 flex-wrap shrink-0 relative z-20">
               <div className="flex items-center">
                 <TBtn onCmd={() => exec("bold")} title="Bold (Ctrl+B)"><Bold className="w-3.5 h-3.5" /></TBtn>
                 <TBtn onCmd={() => exec("italic")} title="Italic (Ctrl+I)"><Italic className="w-3.5 h-3.5" /></TBtn>
@@ -426,6 +557,80 @@ Rules:
               </div>
               <div className="w-px h-4 bg-slate-300 mx-1" />
 
+              {/* Font Family Picker */}
+              <div className="relative">
+                <button
+                  type="button"
+                  title="Font Family"
+                  onMouseDown={e => { e.preventDefault(); setFontFamilyOpen(v => !v); setColorPickerOpen(false); }}
+                  className={`flex items-center gap-1 px-2 py-1.5 rounded text-slate-600 hover:bg-slate-200 hover:text-slate-900 transition-colors text-xs font-semibold ${fontFamilyOpen ? "bg-slate-200" : ""}`}
+                >
+                  <Type className="w-3.5 h-3.5" />
+                  <span className="hidden lg:inline" style={{ fontFamily }}>{fontFamily}</span>
+                  <ChevronDown className="w-3 h-3 opacity-60" />
+                </button>
+                {fontFamilyOpen && (
+                  <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 py-1 min-w-[160px]">
+                    {[
+                      "Arial",
+                      "Georgia",
+                      "Times New Roman",
+                      "Courier New",
+                      "Trebuchet MS",
+                      "Verdana",
+                    ].map(f => (
+                      <button
+                        key={f}
+                        type="button"
+                        onMouseDown={e => {
+                          e.preventDefault();
+                          setFontFamily(f);
+                          editorRef.current?.focus();
+                          document.execCommand("fontName", false, f);
+                          setFontFamilyOpen(false);
+                        }}
+                        className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 transition-colors ${
+                          fontFamily === f ? "font-bold text-dd-red" : "text-slate-700"
+                        }`}
+                        style={{ fontFamily: f }}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="w-px h-4 bg-slate-300 mx-1" />
+
+              {/* Font Size Picker */}
+              <div className="relative">
+                <button
+                  type="button"
+                  title="Font Size"
+                  onMouseDown={e => { e.preventDefault(); setFontSizeOpen(v => !v); setFontFamilyOpen(false); setColorPickerOpen(false); }}
+                  className={`flex items-center gap-1 px-2 py-1.5 rounded text-slate-600 hover:bg-slate-200 hover:text-slate-900 transition-colors text-xs font-semibold min-w-[44px] ${fontSizeOpen ? "bg-slate-200" : ""}`}
+                >
+                  <span className="font-mono">{fontSize}</span>
+                  <ChevronDown className="w-3 h-3 opacity-60" />
+                </button>
+                {fontSizeOpen && (
+                  <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 py-1 min-w-[80px] max-h-60 overflow-y-auto">
+                    {[8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 26, 28, 32, 36, 48].map(sz => (
+                      <button
+                        key={sz}
+                        type="button"
+                        onMouseDown={e => { e.preventDefault(); applyFontSize(sz); }}
+                        className={`w-full text-left px-4 py-1.5 text-sm hover:bg-slate-50 transition-colors font-mono ${
+                          fontSize === sz ? "font-bold text-dd-red bg-red-50" : "text-slate-700"
+                        }`}
+                      >
+                        {sz}px
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="w-px h-4 bg-slate-300 mx-1" />
               <div className="flex items-center relative">
                 <TBtn onCmd={() => openColorPicker("foreColor")} title="Text Color" active={colorPickerOpen && colorType === "foreColor"}><Palette className="w-3.5 h-3.5" /></TBtn>
                 <TBtn onCmd={() => openColorPicker("hiliteColor")} title="Highlight Color" active={colorPickerOpen && colorType === "hiliteColor"}><Highlighter className="w-3.5 h-3.5" /></TBtn>
@@ -498,12 +703,14 @@ Rules:
               <div className="max-w-[700px] mx-auto bg-white min-h-[400px] shadow-sm border border-slate-200 rounded-xl p-8 lg:p-12 transition-shadow focus-within:shadow-md focus-within:border-violet-300">
                 <div
                   ref={editorRef}
+                  data-editor-root
                   contentEditable
                   suppressContentEditableWarning
                   onKeyDown={handleKeyDown}
                   onInput={handleInput}
+                  onPaste={handlePaste}
                   className={`
-                    w-full h-full outline-none text-[15px] text-slate-800 leading-relaxed
+                    w-full h-full outline-none leading-relaxed
                     [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-3 [&_ul]:space-y-1.5
                     [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:my-3 [&_ol]:space-y-1.5
                     [&_li]:marker:text-slate-400
@@ -514,7 +721,7 @@ Rules:
                     [&_blockquote]:border-l-4 [&_blockquote]:border-slate-300 [&_blockquote]:pl-4 [&_blockquote]:py-1 [&_blockquote]:my-4 [&_blockquote]:italic [&_blockquote]:text-slate-600 [&_blockquote]:bg-slate-50
                     [&_hr]:my-6 [&_hr]:border-slate-200
                   `}
-                  style={{ fontFamily: "sans-serif", whiteSpace: "normal" }}
+                  style={{ fontFamily: `${fontFamily}, Arial, sans-serif`, fontSize: "14px", lineHeight: "1.6", color: "#333", whiteSpace: "normal" }}
                 />
               </div>
             </div>

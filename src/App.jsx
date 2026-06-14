@@ -23,6 +23,7 @@ import {
   htmlToPlainText,
   injectDeepLinks,
   stripDeepLinkTokens,
+  formatDmName,
 } from "./lib/emailBlockEngine";
 
 // Catches any unhandled render crash and shows a message instead of a blank page
@@ -148,9 +149,12 @@ function AppInner({ userProfile, onSignOut }) {
       // Use saved subject override (may contain {Store Name}/{DM Name} tokens from
       // "Apply to All" save these get re-resolved below per merchant)
       const rawSubject = m.subjectOverride || buildEmailSubject(m, selectedPromos);
+      const dmFirst = formatDmName(m.dmName);
+      const dmFallback = m.merchantName ? `${m.merchantName} team` : "there";
+      const dmResolved = dmFirst || dmFallback;
       const subject = rawSubject
         .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
-        .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there");
+        .replace(/\{DM\s*Name\}/gi, dmResolved);
 
       const dlMap = deepLinks[m.id] || {};
 
@@ -158,12 +162,12 @@ function AppInner({ userProfile, onSignOut }) {
       if (m.emailOverride) {
         let html = injectDeepLinks(m.emailOverride, dlMap)
           .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
-          .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there");
+          .replace(/\{DM\s*Name\}/gi, dmResolved);
         // Use independent clean override if set, otherwise fall back to same HTML
         const cleanHtml = m.cleanOverride
           ? injectDeepLinks(m.cleanOverride, dlMap)
             .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
-            .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there")
+            .replace(/\{DM\s*Name\}/gi, dmResolved)
           : html;
         return {
           merchantId: m.id, subject,
@@ -180,11 +184,11 @@ function AppInner({ userProfile, onSignOut }) {
       if (globalHtmlTemplate) {
         let html = injectDeepLinks(globalHtmlTemplate, dlMap)
           .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
-          .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there");
+          .replace(/\{DM\s*Name\}/gi, dmResolved);
         const cleanHtml = m.cleanOverride
           ? injectDeepLinks(m.cleanOverride, dlMap)
             .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
-            .replace(/\{DM\s*Name\}/gi, m.dmName || m.merchantName || "there")
+            .replace(/\{DM\s*Name\}/gi, dmResolved)
           : html;
         return {
           merchantId: m.id, subject,
