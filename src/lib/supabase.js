@@ -37,7 +37,7 @@ export async function getWhitelistProfile(email) {
     .select("id, email, full_name, rep_id, role, is_active")
     .eq("email", email)
     .eq("is_active", true)
-    .single();
+    .maybeSingle();
 
   console.log("[whitelist] data:", data);
   console.log("[whitelist] error:", error?.message, error?.code, error?.details);
