@@ -44,10 +44,10 @@ export const processSheetData = (json) => {
     if (normalized === "name" || (normalized.endsWith(" name") && colMap.merchantName === -1 && colMap.storeName === -1)) {
       if (colMap.merchantName === -1) colMap.merchantName = idx;
     }
-    if (normalized.includes("store id") || normalized === "sid") {
+    if (normalized.includes("store id") || normalized === "sid" || normalized === "st id" || normalized === "st_id") {
       if (colMap.storeId === -1) colMap.storeId = idx;
     }
-    if (normalized.includes("business id") || normalized === "business_id") {
+    if (normalized.includes("business id") || normalized === "business_id" || normalized === "biz id" || normalized === "biz_id") {
       if (colMap.businessId === -1) colMap.businessId = idx;
     }
     if (normalized.includes("dm name") || normalized.includes("contact name") || normalized.includes("decision maker name") || normalized.includes("first name")) {
