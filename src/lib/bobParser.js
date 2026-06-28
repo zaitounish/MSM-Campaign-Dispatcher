@@ -118,8 +118,14 @@ export const processSheetData = (json) => {
         pass1Map.set(row.businessId, {
           ...row,
           sids: [row.storeId],
-          dmEmails: row.dmEmail ? [row.dmEmail] : [],
-          storeEmails: row.storeEmail ? [row.storeEmail] : [],
+          // Normalize the seed row's emails the same way sibling rows are normalized
+          // so comma-separated values (e.g. "a@x.com, b@x.com") are split correctly.
+          dmEmails: row.dmEmail
+            ? row.dmEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+            : [],
+          storeEmails: row.storeEmail
+            ? row.storeEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+            : [],
         });
       } else {
         const existing = pass1Map.get(row.businessId);
@@ -160,8 +166,12 @@ export const processSheetData = (json) => {
         pass2Map.set(row.dmEmail, {
           ...row,
           sids: [row.storeId],
-          dmEmails: row.dmEmail ? [row.dmEmail] : [],
-          storeEmails: row.storeEmail ? [row.storeEmail] : [],
+          dmEmails: row.dmEmail
+            ? row.dmEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+            : [],
+          storeEmails: row.storeEmail
+            ? row.storeEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+            : [],
         });
       } else {
         const existing = pass2Map.get(row.dmEmail);
@@ -186,8 +196,12 @@ export const processSheetData = (json) => {
           pass2Map.set(row.storeEmail, {
             ...row,
             sids: [row.storeId],
-            dmEmails: row.dmEmail ? [row.dmEmail] : [],
-            storeEmails: row.storeEmail ? [row.storeEmail] : [],
+            dmEmails: row.dmEmail
+              ? row.dmEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+              : [],
+            storeEmails: row.storeEmail
+              ? row.storeEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+              : [],
           });
         } else {
           const existing = pass2Map.get(row.storeEmail);
@@ -209,8 +223,12 @@ export const processSheetData = (json) => {
         finalResults.push({
           ...row,
           sids: [row.storeId],
-          dmEmails: row.dmEmail ? [row.dmEmail] : [],
-          storeEmails: row.storeEmail ? [row.storeEmail] : [],
+          dmEmails: row.dmEmail
+            ? row.dmEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+            : [],
+          storeEmails: row.storeEmail
+            ? row.storeEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+            : [],
         });
       }
     }

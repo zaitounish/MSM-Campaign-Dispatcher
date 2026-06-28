@@ -320,8 +320,13 @@ export const generateInitialBlocks = (selectedPromos, promoConfigs, repSettings)
 
 // ─── Subject line builder ──────────────────────────────────────────────────────
 export const buildEmailSubject = (merchant, selectedPromos) => {
-  // Apply token interpolation to any override before returning
-  if (merchant.subjectOverride) return _interpolate(merchant.subjectOverride, merchant);
+  // Return the raw subject override with tokens intact ({Store Name}, {DM Name}, etc.)
+  // so App.jsx resolves them exactly once using its own interpolation logic.
+  //
+  // App.jsx fallback for {DM Name} with no dmName value:
+  //   → "{merchantName} team"  e.g. "Hi Burger King team, ..."
+  // This keeps the greeting realistic and personalized even without a DM contact name.
+  if (merchant.subjectOverride) return merchant.subjectOverride;
   const mName = merchant.merchantName || "Merchant Partner";
   if (selectedPromos.length === 1) {
     const p = getPromoInfo(selectedPromos[0]);

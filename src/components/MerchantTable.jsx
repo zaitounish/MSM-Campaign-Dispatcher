@@ -101,34 +101,69 @@ export default function MerchantTable({
   // Initialize touchRange lazily once touchCol is known
   const resolvedTouchRange = touchRange ?? [0, touchMax];
 
-  // ── Build a name→rowAnalytics lookup for dynamic filter matching ──────────────
-  // rowAnalytics comes from bobAnalyzer and has per-row fillColor + colValues.
-  // We index by merchantName (lowercase) since that is the only field shared with
-  // deduplicated merchant objects without adding another key to bobParser.
+  // ── Build businessId-first lookup map for rowAnalytics join (Bug 1/6 fix) ─────────
+  //
+  // After bobParser deduplication the merchants[] array is shorter than rowAnalytics[]
+  // (many raw rows → one merchant), so index-based matching is fundamentally broken.
+  // We now build three maps keyed on the identifiers bobAnalyzer attaches to each entry:
+  //
+  //   byBizId   — keyed on businessId (ABSOLUTE primary per pipeline rules)
+  //   byStoreId — keyed on each individual storeId (per-location fallback)
+  //   byName    — keyed on normalized merchantName (last resort only)
+  //
+  // A merchant can span multiple raw rows; all matching entries are stored so callers
+  // can scan across siblings (e.g. the first row with a color wins for color checks).
   const rowAnalyticsLookup = useMemo(() => {
-    if (!analyticsPayload?.rowAnalytics) return {};
-    const lookup = {};
+    if (!analyticsPayload?.rowAnalytics) return { byBizId: {}, byStoreId: {}, byName: {} };
+    const byBizId  = {};
+    const byStoreId = {};
+    const byName   = {};
     analyticsPayload.rowAnalytics.forEach(row => {
-      // colValues is { [normalizedHeader]: value }
-      // We need to attach fillColor to the lookup keyed by all merchant names that appear
-      // Each rowAnalytic doesn't know the merchant name directly | we use the payload
-      // dynamicColumns to find any "merchant name"-ish column value from colValues.
-      // Fallback: surface fillColor + colValues for any row; we'll match by index order
-      // against filteredMerchants. This is an approximation for the filter | precise enough.
-      Object.entries(row.colValues || {}).forEach(([, v]) => {
-        // Not used for lookup | we match by merchant index below
-      });
+      const bizId = (row.businessId || "").toLowerCase().trim();
+      const sid   = (row.storeId || "").toLowerCase().trim();
+      const name  = (row.merchantName || "").toLowerCase().trim();
+      // businessId bucket
+      if (bizId && bizId !== "0" && bizId !== "null" && bizId !== "-") {
+        if (!byBizId[bizId]) byBizId[bizId] = [];
+        byBizId[bizId].push(row);
+      }
+      // storeId bucket
+      if (sid && sid !== "0" && sid !== "nan" && sid !== "-") {
+        if (!byStoreId[sid]) byStoreId[sid] = [];
+        byStoreId[sid].push(row);
+      }
+      // merchantName bucket (weakest)
+      if (name) {
+        if (!byName[name]) byName[name] = [];
+        byName[name].push(row);
+      }
     });
-    return lookup;
+    return { byBizId, byStoreId, byName };
   }, [analyticsPayload]);
 
-  // ── Helper: get the row analytics entry for a given merchant (by BOB row index) ──
-  // Since deduplication merges rows, we use the merchant's position in the
-  // dealers array as a best-effort proxy. The filter is additive | false negatives
-  // mean some merchants appear that shouldn't, never the reverse.
-  const getMerchantRowData = (merchant, merchantIdx) => {
+  // Returns the first rowAnalytics entry that belongs to a given merchant.
+  // Priority: businessId → any matching storeId → normalized merchantName.
+  // Returns null when no match is found (safe pass-through preserved).
+  const getMerchantRowData = (merchant) => {
     if (!analyticsPayload?.rowAnalytics) return null;
-    return analyticsPayload.rowAnalytics[merchantIdx] || null;
+    const { byBizId, byStoreId, byName } = rowAnalyticsLookup;
+
+    // 1. businessId — absolute primary identifier
+    const bizId = (merchant.businessId || "").toLowerCase().trim();
+    if (bizId && bizId !== "0" && bizId !== "null" && byBizId[bizId]?.length) {
+      return byBizId[bizId][0];
+    }
+
+    // 2. storeId — per-location fallback (check every sid the merchant owns)
+    const sids = (merchant.originalSids || merchant.sids || "")
+      .split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+    for (const sid of sids) {
+      if (byStoreId[sid]?.length) return byStoreId[sid][0];
+    }
+
+    // 3. merchantName — last resort
+    const name = (merchant.merchantName || "").toLowerCase().trim();
+    return (name && byName[name]?.length) ? byName[name][0] : null;
   };
 
   // ── Main filter pipeline ──────────────────────────────────────────────────────
@@ -138,7 +173,7 @@ export default function MerchantTable({
     const hasTouchFilter = touchRange !== null;
     const touchColKey = dynConfig.touchCol?.normalized;
 
-    return merchants.filter((m, idx) => {
+    return merchants.filter((m) => {
       // 1. Known opp hard filters
       if (filterSlOpp && !m.slOpp) return false;
       if (filterPromoOpp && !m.promoOpp) return false;
@@ -158,7 +193,7 @@ export default function MerchantTable({
 
       // 3. Dynamic filters | only apply when payload available
       if (hasStatusFilters || hasColorFilter || hasTouchFilter) {
-        const rowData = getMerchantRowData(m, idx);
+        const rowData = getMerchantRowData(m);
         if (!rowData) return true; // no row data = pass through (safe)
 
         // 3a. Status column multi-select
@@ -192,17 +227,21 @@ export default function MerchantTable({
     });
   }, [
     merchants, searchTerm,
-    filterSlOpp, filterPromoOpp, filterLoyalOpp, filterSlCredit,
+    filterSlOpp, filterPromoOpp, filterLoyalOpp, filterSlCredit, filterEmailIssues,
     statusFilters, activeColors, touchRange, resolvedTouchRange,
-    dynConfig, analyticsPayload,
+    dynConfig, rowAnalyticsLookup,
   ]);
 
-  // ── Active merchant sync ──────────────────────────────────────────────────────
+  // ── Active merchant sync (Bug 5 fix) ──────────────────────────────────────
+  // Read from the FULL merchants array, not filteredMerchants.
+  // When a filter is active, filteredMerchants omits merchants selected before
+  // the filter was applied — using it here would cause the delivery phase to
+  // miss those merchants entirely.
   React.useEffect(() => {
     if (onActiveMerchantsChange) {
-      onActiveMerchantsChange(new Set(filteredMerchants.filter(m => m.selected).map(m => m.id)));
+      onActiveMerchantsChange(new Set(merchants.filter(m => m.selected).map(m => m.id)));
     }
-  }, [filteredMerchants, onActiveMerchantsChange]);
+  }, [merchants, onActiveMerchantsChange]);
 
   // ── Selection helpers ─────────────────────────────────────────────────────────
   const allSelected = filteredMerchants.length > 0 && filteredMerchants.every(m => m.selected);
@@ -295,33 +334,32 @@ export default function MerchantTable({
 
     if (!hasExcludeStatusFilters && !hasExcludeColorFilter) return [];
 
-    return merchants.filter((m, idx) => {
-      const rowData = getMerchantRowData(m, idx);
-      // If there's no row analytics data we cannot match criteria skip
+    return merchants.filter((m) => {
+      // Uses the same businessId-first getMerchantRowData — Bug 6 fixed by Bug 1
+      const rowData = getMerchantRowData(m);
       if (!rowData) return false;
 
       // ── Status column checks (OR across columns, OR within each column's values) ──
-      // A merchant is targeted for exclusion if it matches ANY of the selected criteria.
       if (hasExcludeStatusFilters) {
         for (const [col, allowedSet] of activeStatusCols) {
           const rawVal = rowData.colValues?.[col];
           const cellVal = (rawVal !== null && rawVal !== undefined && rawVal !== "")
             ? String(rawVal).trim()
             : "(blank)";
-          if (allowedSet.has(cellVal)) return true; // ← OR: matched this column criterion → exclude
+          if (allowedSet.has(cellVal)) return true;
         }
       }
 
       // ── Color check (OR with status checks) ──
       if (hasExcludeColorFilter) {
         const rowColor = rowData.fillColor || "none";
-        if (excludeActiveColors.has(rowColor)) return true; // ← OR: matched color → exclude
+        if (excludeActiveColors.has(rowColor)) return true;
       }
 
-      // Matched no active criterion → do NOT exclude
       return false;
     });
-  }, [merchants, excludeStatusFilters, excludeActiveColors, dynConfig, analyticsPayload]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [merchants, excludeStatusFilters, excludeActiveColors, rowAnalyticsLookup]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   const toggleExcludeStatusValue = (col, value) => {
     setExcludeStatusFilters(prev => {

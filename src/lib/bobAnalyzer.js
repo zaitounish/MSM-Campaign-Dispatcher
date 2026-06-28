@@ -144,16 +144,27 @@ export const analyzeBOB = (sheetsData) => {
 
   const rawHeaders = firstJson[headerRowIdx];
 
-  // ── Identify Store ID and Business ID column indices ─────────────────────────
+  // ── Identify Store ID, Business ID, and Merchant Name column indices ──────────
   // A row without either is a blank/filler row and must be excluded from analytics,
   // matching the identical guard in bobParser.js.
-  let storeIdColIdx   = -1;
-  let businessIdColIdx = -1;
+  //
+  // Name-column priority mirrors bobParser.js exactly:
+  //   1. "Business Name" / "Merchant Name"  (merchantNameColIdx)
+  //   2. "Store Name"                        (storeNameColIdx)
+  //   3. Generic "name" fallback             (merchantNameColIdx, only if neither above found)
+  let storeIdColIdx      = -1;
+  let businessIdColIdx   = -1;
+  let merchantNameColIdx = -1;
+  let storeNameColIdx    = -1;
   rawHeaders.forEach((h, idx) => {
     if (!h) return;
     const n = normalizeHeader(h);
-    if ((n.includes("store id") || n === "sid") && storeIdColIdx === -1) storeIdColIdx = idx;
-    if ((n.includes("business id") || n === "business_id") && businessIdColIdx === -1) businessIdColIdx = idx;
+    if ((n.includes("store id") || n === "sid" || n === "st id" || n === "st_id") && storeIdColIdx === -1) storeIdColIdx = idx;
+    if ((n.includes("business id") || n === "business_id" || n === "biz id" || n === "biz_id") && businessIdColIdx === -1) businessIdColIdx = idx;
+    if ((n.includes("business name") || n.includes("merchant name")) && merchantNameColIdx === -1) merchantNameColIdx = idx;
+    if (n.includes("store name") && storeNameColIdx === -1) storeNameColIdx = idx;
+    // Generic "name" fallback — only if neither of the above name columns found yet
+    if ((n === "name" || (n.endsWith(" name") && merchantNameColIdx === -1 && storeNameColIdx === -1)) && merchantNameColIdx === -1) merchantNameColIdx = idx;
   });
 
   const isValidRow = (row) => {
@@ -284,9 +295,19 @@ export const analyzeBOB = (sheetsData) => {
       colValues[col.normalized] = v;
     });
 
+    // Merchant identifiers — attached so MerchantTable can join rowAnalytics entries
+    // back to deduplicated merchant objects using businessId-first priority (Bug 9).
+    const rowBusinessId   = getVal(businessIdColIdx) || "";
+    const rowStoreId      = getVal(storeIdColIdx) || "";
+    const rowMerchantName = getVal(merchantNameColIdx) || getVal(storeNameColIdx) || "";
+
     return {
       fillColor,
       colValues,
+      // Identifiers used by MerchantTable businessId-first lookup map
+      businessId:   rowBusinessId,
+      storeId:      rowStoreId,
+      merchantName: rowMerchantName,
       knownOpps: {
         slOpp:    isTruthy(getVal(oppMap.slOpp)),
         promoOpp: isTruthy(getVal(oppMap.promoOpp)),
