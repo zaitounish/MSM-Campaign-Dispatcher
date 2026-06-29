@@ -85,40 +85,19 @@ function AppInner({ userProfile, onSignOut }) {
   // Contains %%DD_LINK_<promoId>%% tokens | resolved per merchant at render time
   const [globalHtmlTemplate, setGlobalHtmlTemplate] = useState("");
 
-  // ── Promo change guard ───────────────────────────────────────────────────────
-  // Instead of a silent useEffect wipe, we intercept promo changes and show a
-  // confirmation modal if the rep has unsaved per-merchant edits.
-  const [pendingPromoChange, setPendingPromoChange] = useState(null);
-
+  // ── Promo change handler ──────────────────────────────────────────────────────
   const applyPromoWipe = useCallback((newPromos) => {
     setSelectedPromos(newPromos);
     setGlobalBlocks([]);
     setGlobalHtmlTemplate("");
-    setMerchants(prev => prev.map(m => ({ ...m, emailOverride: null, subjectOverride: undefined })));
+    // We intentionally NEVER wipe the merchant.emailOverride / subjectOverride here
+    // based on user feedback to keep edits regardless of promo changes.
   }, []);
 
   const handlePromoChange = useCallback((newPromos) => {
     const resolvedPromos = typeof newPromos === "function" ? newPromos(selectedPromos) : newPromos;
-    const hasEdits = merchants.some(m => m.emailOverride || m.subjectOverride);
-    if (hasEdits) {
-      // Park the intended change and let the modal decide
-      setPendingPromoChange(() => resolvedPromos);
-      return;
-    }
-    // No edits → apply immediately
     applyPromoWipe(resolvedPromos);
-  }, [merchants, applyPromoWipe, selectedPromos]);
-
-  const confirmPromoChange = useCallback(() => {
-    if (pendingPromoChange !== null) {
-      applyPromoWipe(pendingPromoChange);
-      setPendingPromoChange(null);
-    }
-  }, [pendingPromoChange, applyPromoWipe]);
-
-  const cancelPromoChange = useCallback(() => {
-    setPendingPromoChange(null);
-  }, []);
+  }, [applyPromoWipe, selectedPromos]);
 
   // Scaffolding states for later phases
   const [repSettings, setRepSettings] = useState(() => {
@@ -259,7 +238,6 @@ function AppInner({ userProfile, onSignOut }) {
     setPromoConfigs({});
     setGlobalBlocks([]);
     setGlobalHtmlTemplate("");
-    setPendingPromoChange(null);
 
     // Navigate to analyze if we have analytics data, otherwise straight to select
     setPhase(payload ? "analyze" : "select");
@@ -418,42 +396,7 @@ function AppInner({ userProfile, onSignOut }) {
         )}
       </main>
 
-      {/* ── Promo-change confirmation modal ───────────────────────────────────── */}
-      {pendingPromoChange !== null && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden">
-            <div className="px-8 pt-8 pb-6">
-              <div className="flex items-start gap-4">
-                <div className="shrink-0 w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center text-2xl">
-                  ⚠️
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-slate-800 mb-1">Discard email edits?</h2>
-                  <p className="text-sm text-slate-500 leading-relaxed">
-                    You have per-merchant email or subject overrides saved. Changing the promo
-                    selection will <strong className="text-slate-700">permanently discard</strong> all
-                    of those edits and reset the email template.
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="px-8 pb-8 flex justify-end gap-3">
-              <button
-                onClick={cancelPromoChange}
-                className="px-6 py-2.5 rounded-xl font-bold text-slate-600 bg-white border border-slate-300 hover:bg-slate-100 transition-colors shadow-sm"
-              >
-                Keep my edits
-              </button>
-              <button
-                onClick={confirmPromoChange}
-                className="px-6 py-2.5 rounded-xl font-bold text-white bg-dd-red hover:bg-dd-red-dark transition-colors shadow-md"
-              >
-                Yes, discard &amp; switch
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {isDashboardOpen && (
         <SendLogDashboard
