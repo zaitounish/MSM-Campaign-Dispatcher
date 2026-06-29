@@ -525,14 +525,7 @@ export default function DeliveryPanel({
       <div className="max-w-4xl mx-auto space-y-5">
 
         {/* ── Daily Quota Bar (reps only, skip for blank sends) ──────────────── */}
-        {!isRep ? (
-          <div className="rounded-2xl border px-5 py-3 bg-emerald-50 border-emerald-200 flex items-center justify-between">
-             <div className="flex items-center gap-2">
-               <span className="text-sm font-bold text-emerald-700">Manager / Ultimate Access</span>
-             </div>
-             <p className="text-xs text-emerald-600 font-semibold">Unlimited daily sends. No quota applies.</p>
-          </div>
-        ) : isBlankSend ? (
+        {!isRep ? null : isBlankSend ? (
           <div className="rounded-2xl border px-5 py-3 bg-violet-50 border-violet-200 flex items-center justify-between">
              <div className="flex items-center gap-2">
                <span className="text-sm font-bold text-violet-700">Blank Email Selected</span>
