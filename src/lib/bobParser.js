@@ -1,7 +1,7 @@
 // Email separator regex: splits on characters that can NEVER appear in a valid RFC 5321 email address
 // Safe to split on: , ; : " ( ) | * $ #  and whitespace
 // NOT included (valid in emails): - _ & + ' / @ . ! % ` ^ ~
-const EMAIL_SEP_RE = /[,\s;:"'()|*$#]+/;
+const EMAIL_SEP_RE = /[,\s;:"()|*$#]+/;
 
 export const processSheetData = (json) => {
   if (!json || json.length < 2) return [];

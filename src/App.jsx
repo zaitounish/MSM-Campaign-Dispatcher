@@ -98,15 +98,16 @@ function AppInner({ userProfile, onSignOut }) {
   }, []);
 
   const handlePromoChange = useCallback((newPromos) => {
+    const resolvedPromos = typeof newPromos === "function" ? newPromos(selectedPromos) : newPromos;
     const hasEdits = merchants.some(m => m.emailOverride || m.subjectOverride);
     if (hasEdits) {
       // Park the intended change and let the modal decide
-      setPendingPromoChange(newPromos);
+      setPendingPromoChange(() => resolvedPromos);
       return;
     }
     // No edits → apply immediately
-    applyPromoWipe(newPromos);
-  }, [merchants, applyPromoWipe]);
+    applyPromoWipe(resolvedPromos);
+  }, [merchants, applyPromoWipe, selectedPromos]);
 
   const confirmPromoChange = useCallback(() => {
     if (pendingPromoChange !== null) {
