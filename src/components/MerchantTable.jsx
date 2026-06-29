@@ -232,16 +232,14 @@ export default function MerchantTable({
     dynConfig, rowAnalyticsLookup,
   ]);
 
-  // ── Active merchant sync (Bug 5 fix) ──────────────────────────────────────
-  // Read from the FULL merchants array, not filteredMerchants.
-  // When a filter is active, filteredMerchants omits merchants selected before
-  // the filter was applied — using it here would cause the delivery phase to
-  // miss those merchants entirely.
+  // ── Active merchant sync (Dynamic Selection) ────────────────────────────────
+  // Uses filteredMerchants instead of merchants so that searching or filtering
+  // automatically scopes the selection sent to the next phase.
   React.useEffect(() => {
     if (onActiveMerchantsChange) {
-      onActiveMerchantsChange(new Set(merchants.filter(m => m.selected).map(m => m.id)));
+      onActiveMerchantsChange(new Set(filteredMerchants.filter(m => m.selected).map(m => m.id)));
     }
-  }, [merchants, onActiveMerchantsChange]);
+  }, [filteredMerchants, onActiveMerchantsChange]);
 
   // ── Selection helpers ─────────────────────────────────────────────────────────
   const allSelected = filteredMerchants.length > 0 && filteredMerchants.every(m => m.selected);
@@ -476,7 +474,7 @@ export default function MerchantTable({
               Smart Exclude {showExcludePanel ? "▲" : "▼"}
             </button>
             <div className="text-sm font-semibold text-slate-500 bg-white border border-slate-200 px-3 py-1 rounded-lg">
-              Selected: <span className="text-dd-red">{merchants.filter(m => m.selected).length}</span> / {merchants.length}
+              Selected: <span className="text-dd-red">{filteredMerchants.filter(m => m.selected).length}</span> / {filteredMerchants.length}
             </div>
           </div>
         </div>
@@ -934,7 +932,7 @@ export default function MerchantTable({
         <div className="flex justify-end pt-4 pb-6 px-6 bg-slate-50 border-t border-slate-200">
           <button
             onClick={() => onContinue()}
-            disabled={merchants.filter(m => m.selected).length === 0}
+            disabled={filteredMerchants.filter(m => m.selected).length === 0}
             className="flex items-center gap-2 px-8 py-3.5 bg-dd-red text-white font-bold rounded-xl shadow-md hover:bg-dd-red-dark hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0 disabled:cursor-not-allowed"
           >
             Continue to Configure Promos
