@@ -20,7 +20,7 @@ export default function MerchantEmailManager({ merchant, onSave, onClose }) {
       return;
     }
 
-    const nextEmails = [...emails, { address: trimmed, isPrimary: emails.length === 0 }];
+    const nextEmails = [...emails, { address: trimmed, isPrimary: emails.length === 0, source: "manual" }];
     setEmails(nextEmails);
     setNewEmail("");
   };
@@ -109,7 +109,18 @@ export default function MerchantEmailManager({ merchant, onSave, onClose }) {
                          {email.isPrimary ? <Star className="w-4 h-4 text-dd-red fill-dd-red" /> : <Mail className="w-4 h-4 text-slate-400" />}
                       </div>
                       <div>
-                        <span className="text-sm font-semibold text-slate-800">{email.address}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-slate-800">{email.address}</span>
+                          {email.source && (
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase ${
+                              email.source === "dm" ? "bg-blue-100 text-blue-700" :
+                              email.source === "store" ? "bg-slate-100 text-slate-500" :
+                              "bg-green-100 text-green-700"
+                            }`}>
+                              {email.source === "dm" ? "DM" : email.source === "store" ? "Store" : "Manual"}
+                            </span>
+                          )}
+                        </div>
                         {email.isPrimary ? (
                            <div className="text-[10px] font-bold uppercase tracking-wider text-dd-red mt-0.5">Primary Target</div>
                         ) : (

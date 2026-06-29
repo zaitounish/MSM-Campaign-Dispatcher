@@ -4,7 +4,7 @@ import { Check, BarChart2 } from "lucide-react";
 const STEPS = [
   { id: "upload", label: "Upload BOB", title: "Upload Book of Business" },
   { id: "select", label: "Select Merchants", title: "Select Merchants" },
-  { id: "build", label: "Configure Promos", title: "Configure Promotions" },
+  { id: "build", label: "Configure Campaigns", title: "Configure Campaigns" },
   { id: "deliver", label: "Preview & Send", title: "Preview & Send Emails" },
 ];
 

@@ -62,6 +62,7 @@ const excelSerialToDate = (serial) => {
 };
 
 // ─── Helper: extract hex fill color from a SheetJS cell object ────────────────
+/*
 const extractFillColor = (cellObj) => {
   if (!cellObj || !cellObj.s) return null;
   const fill = cellObj.s.fgColor || cellObj.s.bgColor;
@@ -77,6 +78,7 @@ const extractFillColor = (cellObj) => {
   }
   return null;
 };
+*/
 
 // ─── Helper: find header row index ────────────────────────────────────────────
 const findHeaderRowIndex = (json) => {
@@ -274,6 +276,7 @@ export const analyzeBOB = (sheetsData) => {
     const { row, ws, excelRowNum } = dr;
 
     // Scan all cells in this row for a fill color
+    /*
     let fillColor = null;
     for (let colIdx = 0; colIdx < rawHeaders.length; colIdx++) {
       const cellAddr = `${colLetter(colIdx)}${excelRowNum}`;
@@ -281,6 +284,7 @@ export const analyzeBOB = (sheetsData) => {
       const color = extractFillColor(cellObj);
       if (color) { fillColor = color; break; }
     }
+    */
 
     const getVal = (idx) => {
       if (idx === -1 || !row || idx >= row.length) return null;
@@ -302,7 +306,7 @@ export const analyzeBOB = (sheetsData) => {
     const rowMerchantName = getVal(merchantNameColIdx) || getVal(storeNameColIdx) || "";
 
     return {
-      fillColor,
+      // fillColor,
       colValues,
       // Identifiers used by MerchantTable businessId-first lookup map
       businessId:   rowBusinessId,
@@ -383,6 +387,7 @@ export const analyzeBOB = (sheetsData) => {
   });
 
   // ── 5. Extract and group cell fill colors ─────────────────────────────────
+  /*
   const colorGroups = {}; // { "FF0000": { hex, count, label: null } }
   rowAnalytics.forEach(r => {
     if (!r.fillColor) return;
@@ -393,17 +398,18 @@ export const analyzeBOB = (sheetsData) => {
   });
   const colorGroupsArray = Object.values(colorGroups).sort((a, b) => b.count - a.count);
   const uncoloredCount = rowAnalytics.filter(r => !r.fillColor).length;
+  */
 
   // ── 6. Assemble and return the full payload ───────────────────────────────
   return {
     totalRows,
     oppStats,
     widgets,          // Dynamic column widgets
-    colorGroups: colorGroupsArray,
-    uncoloredCount,
+    // colorGroups: colorGroupsArray,
+    // uncoloredCount,
     rowAnalytics,     // Full per-row data (used by Stage 2 dynamic filters)
     dynamicColumns: columns, // Column metadata for Stage 2 filter chip generation
-    hasColorData: colorGroupsArray.length > 0,
+    // hasColorData: colorGroupsArray.length > 0,
     hasTouchData: columns.some(c => c.type === "touch"),
     hasStatusData: columns.some(c => c.type === "status"),
   };
@@ -456,10 +462,10 @@ export const sanitizeBOBForAI = (payload, merchants) => {
   const sanitizedPayload = {
     totalLeads:  payload.totalRows,
     oppStats:    payload.oppStats,
-    colorGroups: payload.colorGroups.map(c => ({ hex: c.hex, count: c.count, label: c.label || "Unlabeled" })),
+    // colorGroups: payload.colorGroups.map(c => ({ hex: c.hex, count: c.count, label: c.label || "Unlabeled" })),
     widgets:     safeWidgets,
     meta: {
-      hasColorData:  payload.hasColorData,
+      // hasColorData:  payload.hasColorData,
       hasTouchData:  payload.hasTouchData,
       hasStatusData: payload.hasStatusData,
     },

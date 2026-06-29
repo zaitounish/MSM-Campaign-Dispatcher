@@ -4,7 +4,7 @@ import { logEmailSend } from "../lib/supabase";
 import {
   DownloadCloud, CheckCircle2, Layers, FileText,
   Loader2, AlertTriangle, Mail, ExternalLink, ChevronDown,
-  ChevronUp, Copy, Check,
+  ChevronUp, Copy, Check, Clipboard,
 } from "lucide-react";
 
 // ─── Gmail Compose URL builder ────────────────────────────────────────────────
@@ -173,13 +173,15 @@ export default function DeliveryPanel({
   // ── Open Gmail Queue (one by one) ──────────────────────────────────────────
   const handleOpenGmailQueue = () => {
     const items = buildTargets();
-    setQueue({ items, opened: new Set(), allOpened: false });
+    setQueue({ items, opened: new Set(), confirmed: new Set() });
     setSendStatus(null);
     setClipStatus({});
+    setManualCopyStatus({});
   };
 
 
-  const [clipStatus, setClipStatus] = useState({}); // idx -> 'copying'|'done'|'error'
+  const [clipStatus, setClipStatus] = useState({});       // idx -> 'copying'|'done'|'error'
+  const [manualCopyStatus, setManualCopyStatus] = useState({}); // idx -> 'done'|'error'
 
   const openOneInGmail = async (idx) => {
     const target = queue.items[idx];
@@ -209,6 +211,60 @@ export default function DeliveryPanel({
       ok = await copyHtmlToClipboard({ ...target.draft, htmlBody: target.draft.richBody || target.draft.htmlBody });
     }
     setClipStatus(prev => ({ ...prev, [idx]: ok ? "done" : "error" }));
+    // Mark compose as opened (pending — NOT confirmed yet)
+    setQueue(prev => {
+      const opened = new Set(prev.opened);
+      opened.add(idx);
+      return { ...prev, opened };
+    });
+    // ⚠ Do NOT log here — we log only when the rep clicks "Mark Sent"
+  };
+
+  // Rep confirms they actually clicked Send in Gmail → log + mark green
+  const markSent = (idx) => {
+    const target = queue.items[idx];
+    setQueue(prev => {
+      const confirmed = new Set(prev.confirmed);
+      confirmed.add(idx);
+      return { ...prev, confirmed };
+    });
+    logEmailSend({
+      repEmail: userProfile?.email || repSettings?.email || "",
+      repName: userProfile?.full_name || `${repSettings?.firstName || ""} ${repSettings?.lastName || ""}`.trim() || "",
+      merchantName: target.merchant?.merchantName || "",
+      merchantId: target.merchant?.businessId || target.merchant?.id || "",
+      toEmail: target.to,
+      ccEmails: target.cc || "",
+      subject: target.draft.subject,
+      promoTypes: selectedPromos,
+      deliveryMethod: "gmail_tab",
+      emailFormat,
+    });
+  };
+
+  // Copy email body to clipboard WITHOUT opening Gmail (for paste into Outlook, OWA, etc.)
+  const copyManual = async (idx) => {
+    const target = queue.items[idx];
+    let ok;
+    if (emailFormat === "plain") {
+      const cleanHtml = target.draft.cleanBody || target.draft.htmlBody || "";
+      const plainFall = target.draft.plainTextBody || "";
+      try {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": new Blob([cleanHtml], { type: "text/html" }),
+            "text/plain": new Blob([plainFall], { type: "text/plain" }),
+          }),
+        ]);
+        ok = true;
+      } catch {
+        try { await navigator.clipboard.writeText(plainFall); ok = true; } catch { ok = false; }
+      }
+    } else {
+      ok = await copyHtmlToClipboard({ ...target.draft, htmlBody: target.draft.richBody || target.draft.htmlBody });
+    }
+    setManualCopyStatus(prev => ({ ...prev, [idx]: ok ? "done" : "error" }));
+    // Mark as opened so the counter advances
     setQueue(prev => {
       const opened = new Set(prev.opened);
       opened.add(idx);
@@ -229,12 +285,12 @@ export default function DeliveryPanel({
   };
 
   const closeQueue = () => {
-    const doneCount = queue?.opened?.size || 0;
+    const sentCount = queue?.confirmed?.size || 0;
     setQueue(null);
-    if (doneCount > 0) {
+    if (sentCount > 0) {
       setSendStatus({
         type: "success",
-        msg: `Opened ${doneCount} Gmail compose window${doneCount > 1 ? "s" : ""}. Review each draft and click Send.`,
+        msg: `${sentCount} email${sentCount > 1 ? "s" : ""} sent and logged successfully.`,
       });
     }
   };
@@ -531,41 +587,82 @@ export default function DeliveryPanel({
                 </p>
               </div>
               <span className="text-sm font-bold text-slate-500">
-                {queue.opened.size}/{queue.items.length} opened
+                {queue.confirmed.size}/{queue.items.length} sent
               </span>
             </div>
 
             <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
               {queue.items.map((item, idx) => {
                 const isOpened = queue.opened.has(idx);
+                const isConfirmed = queue.confirmed.has(idx);
                 return (
-                  <div key={idx} className={`flex items-center gap-4 px-5 py-3.5 transition-colors ${isOpened ? "bg-green-50" : "hover:bg-slate-50"}`}>
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${isOpened ? "bg-green-500 text-white" : "bg-slate-100 text-slate-500"}`}>
-                      {isOpened ? <CheckCircle2 className="w-4 h-4" /> : idx + 1}
+                  <div key={idx} className={`flex items-center gap-3 px-5 py-3.5 transition-colors ${
+                    isConfirmed ? "bg-green-50" : isOpened ? "bg-amber-50" : "hover:bg-slate-50"
+                  }`}>
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${
+                      isConfirmed ? "bg-green-500 text-white" : isOpened ? "bg-amber-400 text-white" : "bg-slate-100 text-slate-500"
+                    }`}>
+                      {isConfirmed ? <CheckCircle2 className="w-4 h-4" /> : idx + 1}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-slate-800 text-sm truncate">{item.label}</p>
                       <p className="text-xs text-slate-500 truncate">{item.to}{item.cc ? ` · CC: ${item.cc}` : ""}</p>
-                      {clipStatus[idx] === "done" && (
-                        <p className="text-[10px] text-emerald-600 font-bold mt-0.5">✓ Copied | press Ctrl+V in Gmail</p>
+                      {isConfirmed && (
+                        <p className="text-[10px] text-emerald-600 font-bold mt-0.5">✓ Sent & logged</p>
+                      )}
+                      {isOpened && !isConfirmed && (
+                        <p className="text-[10px] text-amber-600 font-bold mt-0.5">Gmail opened — click Send there, then mark below</p>
                       )}
                       {clipStatus[idx] === "error" && (
                         <p className="text-[10px] text-amber-600 font-bold mt-0.5">⚠ Clipboard unavailable | paste manually</p>
                       )}
+                      {manualCopyStatus[idx] === "done" && !isConfirmed && (
+                        <p className="text-[10px] text-blue-600 font-bold mt-0.5">✓ Copied | paste into your email client, then mark sent</p>
+                      )}
                     </div>
+                    {/* Copy — no compose window */}
                     <button
-                      onClick={() => openOneInGmail(idx)}
-                      disabled={clipStatus[idx] === "copying"}
-                      className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap disabled:opacity-60 ${queue.opened.has(idx)
-                        ? "bg-green-100 text-green-700 hover:bg-green-200"
-                        : "bg-dd-red text-white hover:bg-[#ff3019] shadow-sm"
-                        }`}
+                      onClick={() => copyManual(idx)}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
+                        manualCopyStatus[idx] === "done"
+                          ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+                          : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
+                      }`}
                     >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      {clipStatus[idx] === "copying" ? "Opening…"
-                        : queue.opened.has(idx) ? "Re-open"
-                          : "Open in Gmail"}
+                      {manualCopyStatus[idx] === "done"
+                        ? <><Check className="w-3.5 h-3.5" /> Copied!</>
+                        : <><Clipboard className="w-3.5 h-3.5" /> Copy</>}
                     </button>
+                    {/* Open in Gmail */}
+                    {!isConfirmed && (
+                      <button
+                        onClick={() => openOneInGmail(idx)}
+                        disabled={clipStatus[idx] === "copying"}
+                        className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap disabled:opacity-60 ${
+                          isOpened
+                            ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                            : "bg-dd-red text-white hover:bg-[#ff3019] shadow-sm"
+                        }`}
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        {clipStatus[idx] === "copying" ? "Opening…" : isOpened ? "Re-open" : "Open in Gmail"}
+                      </button>
+                    )}
+                    {/* Mark Sent — appears after Gmail is opened, logs to Supabase */}
+                    {isOpened && !isConfirmed && (
+                      <button
+                        onClick={() => markSent(idx)}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap bg-green-600 hover:bg-green-500 text-white shadow-sm"
+                      >
+                        <Check className="w-3.5 h-3.5" /> Mark Sent
+                      </button>
+                    )}
+                    {/* Already confirmed state */}
+                    {isConfirmed && (
+                      <span className="flex items-center gap-1 text-xs font-bold text-green-600 whitespace-nowrap">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Sent
+                      </span>
+                    )}
                   </div>
                 );
               })}
@@ -573,11 +670,11 @@ export default function DeliveryPanel({
 
             <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 shrink-0 flex items-center justify-between gap-3">
               <p className="text-xs text-slate-500">
-                {queue.opened.size === 0
-                  ? "No emails opened yet."
-                  : queue.opened.size === queue.items.length
-                    ? "✅ All emails opened | close when done."
-                    : `${queue.items.length - queue.opened.size} remaining.`}
+                {queue.confirmed.size === 0
+                  ? queue.opened.size > 0 ? `${queue.opened.size} Gmail window${queue.opened.size > 1 ? "s" : ""} opened — mark sent after each send.` : "Open Gmail for each merchant, then mark as sent."
+                  : queue.confirmed.size === queue.items.length
+                    ? "\u2705 All emails sent and logged."
+                    : `${queue.confirmed.size} sent — ${queue.items.length - queue.confirmed.size} remaining.`}
               </p>
               <button onClick={closeQueue}
                 className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-bold rounded-xl transition-colors">

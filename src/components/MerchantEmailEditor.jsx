@@ -3,7 +3,7 @@ import {
   X, Save, Users, User, Mail, Bold, Italic, Underline, Strikethrough,
   AlignLeft, AlignCenter, AlignRight, Quote, Indent, Outdent, Palette, Highlighter,
   List, ListOrdered, Link, Check, Sparkles, Loader2, Wand2, RefreshCw,
-  ChevronDown, Minus, UserCircle, Type,
+  ChevronDown, Minus, UserCircle, Type, Image,
 } from "lucide-react";
 import { wrapForRichEmail, deInjectDeepLinks, deInterpolateMerchant } from "../lib/emailBlockEngine";
 import { sanitizeHtml } from "../lib/sanitize";
@@ -63,7 +63,55 @@ export default function MerchantEmailEditor({
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("https://");
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
-  const [colorType, setColorType] = useState("foreColor"); // "foreColor" | "hiliteColor"
+  const [colorType, setColorType] = useState("foreColor");
+
+  const fileInputRef = useRef(null);
+
+  // ── Insert Image (File Upload Only) ────────────────────────────────────────────────
+  const openImagePicker = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleImageFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file.");
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      alert("Image is too large for email (>1MB). Consider resizing it first.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result;
+      if (dataUrl && editorRef.current) {
+        editorRef.current.focus();
+        // Insert image with a reasonable default max-width so it doesn't overflow
+        const sel = window.getSelection();
+        if (sel?.rangeCount) {
+          const range = sel.getRangeAt(0);
+          range.deleteContents();
+          const img = document.createElement("img");
+          img.src = dataUrl;
+          img.style.maxWidth = "100%";
+          img.style.height = "auto";
+          img.style.cursor = "pointer";
+          img.className = "editor-img-resizable";
+          range.insertNode(img);
+          // Move cursor after the image
+          range.setStartAfter(img);
+          range.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+        handleInput();
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }; // "foreColor" | "hiliteColor"
   const [fontFamily, setFontFamily] = useState("Arial");
   const [fontFamilyOpen, setFontFamilyOpen] = useState(false);
   const [fontSize, setFontSize] = useState(14);
@@ -126,8 +174,97 @@ export default function MerchantEmailEditor({
       [data-editor-root] h2,
       [data-editor-root] h3  { margin: 12px 0 6px 0 !important; }
       [data-editor-root] br  { display: block; }
+      [data-editor-root] img.editor-img-resizable {
+        cursor: nwse-resize;
+        outline: 2px solid transparent;
+        outline-offset: 2px;
+        transition: outline-color 0.15s;
+        max-width: 100%;
+        height: auto;
+      }
+      [data-editor-root] img.editor-img-selected {
+        outline-color: #6366f1;
+      }
+      [data-editor-root] img.editor-img-resizable:hover {
+        outline-color: #a5b4fc;
+      }
     `;
   }, [fontFamily]);
+
+  // ── Image resize: click-to-select + drag-to-resize ───────────────────────
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    let activeImg = null;
+    let startX = 0;
+    let startY = 0;
+    let startWidth = 0;
+    let startHeight = 0;
+
+    const selectImage = (img) => {
+      // Deselect previous
+      editor.querySelectorAll("img.editor-img-selected").forEach(el => {
+        el.classList.remove("editor-img-selected");
+      });
+      if (img) {
+        img.classList.add("editor-img-selected");
+        activeImg = img;
+      } else {
+        activeImg = null;
+      }
+    };
+
+    const onClick = (e) => {
+      if (e.target.tagName === "IMG" && e.target.classList.contains("editor-img-resizable")) {
+        e.preventDefault();
+        selectImage(e.target);
+      } else if (activeImg) {
+        selectImage(null);
+      }
+    };
+
+    const onMouseDown = (e) => {
+      if (e.target.tagName !== "IMG" || !e.target.classList.contains("editor-img-resizable")) return;
+      e.preventDefault();
+      selectImage(e.target);
+      startX = e.clientX;
+      startY = e.clientY;
+      startWidth = e.target.offsetWidth;
+      startHeight = e.target.offsetHeight;
+
+      const onMove = (ev) => {
+        const dx = ev.clientX - startX;
+        const dy = ev.clientY - startY;
+        // Use whichever delta is larger to maintain aspect ratio
+        const delta = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+        const newWidth = Math.max(40, startWidth + delta);
+        const maxWidth = editor.offsetWidth - 32;
+        const clampedWidth = Math.min(newWidth, maxWidth);
+        e.target.style.width = clampedWidth + "px";
+        e.target.style.height = "auto";
+        e.target.style.maxWidth = clampedWidth + "px";
+        handleInput();
+      };
+
+      const onUp = () => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        handleInput();
+      };
+
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    };
+
+    editor.addEventListener("click", onClick);
+    editor.addEventListener("mousedown", onMouseDown);
+
+    return () => {
+      editor.removeEventListener("click", onClick);
+      editor.removeEventListener("mousedown", onMouseDown);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update live preview on every keystroke
   const handleInput = () => {
@@ -407,6 +544,7 @@ Rules:
     body { margin:0; padding:0; }
     p { margin:0 0 8px 0; }
     div { margin:0; }
+    img { max-width:100%; height:auto; }
   `;
   const previewSrcDoc = editMode === "plain"
     ? `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${PREVIEW_RESET} body{padding:32px;background:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#333;}</style></head><body>${liveHtml}</body></html>`
@@ -667,6 +805,8 @@ Rules:
               <div className="flex items-center">
                 <TBtn onCmd={() => exec("formatBlock", "BLOCKQUOTE")} title="Quote"><Quote className="w-3.5 h-3.5" /></TBtn>
                 <TBtn onCmd={openLinkBar} title="Insert link" active={linkOpen}><Link className="w-3.5 h-3.5" /></TBtn>
+                <TBtn onCmd={openImagePicker} title="Upload image"><Image className="w-3.5 h-3.5" /></TBtn>
+                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
                 <TBtn onCmd={() => exec("insertHorizontalRule")} title="Insert divider line"><Minus className="w-3.5 h-3.5" /></TBtn>
                 <TBtn onCmd={() => exec("removeFormat")} title="Clear formatting"><X className="w-3.5 h-3.5" /></TBtn>
               </div>

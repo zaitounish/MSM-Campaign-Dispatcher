@@ -7,7 +7,7 @@ import {
   ArrowRight, Sparkles, Target, TrendingUp, AlertCircle,
   Users, Loader2, CheckCircle2, ShieldAlert, Zap,
 } from "lucide-react";
-import ColorLabelingModal from "./ColorLabelingModal";
+// import ColorLabelingModal from "./ColorLabelingModal";
 import { sanitizeBOBForAI, buildGeminiPrompt } from "../lib/bobAnalyzer";
 
 // ─── Palette for dynamic status bars + donut charts ──────────────────────────
@@ -219,19 +219,7 @@ function AIInsightsPanel({ payload, merchants, geminiApiKey }) {
     }
   };
 
-  if (!geminiApiKey) {
-    return (
-      <div className="bg-slate-800/60 border border-slate-700 rounded-2xl p-6 flex items-start gap-4">
-        <Sparkles className="w-5 h-5 text-slate-500 shrink-0 mt-0.5" />
-        <div>
-          <div className="font-bold text-slate-300 text-sm">AI Insights Unavailable</div>
-          <div className="text-xs text-slate-500 mt-1">
-            Add your free Gemini API key in <strong>Rep Configuration → Gemini API Key</strong> to unlock AI-powered pipeline analysis.
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (!geminiApiKey) return null;
 
   return (
     <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-6">
@@ -347,6 +335,7 @@ function AIInsightsPanel({ payload, merchants, geminiApiKey }) {
  */
 export default function BOBDashboard({ analyticsPayload, merchants, repSettings, onContinue, onPayloadUpdate }) {
   const [payload, setPayload]     = useState(analyticsPayload);
+  /*
   const [showColorModal, setShowColorModal] = useState(
     () => analyticsPayload?.hasColorData && analyticsPayload?.colorGroups?.some(g => !g.label)
   );
@@ -357,6 +346,7 @@ export default function BOBDashboard({ analyticsPayload, merchants, repSettings,
     onPayloadUpdate(updated);
     setShowColorModal(false);
   };
+  */
 
   if (!payload) return null;
 
@@ -366,7 +356,7 @@ export default function BOBDashboard({ analyticsPayload, merchants, repSettings,
     <div className="space-y-8 animate-in fade-in duration-500">
 
       {/* Color Labeling Modal (fires immediately if unlabelled colors found) */}
-      {showColorModal && (
+      {/* showColorModal && (
         <ColorLabelingModal
           colorGroups={colorGroups}
           uncoloredCount={uncoloredCount}
@@ -374,7 +364,7 @@ export default function BOBDashboard({ analyticsPayload, merchants, repSettings,
           onConfirm={handleColorLabels}
           onSkip={() => setShowColorModal(false)}
         />
-      )}
+      ) */}
 
       {/* Page header */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
@@ -435,7 +425,7 @@ export default function BOBDashboard({ analyticsPayload, merchants, repSettings,
       )}
 
       {/* Color Group Summary (if labelled) */}
-      {colorGroups.length > 0 && (
+      {/* colorGroups.length > 0 && (
         <div>
           <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
             <span>Row Highlights</span>
@@ -463,7 +453,7 @@ export default function BOBDashboard({ analyticsPayload, merchants, repSettings,
             )}
           </div>
         </div>
-      )}
+      ) */}
 
       {/* AI Insights Panel */}
       <AIInsightsPanel

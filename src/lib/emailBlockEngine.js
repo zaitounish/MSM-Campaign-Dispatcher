@@ -338,6 +338,58 @@ export const buildEmailSubject = (merchant, selectedPromos) => {
   return `${mName} | Your Personalized DoorDash Growth Plan`;
 };
 
+// ─── Personalized opener generator ───────────────────────────────────────────
+/**
+ * Generates a unique contextual opening sentence per merchant.
+ *
+ * Why this exists: Outreach.io and Salesforce Einstein classify emails as
+ * "automated" vs "manual" partly by fingerprinting content similarity across
+ * sends from the same sender in a short window. Making each email genuinely
+ * different in sentence content (not just name merge fields) significantly
+ * reduces the chance of bulk classification.
+ *
+ * The sentence is derived deterministically from merchant data (name hash,
+ * location count, promo mix) so it's consistent on re-render but varies
+ * meaningfully across merchants.
+ *
+ * @param {object} merchant  - { merchantName, sids, businessId, ... }
+ * @param {string[]} selectedPromos
+ * @returns {string} - a single HTML <p> sentence, unique per merchant
+ */
+export const buildPersonalizedOpener = (merchant, selectedPromos = []) => {
+  const name = merchant?.merchantName || "";
+  const sids = (merchant?.sids || merchant?.originalSids || "");
+  const locationCount = sids ? sids.split(",").filter(Boolean).length : 1;
+  const promoCount = selectedPromos.length;
+
+  // Derive a stable 0-based bucket from the merchant name (simple char-code hash)
+  const hash = name.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  const bucket = hash % 8;
+
+  const locationNote = locationCount > 1
+    ? ` across your ${locationCount} locations`
+    : "";
+
+  const promoNote = promoCount > 1
+    ? `${promoCount} campaigns`
+    : promoCount === 1
+      ? "a campaign"
+      : "some campaigns";
+
+  const openers = [
+    `I was reviewing your store's performance on DoorDash and wanted to personally reach out about ${promoNote} that I think would be a great fit${locationNote}.`,
+    `After looking at recent trends in your area, I put together ${promoNote} that I believe can make a real difference for your business${locationNote}.`,
+    `I've been working with a number of partners in your area and identified ${promoNote} that have been performing really well — I'd love to walk you through them${locationNote}.`,
+    `Your store stood out to me while I was reviewing opportunities this week, and I wanted to personally share ${promoNote} I think you'd find valuable${locationNote}.`,
+    `I've been doing some analysis on stores similar to yours and put together ${promoNote} that I think could drive meaningful results${locationNote}.`,
+    `I noticed some strong growth opportunities for your business on DoorDash and wanted to reach out directly about ${promoNote}${locationNote}.`,
+    `As your DoorDash rep, I keep a close eye on performance trends, and ${name || "your store"} is a great candidate for ${promoNote} I'm excited to share${locationNote}.`,
+    `I wanted to take a moment to personally reach out. I've put together ${promoNote} specifically with your store in mind${locationNote}.`,
+  ];
+
+  return `<p>${openers[bucket]}</p>`;
+};
+
 // ─── Variable interpolation ────────────────────────────────────────────────────
 const _interpolate = (html, merchant) => {
   if (!html) return "";
@@ -618,6 +670,11 @@ export const compileBlocksToCleanHtml = (blocks, deepLinks, merchant) => {
       case BLOCK_TYPES.TEXT:
       case BLOCK_TYPES.CTA: {
         const html = _outlookLists(_interpolate(block.data.html, merchant));
+        // For the intro TEXT block, inject the personalized opener right before it
+        if (block.data.label === "Intro") {
+          const opener = buildPersonalizedOpener(merchant, deepLinks ? Object.keys(deepLinks) : []);
+          parts.push(`<div style="margin:0 0 14px;font-size:14px;color:#1a1a1a;line-height:1.75;${ff}">${opener}</div>`);
+        }
         parts.push(`<div style="margin:0 0 16px;font-size:14px;color:#1a1a1a;line-height:1.75;${ff}">${html}</div>`);
         break;
       }

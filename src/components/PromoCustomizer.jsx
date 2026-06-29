@@ -79,7 +79,7 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500 mt-8">
       <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex items-center gap-2">
         <Settings2 className="w-5 h-5 text-slate-500" />
-        <h3 className="font-bold text-slate-800">Customize Selected Promos</h3>
+        <h3 className="font-bold text-slate-800">Customize Selected Campaigns</h3>
       </div>
 
       <div className="p-6 space-y-6">

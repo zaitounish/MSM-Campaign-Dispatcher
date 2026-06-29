@@ -68,7 +68,7 @@ function PromoTag({ promoId }) {
  * Shows a collapsible per-rep summary table
  */
 function RepBreakdownPanel({ logs, repNames }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   const repStats = useMemo(() => {
     const map = {};
@@ -171,86 +171,85 @@ export default function SendLogDashboard({ userProfile, onClose }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [repFilter, setRepFilter] = useState("all");
-  const [reps, setReps] = useState([]);    // distinct rep emails for filter
-  const [repNames, setRepNames] = useState({});  // email → display name map
+  const [teamFilter, setTeamFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  const [whitelist, setWhitelist] = useState([]);
+  const [whitelistLoaded, setWhitelistLoaded] = useState(false);
+  const [repNames, setRepNames] = useState({});
 
   const role = userProfile?.role || "rep";
   const isManager = role === "manager" || role === "ultimate";
   const isRep = role === "rep";
 
-  // ── Fetch rep names from whitelist for display ─────────────────────────────
-  const fetchRepNames = useCallback(async () => {
-    if (!isManager) return;
-    const { data } = await supabase
-      .from("reps_whitelist")
-      .select("email, full_name")
-      .eq("is_active", true);
-    if (data) {
-      const map = {};
-      data.forEach(r => { if (r.email) map[r.email] = r.full_name || r.email; });
-      setRepNames(map);
-    }
+  useEffect(() => {
+    const init = async () => {
+      if (isManager) {
+        const { data } = await supabase
+          .from("reps_whitelist")
+          .select("id, email, full_name, role, manager_id")
+          .eq("is_active", true);
+        if (data) {
+          setWhitelist(data);
+          const map = {};
+          data.forEach(r => { if (r.email) map[r.email] = r.full_name || r.email; });
+          setRepNames(map);
+        }
+      }
+      setWhitelistLoaded(true);
+    };
+    init();
   }, [isManager]);
 
   const fetchLogs = useCallback(async () => {
+    if (isManager && !whitelistLoaded) return;
     setLoading(true);
-
-    let allowedEmails = null;
-    if (role === "manager" && userProfile?.id) {
-      // Find my team's emails
-      const { data: team } = await supabase
-        .from("reps_whitelist")
-        .select("email")
-        .eq("manager_id", userProfile.id);
-      
-      allowedEmails = [userProfile?.email];
-      if (team) {
-        team.forEach(t => {
-          if (t.email) allowedEmails.push(t.email);
-        });
-      }
-    }
 
     let query = supabase
       .from("email_send_log")
       .select("*")
       .order("sent_at", { ascending: false })
-      .limit(500);
+      .limit(1000);
 
-    // UI filter for additional scoping based on role
+    if (dateFrom) query = query.gte("sent_at", dateFrom);
+    if (dateTo) query = query.lte("sent_at", `${dateTo}T23:59:59.999Z`);
+
     if (role === "rep") {
-      // Rep only their own sends
       query = query.eq("rep_email", userProfile?.email);
     } else if (role === "manager") {
-      // Manager sees their team + themselves
+      const myTeamEmails = whitelist
+        .filter(u => u.manager_id === userProfile?.id || u.email === userProfile?.email)
+        .map(u => u.email);
+      
       if (repFilter !== "all") {
-        // Double check they aren't searching for an unauthorized email (enforce scope)
-        if (allowedEmails && allowedEmails.includes(repFilter)) {
+        if (myTeamEmails.includes(repFilter)) {
           query = query.eq("rep_email", repFilter);
         } else {
-          // Fallback to their allowed scope if they try to bypass UI
-          query = query.in("rep_email", allowedEmails);
+          query = query.in("rep_email", myTeamEmails.length ? myTeamEmails : ["no-one"]);
         }
       } else {
-        query = query.in("rep_email", allowedEmails);
+        query = query.in("rep_email", myTeamEmails.length ? myTeamEmails : ["no-one"]);
       }
     } else if (role === "ultimate") {
-      // Ultimate sees everyone
       if (repFilter !== "all") {
         query = query.eq("rep_email", repFilter);
+      } else if (teamFilter !== "all") {
+        const teamEmails = whitelist
+          .filter(u => u.manager_id === teamFilter || u.id === teamFilter)
+          .map(u => u.email);
+        query = query.in("rep_email", teamEmails.length ? teamEmails : ["no-one"]);
       }
     }
 
     const { data, error } = await query;
     if (!error && data) {
       setLogs(data);
-      const uniqueReps = [...new Set(data.map(r => r.rep_email).filter(Boolean))];
-      setReps(uniqueReps);
     }
     setLoading(false);
-  }, [role, repFilter, userProfile?.email, userProfile?.id]);
+  }, [role, repFilter, teamFilter, dateFrom, dateTo, userProfile?.email, userProfile?.id, whitelist, isManager, whitelistLoaded]);
 
-  useEffect(() => { fetchLogs(); fetchRepNames(); }, [fetchLogs, fetchRepNames]);
+  useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
   // ── Derived stats ──────────────────────────────────────────────────────────
   const now = new Date();
@@ -268,6 +267,7 @@ export default function SendLogDashboard({ userProfile, onClose }) {
     const q = search.toLowerCase();
     return (
       l.merchant_name?.toLowerCase().includes(q) ||
+      l.merchant_id?.toLowerCase().includes(q) ||
       l.to_email?.toLowerCase().includes(q) ||
       l.subject?.toLowerCase().includes(q) ||
       l.rep_name?.toLowerCase().includes(q) ||
@@ -292,6 +292,22 @@ export default function SendLogDashboard({ userProfile, onClose }) {
     const a = Object.assign(document.createElement("a"), { href: url, download: `send-log-${todayStr}.csv` });
     a.click(); URL.revokeObjectURL(url);
   };
+
+  // ── Compute UI Dropdown Options ──────────────────────────────────────────
+  const managerOptions = useMemo(() => {
+    if (role !== "ultimate") return [];
+    return whitelist.filter(u => u.role === "manager" || u.role === "ultimate");
+  }, [whitelist, role]);
+
+  const repOptions = useMemo(() => {
+    if (role === "rep") return [];
+    if (role === "manager") return whitelist.filter(u => u.manager_id === userProfile?.id || u.email === userProfile?.email);
+    if (role === "ultimate") {
+      if (teamFilter === "all") return whitelist;
+      return whitelist.filter(u => u.manager_id === teamFilter || u.id === teamFilter);
+    }
+    return [];
+  }, [whitelist, role, teamFilter, userProfile]);
 
   // ── Role label for dashboard header ───────────────────────────────────────
   const dashboardSubtitle = isRep
@@ -358,23 +374,60 @@ export default function SendLogDashboard({ userProfile, onClose }) {
               <input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder={isRep ? "Search merchant, email, subject…" : "Search rep, merchant, email, subject…"}
+                placeholder={isRep ? "Search merchant, ID, email, subject…" : "Search rep, merchant, ID, email, subject…"}
                 className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:border-dd-red focus:ring-1 focus:ring-dd-red transition-all"
               />
             </div>
 
-            {/* Rep filter (manager/ultimate only) */}
-            {isManager && reps.length > 1 && (
+            {/* Date Filters */}
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={e => setDateFrom(e.target.value)}
+                className="pl-3 pr-2 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:border-dd-red text-slate-600 bg-white"
+                title="From Date"
+              />
+              <span className="text-slate-400">-</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={e => setDateTo(e.target.value)}
+                className="pl-3 pr-2 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:border-dd-red text-slate-600 bg-white"
+                title="To Date"
+              />
+            </div>
+
+            {/* Team filter (ultimate only) */}
+            {role === "ultimate" && managerOptions.length > 0 && (
               <div className="relative">
                 <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                <select
+                  value={teamFilter}
+                  onChange={e => { setTeamFilter(e.target.value); setRepFilter("all"); }}
+                  className="pl-9 pr-8 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:border-dd-red appearance-none cursor-pointer bg-white"
+                >
+                  <option value="all">All Teams</option>
+                  {managerOptions.map(m => (
+                    <option key={m.id} value={m.id}>{m.full_name || m.email}'s Team</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+              </div>
+            )}
+
+            {/* Rep filter (manager/ultimate only) */}
+            {isManager && repOptions.length > 0 && (
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                 <select
                   value={repFilter}
                   onChange={e => setRepFilter(e.target.value)}
                   className="pl-9 pr-8 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:border-dd-red appearance-none cursor-pointer bg-white"
                 >
                   <option value="all">All Reps</option>
-                  {reps.map(r => (
-                    <option key={r} value={r}>{repNames[r] || r}</option>
+                  {repOptions.map(r => (
+                    <option key={r.email} value={r.email}>{r.full_name || r.email}</option>
                   ))}
                 </select>
                 <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />

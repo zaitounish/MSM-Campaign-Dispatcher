@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { ChevronLeft, ChevronRight, Edit, Undo2, Wand2, Sparkles, UserCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Edit, Undo2, Wand2, Sparkles, UserCircle, Mail } from "lucide-react";
 import MerchantEmailEditor from "./MerchantEmailEditor";
+import MerchantEmailManager from "./MerchantEmailManager";
 
 export default function EmailPreview({
   merchants,
@@ -40,6 +41,7 @@ export default function EmailPreview({
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [isEmailEditorOpen, setIsEmailEditorOpen] = useState(false);
 
   useEffect(() => { setCurrentIndex(0); }, [expandedDrafts.length]);
 
@@ -73,12 +75,18 @@ export default function EmailPreview({
     setIsEditorOpen(false);
   };
 
+  const handleEmailUpdate = (merchantId, newEmails) => {
+    setMerchants(prev => prev.map(m =>
+      m.id === merchantId ? { ...m, emails: newEmails } : m
+    ));
+    setIsEmailEditorOpen(false);
+  };
+
   const handleClearOverride = () => {
     setMerchants(prev => prev.map(m =>
       m.id === currentMerchant.id
         ? { ...m, emailOverride: null, cleanOverride: null, subjectOverride: undefined }
-        : m
-    ));
+        : m    ));
   };
 
   // draft.htmlBody is already fully resolved (tokens injected by App.jsx emailDrafts memo)
@@ -148,7 +156,19 @@ export default function EmailPreview({
         {/* Left: Metadata & Actions */}
         <div className="w-full lg:w-1/3 border-r border-slate-200 bg-slate-50/50 p-6 flex flex-col">
           <div className="space-y-4">
-            <MetaField label="To" value={targetDisplay} mono />
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <MetaField label="To" value={targetDisplay} mono />
+              </div>
+              <button
+                onClick={() => setIsEmailEditorOpen(true)}
+                className="shrink-0 mt-5 flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:border-dd-red hover:text-dd-red rounded-lg text-xs font-bold text-slate-500 transition-colors"
+                title="Manage emails for this merchant"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                Edit Emails
+              </button>
+            </div>
             {ccDisplay && <MetaField label="Cc" value={ccDisplay} mono />}
             <MetaField label="Subject" value={currentMerchant.subjectOverride || draft.subject} />
             {currentMerchant.businessId && (
@@ -202,6 +222,14 @@ export default function EmailPreview({
           )}
         </div>
       </div>
+
+      {isEmailEditorOpen && (
+        <MerchantEmailManager
+          merchant={currentMerchant}
+          onSave={(newEmails) => handleEmailUpdate(currentMerchant.id, newEmails)}
+          onClose={() => setIsEmailEditorOpen(false)}
+        />
+      )}
 
       {isEditorOpen && (
         <MerchantEmailEditor

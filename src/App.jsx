@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Header from "./components/Header";
 import StepIndicator from "./components/StepIndicator";
 import UploadZone from "./components/UploadZone";
@@ -85,12 +85,39 @@ function AppInner({ userProfile, onSignOut }) {
   // Contains %%DD_LINK_<promoId>%% tokens | resolved per merchant at render time
   const [globalHtmlTemplate, setGlobalHtmlTemplate] = useState("");
 
-  // Reset blocks + overrides whenever promo selection changes
-  useEffect(() => {
+  // ── Promo change guard ───────────────────────────────────────────────────────
+  // Instead of a silent useEffect wipe, we intercept promo changes and show a
+  // confirmation modal if the rep has unsaved per-merchant edits.
+  const [pendingPromoChange, setPendingPromoChange] = useState(null);
+
+  const applyPromoWipe = useCallback((newPromos) => {
+    setSelectedPromos(newPromos);
     setGlobalBlocks([]);
     setGlobalHtmlTemplate("");
     setMerchants(prev => prev.map(m => ({ ...m, emailOverride: null, subjectOverride: undefined })));
-  }, [selectedPromos]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handlePromoChange = useCallback((newPromos) => {
+    const hasEdits = merchants.some(m => m.emailOverride || m.subjectOverride);
+    if (hasEdits) {
+      // Park the intended change and let the modal decide
+      setPendingPromoChange(newPromos);
+      return;
+    }
+    // No edits → apply immediately
+    applyPromoWipe(newPromos);
+  }, [merchants, applyPromoWipe]);
+
+  const confirmPromoChange = useCallback(() => {
+    if (pendingPromoChange !== null) {
+      applyPromoWipe(pendingPromoChange);
+      setPendingPromoChange(null);
+    }
+  }, [pendingPromoChange, applyPromoWipe]);
+
+  const cancelPromoChange = useCallback(() => {
+    setPendingPromoChange(null);
+  }, []);
 
   // Scaffolding states for later phases
   const [repSettings, setRepSettings] = useState(() => {
@@ -224,6 +251,15 @@ function AppInner({ userProfile, onSignOut }) {
   const handleDataLoaded = (parsedData, payload) => {
     setMerchants(parsedData);
     setAnalyticsPayload(payload || null);
+
+    // 🧹 Clear all stale state from the previous upload so old promo selections,
+    // block edits, and template overrides don't bleed into the new session.
+    setSelectedPromos([]);
+    setPromoConfigs({});
+    setGlobalBlocks([]);
+    setGlobalHtmlTemplate("");
+    setPendingPromoChange(null);
+
     // Navigate to analyze if we have analytics data, otherwise straight to select
     setPhase(payload ? "analyze" : "select");
   };
@@ -295,13 +331,13 @@ function AppInner({ userProfile, onSignOut }) {
         {phase === "build" && (
           <div className="space-y-4">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-6">
-              <h3 className="text-xl font-bold text-slate-800 mb-2">Configure Promotions</h3>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Configure Campaigns</h3>
               <p className="text-slate-500">
                 Select one or more marketing campaigns. We will generate specific deep links mapped perfectly to your choices below.
               </p>
             </div>
 
-            <PromoSelector selectedPromos={selectedPromos} setSelectedPromos={setSelectedPromos} />
+            <PromoSelector selectedPromos={selectedPromos} setSelectedPromos={handlePromoChange} />
             <PromoCustomizer selectedPromos={selectedPromos} promoConfigs={promoConfigs} setPromoConfigs={setPromoConfigs} userProfile={userProfile} />
 
             <div className="flex flex-col items-end gap-3 pt-8">
@@ -380,6 +416,44 @@ function AppInner({ userProfile, onSignOut }) {
           </div>
         )}
       </main>
+
+      {/* ── Promo-change confirmation modal ───────────────────────────────────── */}
+      {pendingPromoChange !== null && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden">
+            <div className="px-8 pt-8 pb-6">
+              <div className="flex items-start gap-4">
+                <div className="shrink-0 w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center text-2xl">
+                  ⚠️
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800 mb-1">Discard email edits?</h2>
+                  <p className="text-sm text-slate-500 leading-relaxed">
+                    You have per-merchant email or subject overrides saved. Changing the promo
+                    selection will <strong className="text-slate-700">permanently discard</strong> all
+                    of those edits and reset the email template.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="px-8 pb-8 flex justify-end gap-3">
+              <button
+                onClick={cancelPromoChange}
+                className="px-6 py-2.5 rounded-xl font-bold text-slate-600 bg-white border border-slate-300 hover:bg-slate-100 transition-colors shadow-sm"
+              >
+                Keep my edits
+              </button>
+              <button
+                onClick={confirmPromoChange}
+                className="px-6 py-2.5 rounded-xl font-bold text-white bg-dd-red hover:bg-dd-red-dark transition-colors shadow-md"
+              >
+                Yes, discard &amp; switch
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isDashboardOpen && (
         <SendLogDashboard
           userProfile={userProfile}

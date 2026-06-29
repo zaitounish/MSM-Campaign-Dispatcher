@@ -1,3 +1,8 @@
+// Email separator regex: splits on characters that can NEVER appear in a valid RFC 5321 email address
+// Safe to split on: , ; : " ( ) | * $ #  and whitespace
+// NOT included (valid in emails): - _ & + ' / @ . ! % ` ^ ~
+const EMAIL_SEP_RE = /[,\s;:"'()|*$#]+/;
+
 export const processSheetData = (json) => {
   if (!json || json.length < 2) return [];
 
@@ -115,16 +120,17 @@ export const processSheetData = (json) => {
   parsedRows.forEach((row) => {
     if (row.businessId && row.businessId.toLowerCase() !== "null" && row.businessId !== "0") {
       if (!pass1Map.has(row.businessId)) {
+        const { dmEmail: _d, storeEmail: _s, ...cleanRow } = row;
         pass1Map.set(row.businessId, {
-          ...row,
+          ...cleanRow,
           sids: [row.storeId],
           // Normalize the seed row's emails the same way sibling rows are normalized
           // so comma-separated values (e.g. "a@x.com, b@x.com") are split correctly.
           dmEmails: row.dmEmail
-            ? row.dmEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+            ? row.dmEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
             : [],
           storeEmails: row.storeEmail
-            ? row.storeEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+            ? row.storeEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
             : [],
         });
       } else {
@@ -136,11 +142,11 @@ export const processSheetData = (json) => {
         if (!existing.dmName && row.dmName) existing.dmName = row.dmName;
         // Accumulate ALL emails from every sibling row (fixes multi-location email loss)
         if (row.dmEmail) {
-          row.dmEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+          row.dmEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
             .forEach(e => { if (!existing.dmEmails.includes(e)) existing.dmEmails.push(e); });
         }
         if (row.storeEmail) {
-          row.storeEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+          row.storeEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
             .forEach(e => { if (!existing.storeEmails.includes(e)) existing.storeEmails.push(e); });
         }
         // Logical OR for opportunities
@@ -163,14 +169,15 @@ export const processSheetData = (json) => {
     // If it has a valid DM Email, group by that
     if (row.dmEmail && validateEmail(row.dmEmail)) {
       if (!pass2Map.has(row.dmEmail)) {
+        const { dmEmail: _d, storeEmail: _s, ...cleanRow } = row;
         pass2Map.set(row.dmEmail, {
-          ...row,
+          ...cleanRow,
           sids: [row.storeId],
           dmEmails: row.dmEmail
-            ? row.dmEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+            ? row.dmEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
             : [],
           storeEmails: row.storeEmail
-            ? row.storeEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+            ? row.storeEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
             : [],
         });
       } else {
@@ -180,7 +187,7 @@ export const processSheetData = (json) => {
         }
         if (!existing.dmName && row.dmName) existing.dmName = row.dmName;
         if (row.storeEmail) {
-          row.storeEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+          row.storeEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
             .forEach(e => { if (!existing.storeEmails.includes(e)) existing.storeEmails.push(e); });
         }
         if (isTruthy(row.slOpp)) existing.slOpp = "1";
@@ -193,14 +200,15 @@ export const processSheetData = (json) => {
       // Group by storeEmail if dmEmail is missing
       if (row.storeEmail && validateEmail(row.storeEmail)) {
         if (!pass2Map.has(row.storeEmail)) {
+          const { dmEmail: _d, storeEmail: _s, ...cleanRow } = row;
           pass2Map.set(row.storeEmail, {
-            ...row,
+            ...cleanRow,
             sids: [row.storeId],
             dmEmails: row.dmEmail
-              ? row.dmEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+              ? row.dmEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
               : [],
             storeEmails: row.storeEmail
-              ? row.storeEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+              ? row.storeEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
               : [],
           });
         } else {
@@ -209,7 +217,7 @@ export const processSheetData = (json) => {
             existing.sids.push(row.storeId);
           }
           if (row.dmEmail) {
-            row.dmEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+            row.dmEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
               .forEach(e => { if (!existing.dmEmails.includes(e)) existing.dmEmails.push(e); });
           }
           if (isTruthy(row.slOpp)) existing.slOpp = "1";
@@ -220,38 +228,92 @@ export const processSheetData = (json) => {
         }
       } else {
         // No valid emails to group on, keep isolated
+        const { dmEmail: _d, storeEmail: _s, ...cleanRow } = row;
         finalResults.push({
-          ...row,
+          ...cleanRow,
           sids: [row.storeId],
           dmEmails: row.dmEmail
-            ? row.dmEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+            ? row.dmEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
             : [],
           storeEmails: row.storeEmail
-            ? row.storeEmail.split(/[,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
+            ? row.storeEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
             : [],
         });
       }
     }
   });
 
-  finalResults.push(...pass2Map.values());
+  // ── Pass 3: Cross-map email deduplication ─────────────────────────────────
+  // A merchant with a businessId (pass1) may share a dmEmail with a no-biz-id
+  // merchant grouped by email (pass2). Without this pass, that person receives
+  // two separate email drafts. We merge any record from pass2 that shares an
+  // email address with an already-present pass1 record.
+  const emailToFinalIdx = new Map(); // email → index in finalResults
+
+  // Index the existing pass1 records by their email addresses
+  finalResults.forEach((merchant, idx) => {
+    for (const email of merchant.dmEmails) {
+      if (!emailToFinalIdx.has(email)) emailToFinalIdx.set(email, idx);
+    }
+    for (const email of merchant.storeEmails) {
+      if (!emailToFinalIdx.has(email)) emailToFinalIdx.set(email, idx);
+    }
+  });
+
+  // Walk pass2 records and either merge into an existing record or append
+  for (const p2Merchant of pass2Map.values()) {
+    let mergedIntoIdx = -1;
+    for (const email of [...p2Merchant.dmEmails, ...p2Merchant.storeEmails]) {
+      if (emailToFinalIdx.has(email)) {
+        mergedIntoIdx = emailToFinalIdx.get(email);
+        break;
+      }
+    }
+
+    if (mergedIntoIdx >= 0) {
+      // Merge sids and emails into the existing pass1 record
+      const existing = finalResults[mergedIntoIdx];
+      p2Merchant.sids.forEach(sid => { if (!existing.sids.includes(sid)) existing.sids.push(sid); });
+      p2Merchant.dmEmails.forEach(e => { if (!existing.dmEmails.includes(e)) { existing.dmEmails.push(e); emailToFinalIdx.set(e, mergedIntoIdx); } });
+      p2Merchant.storeEmails.forEach(e => { if (!existing.storeEmails.includes(e)) { existing.storeEmails.push(e); emailToFinalIdx.set(e, mergedIntoIdx); } });
+      if (!existing.dmName && p2Merchant.dmName) existing.dmName = p2Merchant.dmName;
+      if (!existing.merchantName && p2Merchant.merchantName) existing.merchantName = p2Merchant.merchantName;
+      if (isTruthy(p2Merchant.slOpp)) existing.slOpp = "1";
+      if (isTruthy(p2Merchant.promoOpp)) existing.promoOpp = "1";
+      if (isTruthy(p2Merchant.loyalOpp)) existing.loyalOpp = "1";
+      if (isTruthy(p2Merchant.slCredit)) existing.slCredit = "1";
+    } else {
+      // No overlap — add as a new record and index its emails
+      const newIdx = finalResults.length;
+      finalResults.push(p2Merchant);
+      p2Merchant.dmEmails.forEach(e => { if (!emailToFinalIdx.has(e)) emailToFinalIdx.set(e, newIdx); });
+      p2Merchant.storeEmails.forEach(e => { if (!emailToFinalIdx.has(e)) emailToFinalIdx.set(e, newIdx); });
+    }
+  }
 
   // Formatting final targets schema
   return finalResults.map((target) => {
     // Collect ALL raw email candidates from both dmEmails and storeEmails arrays.
     // These were accumulated across every sibling/duplicate row during dedup.
     const rawCandidates = [
-      ...(target.dmEmails || (target.dmEmail ? [target.dmEmail] : [])),
-      ...(target.storeEmails || (target.storeEmail ? [target.storeEmail] : [])),
+      ...(target.dmEmails || []),
+      ...(target.storeEmails || []),
     ]
-      .flatMap(e => e.split(/[,\s]+/).map(ex => ex.trim().toLowerCase()).filter(Boolean));
+      .flatMap(e => e.split(EMAIL_SEP_RE).map(ex => ex.trim().toLowerCase()).filter(Boolean));
 
     // Separate valid from invalid so we can surface bad ones to the rep
     const validEmails = rawCandidates.filter(validateEmail);
     const invalidEmails = rawCandidates.filter(e => !validateEmail(e));
 
+    // Build unique email list with source tracking (dm vs store column)
+    // dmEmails go first, so the first valid dm email gets isPrimary
+    const dmSet = new Set(target.dmEmails || []);
     const uniqueValid = [...new Set(validEmails)];
-    const emails = uniqueValid.map((email, i) => ({ address: email, isPrimary: i === 0 }));
+    const emails = uniqueValid.map((email, i) => ({
+      address: email,
+      isPrimary: i === 0,
+      source: dmSet.has(email) ? "dm" : "store",
+    }));
 
     // Determine email health for the UI
     let emailStatus;   // "valid" | "invalid" | "missing"
@@ -299,7 +361,7 @@ export const processSheetData = (json) => {
 function isTruthy(val) {
   if (!val) return false;
   const v = String(val).trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes" || (parseInt(v) > 0);
+  return v === "1" || v === "true" || v === "yes" || (parseFloat(v) > 0);
 }
 
 // RFC-5321 inspired regex | catches the common malformed patterns
