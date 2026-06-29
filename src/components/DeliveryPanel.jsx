@@ -7,17 +7,29 @@ import {
   ChevronUp, Copy, Check, Clipboard,
 } from "lucide-react";
 
-// ─── Gmail Compose URL builder ────────────────────────────────────────────────
-// Opens Gmail compose with To, CC, Subject pre-filled.
-// Body is NOT included in the URL | we copy the full rich HTML to clipboard
-// instead so the rep presses Ctrl+V to paste formatted content with buttons.
-const buildGmailComposeUrl = ({ to, cc, draft }) => {
-  const parts = [
-    `to=${encodeURIComponent(to)}`,
+// ─── mailto: link builder ────────────────────────────────────────────────────
+// Uses the OS/browser mailto: protocol handler rather than opening Gmail's
+// web compose URL directly. When Gmail is the registered mailto handler,
+// this opens compose through a native browser action instead of a
+// programmatic window.open() — Outreach may classify these sends as manual.
+//
+// Plain-text body is included in the mailto: link (HTML not supported by
+// the mailto: protocol). Rich HTML is copied to clipboard separately so
+// the rep can Ctrl+V to upgrade formatting after compose opens.
+//
+// Body is capped at 1800 chars to stay safely within OS URL-length limits.
+const buildMailtoLink = ({ to, cc, draft }) => {
+  const subject = draft.subject || "";
+  const rawBody = draft.plainTextBody || "";
+  const body = rawBody.length > 1800 ? rawBody.slice(0, 1800) + "\n\n[...]" : rawBody;
+
+  const params = [
+    `subject=${encodeURIComponent(subject)}`,
+    body ? `body=${encodeURIComponent(body)}` : "",
     cc ? `cc=${encodeURIComponent(cc)}` : "",
-    `su=${encodeURIComponent(draft.subject || "")}`,
-  ].filter(Boolean);
-  return `https://mail.google.com/mail/?view=cm&fs=1&${parts.join("&")}`;
+  ].filter(Boolean).join("&");
+
+  return `mailto:${encodeURIComponent(to)}?${params}`;
 };
 
 // Copy the email's HTML to clipboard so Ctrl+V in Gmail pastes rich content
@@ -186,8 +198,18 @@ export default function DeliveryPanel({
   const openOneInGmail = async (idx) => {
     const target = queue.items[idx];
     setClipStatus(prev => ({ ...prev, [idx]: "copying" }));
-    const url = buildGmailComposeUrl(target);
-    window.open(url, "_blank", "noopener,noreferrer");
+
+    // Fire mailto: link via a hidden <a> element — goes through the browser's
+    // native protocol handler rather than window.open() to a Google URL.
+    // This is the key change: Outreach may classify mailto:-triggered sends
+    // as manual instead of automated.
+    const mailtoUrl = buildMailtoLink(target);
+    const a = document.createElement("a");
+    a.href = mailtoUrl;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
 
     // Copy the right body to clipboard based on mode
     let ok;
@@ -580,10 +602,9 @@ export default function DeliveryPanel({
               <div>
                 <h2 className="text-lg font-bold text-slate-800">Gmail Send Queue</h2>
                 <p className="text-sm text-slate-500 mt-0.5">
-                  {queue.rapidMode
-                    ? <>Tab 1 opened. Click <strong>"Open in Gmail"</strong> for each remaining row | content is pre-filled automatically.</>
-                    : <>Gmail opens with content pre-filled. Optionally press <kbd className="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-mono">Ctrl+V</kbd> to upgrade to rich HTML formatting.</>
-                  }
+                  Opens your email client (Gmail/Outlook) with recipient and subject pre-filled + plain text body. Press{" "}
+                  <kbd className="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-mono">Ctrl+V</kbd>{" "}
+                  to upgrade to rich HTML formatting.
                 </p>
               </div>
               <span className="text-sm font-bold text-slate-500">
@@ -596,12 +617,10 @@ export default function DeliveryPanel({
                 const isOpened = queue.opened.has(idx);
                 const isConfirmed = queue.confirmed.has(idx);
                 return (
-                  <div key={idx} className={`flex items-center gap-3 px-5 py-3.5 transition-colors ${
-                    isConfirmed ? "bg-green-50" : isOpened ? "bg-amber-50" : "hover:bg-slate-50"
-                  }`}>
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${
-                      isConfirmed ? "bg-green-500 text-white" : isOpened ? "bg-amber-400 text-white" : "bg-slate-100 text-slate-500"
+                  <div key={idx} className={`flex items-center gap-3 px-5 py-3.5 transition-colors ${isConfirmed ? "bg-green-50" : isOpened ? "bg-amber-50" : "hover:bg-slate-50"
                     }`}>
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${isConfirmed ? "bg-green-500 text-white" : isOpened ? "bg-amber-400 text-white" : "bg-slate-100 text-slate-500"
+                      }`}>
                       {isConfirmed ? <CheckCircle2 className="w-4 h-4" /> : idx + 1}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -623,11 +642,10 @@ export default function DeliveryPanel({
                     {/* Copy — no compose window */}
                     <button
                       onClick={() => copyManual(idx)}
-                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
-                        manualCopyStatus[idx] === "done"
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${manualCopyStatus[idx] === "done"
                           ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
                           : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
-                      }`}
+                        }`}
                     >
                       {manualCopyStatus[idx] === "done"
                         ? <><Check className="w-3.5 h-3.5" /> Copied!</>
@@ -638,11 +656,10 @@ export default function DeliveryPanel({
                       <button
                         onClick={() => openOneInGmail(idx)}
                         disabled={clipStatus[idx] === "copying"}
-                        className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap disabled:opacity-60 ${
-                          isOpened
+                        className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap disabled:opacity-60 ${isOpened
                             ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
                             : "bg-dd-red text-white hover:bg-[#ff3019] shadow-sm"
-                        }`}
+                          }`}
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                         {clipStatus[idx] === "copying" ? "Opening…" : isOpened ? "Re-open" : "Open in Gmail"}
