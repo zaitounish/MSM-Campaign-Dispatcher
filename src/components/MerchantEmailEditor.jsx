@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { wrapForRichEmail, deInjectDeepLinks, deInterpolateMerchant } from "../lib/emailBlockEngine";
 import { sanitizeHtml } from "../lib/sanitize";
+import ImageEditorModal from "./ImageEditorModal";
 
 /**
  * MerchantEmailEditor (v4 | Dual-Mode WYSIWYG)
@@ -66,6 +67,8 @@ export default function MerchantEmailEditor({
   const [colorType, setColorType] = useState("foreColor");
 
   const fileInputRef = useRef(null);
+  const [pendingImageToCrop, setPendingImageToCrop] = useState(null);
+  const savedImageRange = useRef(null);
 
   // ── Insert Image (File Upload Only) ────────────────────────────────────────────────
   const openImagePicker = () => {
@@ -79,38 +82,52 @@ export default function MerchantEmailEditor({
       alert("Please select an image file.");
       return;
     }
-    if (file.size > 1024 * 1024) {
-      alert("Image is too large for email (>1MB). Consider resizing it first.");
-      return;
-    }
+    // We removed the 1MB restriction here since they can crop and we downscale it in the modal!
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result;
-      if (dataUrl && editorRef.current) {
-        editorRef.current.focus();
-        // Insert image with a reasonable default max-width so it doesn't overflow
+      if (dataUrl) {
+        // Save the current selection range so we can insert the image back exactly where the cursor was
         const sel = window.getSelection();
-        if (sel?.rangeCount) {
-          const range = sel.getRangeAt(0);
-          range.deleteContents();
-          const img = document.createElement("img");
-          img.src = dataUrl;
-          img.style.maxWidth = "100%";
-          img.style.height = "auto";
-          img.style.cursor = "pointer";
-          img.className = "editor-img-resizable";
-          range.insertNode(img);
-          // Move cursor after the image
-          range.setStartAfter(img);
-          range.collapse(true);
-          sel.removeAllRanges();
-          sel.addRange(range);
+        if (sel?.rangeCount > 0) {
+          savedImageRange.current = sel.getRangeAt(0).cloneRange();
+        } else {
+          savedImageRange.current = null;
         }
-        handleInput();
+        setPendingImageToCrop(dataUrl);
       }
     };
     reader.readAsDataURL(file);
     e.target.value = "";
+  }; 
+  
+  const handleImageCropComplete = (croppedDataUrl) => {
+    setPendingImageToCrop(null);
+    if (!croppedDataUrl || !editorRef.current) return;
+    
+    editorRef.current.focus();
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    if (savedImageRange.current) {
+      sel.addRange(savedImageRange.current);
+    }
+    
+    if (sel?.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const img = document.createElement("img");
+      img.src = croppedDataUrl;
+      img.style.maxWidth = "100%";
+      img.style.height = "auto";
+      img.style.cursor = "pointer";
+      img.className = "editor-img-resizable";
+      range.insertNode(img);
+      range.setStartAfter(img);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    handleInput();
   }; // "foreColor" | "hiliteColor"
   const [fontFamily, setFontFamily] = useState("Arial");
   const [fontFamilyOpen, setFontFamilyOpen] = useState(false);
@@ -927,6 +944,14 @@ Rules:
         </div>
 
       </div>
+      
+      {pendingImageToCrop && (
+        <ImageEditorModal
+          imageSrc={pendingImageToCrop}
+          onComplete={handleImageCropComplete}
+          onCancel={() => setPendingImageToCrop(null)}
+        />
+      )}
     </div>
   );
 }
