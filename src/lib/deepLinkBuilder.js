@@ -68,9 +68,11 @@ const getGlobalParams = (merchant, repId) => {
 
 // ─── 1. Sponsored Listing (SL) Generator ─────────────────────────────────────
 export const generateDeepLink = ({ businessId, sidsArray, repId, weeklyBudget, audienceKey }) => {
-  const weekly = parseFloat(weeklyBudget) || 99;
-  const abwv   = Math.round(weekly * 100);
-  const abv    = Math.floor(weekly / 7) * 100;
+  const hasBudget = Boolean(weeklyBudget && !isNaN(parseFloat(weeklyBudget)));
+  
+  const abwv = hasBudget ? Math.round(parseFloat(weeklyBudget) * 100) : "";
+  const abv  = hasBudget ? Math.floor(parseFloat(weeklyBudget) / 7) * 100 : "";
+  const bscv = hasBudget ? 500 : "";
 
   const encodedSids   = encodeSids(sidsArray);
   const dsd           = Date.now();
@@ -86,7 +88,7 @@ export const generateDeepLink = ({ businessId, sidsArray, repId, weeklyBudget, a
     `abv=${abv}`,
     `abwv=${abwv}`,
     `bsao=0`,
-    `bscv=500`,
+    `bscv=${bscv}`,
     `bsia=true`,
     `sch_ad=true`,
   ].join("&");
