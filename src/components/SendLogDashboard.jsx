@@ -3,7 +3,7 @@ import {
   X, RefreshCw, BarChart2, Mail, Users, Calendar, TrendingUp,
   Download, Search, ChevronDown, Filter, Inbox, User, ChevronRight,
 } from "lucide-react";
-import { supabase } from "../lib/supabase";
+import { supabase, getActiveSenders } from "../lib/supabase";
 
 const PROMO_LABELS = {
   ads: "Ads",
@@ -14,6 +14,7 @@ const PROMO_LABELS = {
   happy_hour: "Happy Hour",
   lunch_specials: "Lunch Specials",
   loyalty: "Loyalty",
+  blank: "Blank Email",
 };
 
 const METHOD_LABELS = {
@@ -178,6 +179,8 @@ export default function SendLogDashboard({ userProfile, onClose }) {
   const [whitelist, setWhitelist] = useState([]);
   const [whitelistLoaded, setWhitelistLoaded] = useState(false);
   const [repNames, setRepNames] = useState({});
+  // Backend-sourced set of all emails that have ever sent — used for filter dropdowns
+  const [activeSenders, setActiveSenders] = useState(new Set());
 
   const role = userProfile?.role || "rep";
   const isManager = role === "manager" || role === "ultimate";
@@ -197,6 +200,9 @@ export default function SendLogDashboard({ userProfile, onClose }) {
           setRepNames(map);
         }
       }
+      // Always fetch the backend-authoritative set of active senders for filter dropdowns
+      const senders = await getActiveSenders();
+      setActiveSenders(senders);
       setWhitelistLoaded(true);
     };
     init();
@@ -293,21 +299,42 @@ export default function SendLogDashboard({ userProfile, onClose }) {
     a.click(); URL.revokeObjectURL(url);
   };
 
-  // ── Compute UI Dropdown Options ──────────────────────────────────────────
-  const managerOptions = useMemo(() => {
-    if (role !== "ultimate") return [];
-    return whitelist.filter(u => u.role === "manager" || u.role === "ultimate");
-  }, [whitelist, role]);
+  // Build the set of rep emails that have actually sent at least one email
+  // Source of truth: activeSenders (fetched from backend, all-time, unfiltered)
+  // NOTE: we keep a derived useMemo only for the fallback when activeSenders is empty
+  const activeRepEmails = activeSenders;
 
   const repOptions = useMemo(() => {
     if (role === "rep") return [];
-    if (role === "manager") return whitelist.filter(u => u.manager_id === userProfile?.id || u.email === userProfile?.email);
-    if (role === "ultimate") {
-      if (teamFilter === "all") return whitelist;
-      return whitelist.filter(u => u.manager_id === teamFilter || u.id === teamFilter);
+    let candidates;
+    if (role === "manager") candidates = whitelist.filter(u => u.manager_id === userProfile?.id || u.email === userProfile?.email);
+    else if (role === "ultimate") {
+      if (teamFilter === "all") candidates = whitelist;
+      else candidates = whitelist.filter(u => u.manager_id === teamFilter || u.id === teamFilter);
+    } else {
+      candidates = [];
     }
-    return [];
-  }, [whitelist, role, teamFilter, userProfile]);
+    // Only show reps/managers who have actually sent at least one email (backend source of truth)
+    return candidates.filter(r => activeRepEmails.has(r.email));
+  }, [whitelist, role, teamFilter, userProfile, activeRepEmails]);
+
+  // Teams dropdown: only show a manager's team entry if at least one of their REPS
+  // (not the manager themselves) has sent an email. This means a manager with
+  // no assigned reps who have sent emails will NOT appear.
+  const managerOptions = useMemo(() => {
+    if (role !== "ultimate") return [];
+    // Build a set of manager IDs that have at least one REP with a send log
+    const activeManagerIds = new Set();
+    whitelist.forEach(u => {
+      // Only count reps (not managers) — a manager sending emails doesn't create a "team" entry
+      if (u.role === "rep" && u.manager_id && activeRepEmails.has(u.email)) {
+        activeManagerIds.add(u.manager_id);
+      }
+    });
+    return whitelist.filter(u =>
+      (u.role === "manager" || u.role === "ultimate") && activeManagerIds.has(u.id)
+    );
+  }, [whitelist, role, activeRepEmails]);
 
   // ── Role label for dashboard header ───────────────────────────────────────
   const dashboardSubtitle = isRep

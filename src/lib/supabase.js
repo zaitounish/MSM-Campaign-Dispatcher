@@ -34,9 +34,8 @@ export async function getWhitelistProfile(email) {
 
   const { data, error } = await supabase
     .from("reps_whitelist")
-    .select("id, email, full_name, rep_id, role, is_active")
-    .eq("email", email)
-    .eq("is_active", true)
+    .select("id, email, full_name, rep_id, role, is_active, manager_id, daily_email_limit")
+    .ilike("email", email.trim())
     .maybeSingle();
 
   console.log("[whitelist] data:", data);
@@ -44,6 +43,27 @@ export async function getWhitelistProfile(email) {
 
   if (error || !data) return null;
   return data;
+}
+
+/**
+ * Fetch the distinct set of rep_emails that have ever sent at least one email.
+ * This is the backend source of truth for populating filter dropdowns —
+ * it is NOT filtered by date range, rep, or any UI state.
+ * Returns a Set<string> of email addresses.
+ */
+export async function getActiveSenders() {
+  const { data, error } = await supabase
+    .from("email_send_log")
+    .select("rep_email")
+    .not("rep_email", "is", null);
+
+  if (error) {
+    console.warn("[getActiveSenders]", error.message);
+    return new Set();
+  }
+  const s = new Set();
+  (data || []).forEach(r => { if (r.rep_email) s.add(r.rep_email); });
+  return s;
 }
 
 /**
@@ -67,4 +87,125 @@ export async function logEmailSend({
     email_format: emailFormat,
   });
   if (error) console.warn("[logEmailSend]", error.message);
+}
+
+/**
+ * Count how many emails the rep has sent today, excluding blank promo sends.
+ * Used to enforce the 45-email daily limit for reps.
+ */
+export async function getRepDailyCount(repEmail) {
+  if (!repEmail) return 0;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const { data, error } = await supabase
+    .from("email_send_log")
+    .select("id, promo_types")
+    .eq("rep_email", repEmail)
+    .gte("sent_at", todayStart.toISOString());
+
+  if (error) {
+    console.warn("[getRepDailyCount]", error.message);
+    return 0;
+  }
+
+  // Exclude sends that are purely blank (blank campaign doesn't count toward quota)
+  const nonBlank = (data || []).filter(row => {
+    const types = Array.isArray(row.promo_types) ? row.promo_types : [];
+    return !(types.length === 1 && types[0] === "blank");
+  });
+  return nonBlank.length;
+}
+
+/**
+ * Fetch the rep's active daily limit override for today (if any).
+ * Returns the override limit (e.g. 60) or null if no override is active.
+ */
+export async function getRepDailyLimitOverride(repEmail) {
+  if (!repEmail) return null;
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  const { data, error } = await supabase
+    .from("reps_whitelist")
+    .select("daily_limit_override, daily_limit_override_date")
+    .eq("email", repEmail)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  if (data.daily_limit_override && data.daily_limit_override_date === todayStr) {
+    return data.daily_limit_override;
+  }
+  return null;
+}
+
+/**
+ * Submit a limit increase approval request to the manager (or ultimates if unassigned).
+ * Writes to the `limit_approval_requests` table.
+ */
+export async function submitLimitApprovalRequest({ repEmail, repName, managerId }) {
+  const { error } = await supabase.from("limit_approval_requests").insert({
+    rep_email: repEmail,
+    rep_name: repName,
+    manager_id: managerId || null,
+    status: "pending",
+  });
+  if (error) console.warn("[submitLimitApprovalRequest]", error.message);
+  return !error;
+}
+
+/**
+ * Fetch pending approval requests for a given manager (by their whitelist id).
+ * Ultimates fetch ALL pending requests (managerId === null means fetch all).
+ */
+export async function fetchPendingApprovals({ managerId, isUltimate }) {
+  let query = supabase
+    .from("limit_approval_requests")
+    .select("*")
+    .eq("status", "pending")
+    .order("requested_at", { ascending: false });
+
+  if (!isUltimate && managerId) {
+    // Managers see requests assigned to them OR unassigned (manager_id IS NULL)
+    query = query.or(`manager_id.eq.${managerId},manager_id.is.null`);
+  }
+  // Ultimates see everything (no extra filter)
+
+  const { data, error } = await query;
+  if (error) console.warn("[fetchPendingApprovals]", error.message);
+  return data || [];
+}
+
+/**
+ * Approve or deny a limit request.
+ * On approval, also writes daily_limit_override to reps_whitelist for the rep.
+ */
+export async function resolveApprovalRequest({ requestId, repEmail, approved, approvedLimit = 65 }) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const resolvedBy = (await supabase.auth.getUser())?.data?.user?.id || null;
+
+  // Update the request row
+  const { error: reqErr } = await supabase
+    .from("limit_approval_requests")
+    .update({
+      status: approved ? "approved" : "denied",
+      resolved_at: new Date().toISOString(),
+      resolved_by: resolvedBy,
+      approved_limit: approved ? approvedLimit : null,
+    })
+    .eq("id", requestId);
+
+  if (reqErr) { console.warn("[resolveApprovalRequest] request update", reqErr.message); return false; }
+
+  // On approval, write the override to reps_whitelist
+  if (approved && repEmail) {
+    const { error: wlErr } = await supabase
+      .from("reps_whitelist")
+      .update({
+        daily_limit_override: approvedLimit,
+        daily_limit_override_date: todayStr,
+      })
+      .eq("email", repEmail);
+    if (wlErr) console.warn("[resolveApprovalRequest] whitelist update", wlErr.message);
+  }
+  return true;
 }

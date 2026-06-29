@@ -7,6 +7,7 @@ import { PROMO_CATALOG } from "./PromoSelector";
 // Empty array = all configs valid.
 export function getPromoConfigErrors(selectedPromos, promoConfigs, isUltimate) {
   if (isUltimate) return []; // Ultimate has no restrictions
+  if (selectedPromos.length === 1 && selectedPromos[0] === "blank") return []; // Blank needs no config
   const errors = [];
   if (selectedPromos.includes("discount")) {
     const cfg = promoConfigs["discount"] || {};
@@ -51,7 +52,8 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
     return [first, first + step, first + step * 2];
   };
 
-  if (selectedPromos.length === 0) return null;
+  // Blank campaign has no configuration panel — it's purely a free-form email
+  if (selectedPromos.length === 0 || (selectedPromos.length === 1 && selectedPromos[0] === "blank")) return null;
 
   const updateConfig = (promoId, field, value) => {
     setPromoConfigs(prev => ({
@@ -73,7 +75,8 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
     return val;
   };
 
-  const selectedItems = PROMO_CATALOG.flatMap(c => c.items).filter(i => selectedPromos.includes(i.id));
+  // Exclude 'blank' from the config items list — it has no configurable fields
+  const selectedItems = PROMO_CATALOG.flatMap(c => c.items).filter(i => selectedPromos.includes(i.id) && i.id !== "blank");
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500 mt-8">

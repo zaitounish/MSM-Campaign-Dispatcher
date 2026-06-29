@@ -1,10 +1,10 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import * as XLSX from "xlsx";
-import { logEmailSend } from "../lib/supabase";
+import { logEmailSend, getRepDailyCount, getRepDailyLimitOverride, submitLimitApprovalRequest } from "../lib/supabase";
 import {
   DownloadCloud, CheckCircle2, Layers, FileText,
   Loader2, AlertTriangle, Mail, ExternalLink, ChevronDown,
-  ChevronUp, Copy, Check, Clipboard,
+  ChevronUp, Copy, Check, Clipboard, TrendingUp, Send,
 } from "lucide-react";
 
 // ─── Gmail Compose URL builder ────────────────────────────────────────────────
@@ -145,18 +145,67 @@ function sendAllMyDrafts() {
   Logger.log("Finished! Total emails sent this run: " + sentCount);
 }`;
 
+// Fallback only — real limit comes from reps_whitelist.daily_email_limit
+const DEFAULT_DAILY_LIMIT = 45;
+
 export default function DeliveryPanel({
   merchants, emailDrafts, repSettings, dispatchMode, setDispatchMode,
   emailFormat = "html", setEmailFormat,
   userProfile, selectedPromos = [],
 }) {
+  // Base daily limit: from backend (reps_whitelist.daily_email_limit), fallback to 45
+  const baseLimit = userProfile?.daily_email_limit ?? DEFAULT_DAILY_LIMIT;
+
   const [queue, setQueue] = useState(null);
   const [isSending, setIsSending] = useState(false);
   const [sendStatus, setSendStatus] = useState(null);
   const [gasExpanded, setGasExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // ── Daily quota state (reps only) ────────────────────────────────────────────
+  const [dailySentCount, setDailySentCount] = useState(0);
+  const [effectiveLimit, setEffectiveLimit] = useState(baseLimit);
+  const [quotaLoading, setQuotaLoading] = useState(false);
+  const [approvalRequesting, setApprovalRequesting] = useState(false);
+  const [approvalSent, setApprovalSent] = useState(false);
+
   const isRep = userProfile?.role === "rep";
+  // Blank campaign sends don't count against the daily limit
+  const isBlankSend = selectedPromos.length === 1 && selectedPromos[0] === "blank";
+
+  const repEmail = userProfile?.email || repSettings?.email || "";
+
+  // Fetch today's send count for this rep on mount and after every send
+  const refreshQuota = useCallback(async () => {
+    if (!isRep || !repEmail) return;
+    setQuotaLoading(true);
+    const [count, override] = await Promise.all([
+      getRepDailyCount(repEmail),
+      getRepDailyLimitOverride(repEmail),
+    ]);
+    setDailySentCount(count);
+    // override (manager-granted today-only bump) takes priority over the base backend limit
+    setEffectiveLimit(override ?? baseLimit);
+    setQuotaLoading(false);
+  }, [isRep, repEmail, baseLimit]);
+
+  useEffect(() => { refreshQuota(); }, [refreshQuota]);
+
+  // Handle the "Request Manager Approval" flow
+  const handleRequestApproval = async () => {
+    if (approvalRequesting || approvalSent) return;
+    setApprovalRequesting(true);
+    const repName = userProfile?.full_name ||
+      `${repSettings?.firstName || ""} ${repSettings?.lastName || ""}`.trim() || repEmail;
+    // manager_id comes from the whitelist profile — we expose it via userProfile if available
+    const managerId = userProfile?.manager_id || null;
+    const ok = await submitLimitApprovalRequest({ repEmail, repName, managerId });
+    setApprovalRequesting(false);
+    setApprovalSent(ok);
+    if (!ok) {
+      setSendStatus({ type: "error", msg: "Failed to submit approval request. Please contact your manager directly." });
+    }
+  };
 
   const selectedMerchants = merchants.filter(m => m.selected);
   const activeDrafts = emailDrafts.filter(d =>
@@ -252,6 +301,8 @@ export default function DeliveryPanel({
       deliveryMethod: "gmail_tab",
       emailFormat,
     });
+    // Refresh quota after each send (non-blocking)
+    if (isRep && !isBlankSend) refreshQuota();
   };
 
   // Copy email body to clipboard WITHOUT opening Gmail (for paste into Outlook, OWA, etc.)
@@ -294,6 +345,8 @@ export default function DeliveryPanel({
       deliveryMethod: "gmail_tab",
       emailFormat,
     });
+    // Refresh quota after each send (non-blocking)
+    if (isRep && !isBlankSend) refreshQuota();
   };
 
   const closeQueue = () => {
@@ -304,6 +357,8 @@ export default function DeliveryPanel({
         type: "success",
         msg: `Opened ${doneCount} Gmail compose window${doneCount > 1 ? "s" : ""}. Review each draft and click Send.`,
       });
+      // Refresh quota to reflect newly sent emails
+      if (isRep && !isBlankSend) refreshQuota();
     }
   };
 
@@ -399,6 +454,8 @@ export default function DeliveryPanel({
           emailFormat,
         });
       });
+      // Refresh quota after GAS send (non-blocking)
+      if (isRep && !isBlankSend) refreshQuota();
     }, 1500);
   };
 
@@ -467,6 +524,107 @@ export default function DeliveryPanel({
 
       <div className="max-w-4xl mx-auto space-y-5">
 
+        {/* ── Daily Quota Bar (reps only, skip for blank sends) ──────────────── */}
+        {!isRep ? (
+          <div className="rounded-2xl border px-5 py-3 bg-emerald-50 border-emerald-200 flex items-center justify-between">
+             <div className="flex items-center gap-2">
+               <span className="text-sm font-bold text-emerald-700">Manager / Ultimate Access</span>
+             </div>
+             <p className="text-xs text-emerald-600 font-semibold">Unlimited daily sends. No quota applies.</p>
+          </div>
+        ) : isBlankSend ? (
+          <div className="rounded-2xl border px-5 py-3 bg-violet-50 border-violet-200 flex items-center justify-between">
+             <div className="flex items-center gap-2">
+               <span className="text-sm font-bold text-violet-700">Blank Email Selected</span>
+             </div>
+             <p className="text-xs text-violet-600 font-semibold">These emails do not count toward your daily limit.</p>
+          </div>
+        ) : (() => {
+          const pct = Math.min((dailySentCount / effectiveLimit) * 100, 100);
+          const remaining = Math.max(effectiveLimit - dailySentCount, 0);
+          const isAtLimit = dailySentCount >= effectiveLimit;
+          const wouldExceed = isRep && !isBlankSend && (dailySentCount + totalCount) > effectiveLimit;
+
+          return (
+            <div className={`rounded-2xl border px-5 py-4 space-y-3 ${
+              isAtLimit
+                ? "bg-red-50 border-red-200"
+                : wouldExceed
+                  ? "bg-amber-50 border-amber-200"
+                  : "bg-slate-50 border-slate-200"
+            }`}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className={`w-4 h-4 ${isAtLimit ? "text-red-500" : "text-slate-500"}`} />
+                  <span className={`text-sm font-bold ${isAtLimit ? "text-red-700" : "text-slate-700"}`}>
+                    Daily Email Quota
+                  </span>
+                  {effectiveLimit > baseLimit && (
+                    <span className="text-[10px] font-bold bg-violet-100 text-violet-700 border border-violet-200 px-2 py-0.5 rounded-full">
+                      ✓ Manager Extended
+                    </span>
+                  )}
+                </div>
+                <span className={`text-sm font-bold tabular-nums ${
+                  isAtLimit ? "text-red-700" : wouldExceed ? "text-amber-700" : "text-slate-700"
+                }`}>
+                  {quotaLoading ? "…" : `${dailySentCount} / ${effectiveLimit}`}
+                </span>
+              </div>
+
+              {/* Progress bar */}
+              <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    isAtLimit ? "bg-red-500" : pct >= 80 ? "bg-amber-500" : "bg-dd-red"
+                  }`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+
+              {isAtLimit ? (
+                // Limit reached — show approval request
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-red-700">
+                    ⛔ You've reached your {effectiveLimit}-email daily limit. Ask your manager to grant you additional sends.
+                  </p>
+                  {approvalSent ? (
+                    <div className="flex items-center gap-2 text-xs font-bold text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      Request sent! Your manager will review it shortly.
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleRequestApproval}
+                      disabled={approvalRequesting}
+                      className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-xl transition-colors disabled:opacity-60 shadow-sm"
+                    >
+                      {approvalRequesting
+                        ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending request…</>
+                        : <><Send className="w-3.5 h-3.5" /> Request Manager Approval</>}
+                    </button>
+                  )}
+                </div>
+              ) : wouldExceed ? (
+                <p className="text-xs font-semibold text-amber-700">
+                  ⚠ Sending this batch ({totalCount} email{totalCount > 1 ? "s" : ""}) will exceed your daily limit. {remaining} remaining today.
+                </p>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  {remaining} email{remaining !== 1 ? "s" : ""} remaining today (limit: {effectiveLimit}).
+                </p>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Blank send note */}
+        {isRep && isBlankSend && (
+          <div className="flex items-center gap-2 bg-violet-50 border border-violet-200 rounded-2xl px-5 py-3">
+            <span className="text-xs font-bold text-violet-700">✦ Blank emails don't count toward your 45-email daily limit.</span>
+          </div>
+        )}
+
         {/* Status banner */}
         {sendStatus && (
           <div className={`flex items-center gap-3 px-5 py-4 rounded-2xl text-sm font-semibold ${sendStatus.type === "success" ? "bg-green-50 border border-green-200 text-green-800" : "bg-red-50 border border-red-200 text-red-700"}`}>
@@ -505,22 +663,29 @@ export default function DeliveryPanel({
               </button>
             )}
 
-            {/* Gmail Drafts via GAS manager/ultimate only */}
-            {!isRep && (
-              <button onClick={handleGasDraft} disabled={isSending}
-                className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md disabled:opacity-60 text-sm">
-                {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                Gmail Drafts (HTML)
-              </button>
+            {/* Quota gate for reps: if at limit and not a blank send, disable all send buttons */}
+            {isRep && !isBlankSend && dailySentCount >= effectiveLimit ? (
+              <div className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-slate-200 text-slate-400 text-sm cursor-not-allowed select-none">
+                <AlertTriangle className="w-4 h-4" /> Daily Limit Reached
+              </div>
+            ) : (
+              <>
+                {/* Gmail Drafts via GAS manager/ultimate only */}
+                {!isRep && (
+                  <button onClick={handleGasDraft} disabled={isSending}
+                    className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md disabled:opacity-60 text-sm">
+                    {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                    Gmail Drafts (HTML)
+                  </button>
+                )}
+
+                {/* Open One by One — all roles */}
+                <button onClick={handleOpenGmailQueue}
+                  className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-dd-red hover:bg-[#ff3019] text-white transition-all shadow-md text-sm">
+                  <Mail className="w-4 h-4" /> Open One by One
+                </button>
+              </>
             )}
-
-            {/* Open One by One all roles */}
-            <button onClick={handleOpenGmailQueue}
-              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-dd-red hover:bg-[#ff3019] text-white transition-all shadow-md text-sm">
-              <Mail className="w-4 h-4" /> Open One by One
-            </button>
-
-
           </div>
         </div>
 

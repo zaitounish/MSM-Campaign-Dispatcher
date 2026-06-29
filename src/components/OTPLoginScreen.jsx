@@ -113,6 +113,17 @@ export default function OTPLoginScreen({ onAuthenticated }) {
       return;
     }
 
+    if (!profile.is_active) {
+      await supabase.auth.signOut();
+      setError(
+        "Your account was found, but it is marked as INACTIVE. "
+      );
+      shake();
+      setStep("email");
+      resetOtp();
+      return;
+    }
+
     onAuthenticated(profile);
   };
 

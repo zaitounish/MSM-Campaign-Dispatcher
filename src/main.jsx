@@ -26,12 +26,12 @@ function Root() {
 
       if (session?.user?.email) {
         const profile = await getWhitelistProfile(session.user.email);
-        if (profile) {
+        if (profile && profile.is_active) {
           setUserProfile(profile);
           setAuthState("authenticated");
           return;
         }
-        // Session exists but user is not whitelisted | sign out silently
+        // Session exists but user is not whitelisted or inactive | sign out silently
         await supabase.auth.signOut();
       }
       setAuthState("unauthenticated");

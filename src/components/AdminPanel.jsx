@@ -2,9 +2,9 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   X, UserPlus, ShieldCheck, Users, User, Trash2,
   RefreshCw, Check, AlertCircle, Search, ToggleLeft,
-  ToggleRight, Lock, Mail, Send,
+  ToggleRight, Lock, Mail, Send, Bell, CheckCircle2, XCircle,
 } from "lucide-react";
-import { supabase } from "../lib/supabase";
+import { supabase, fetchPendingApprovals, resolveApprovalRequest } from "../lib/supabase";
 
 // ── Role configuration ──────────────────────────────────────────────────────
 const ROLE_CONFIG = {
@@ -120,6 +120,12 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
   const [saving, setSaving] = useState(null);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [activeTab, setActiveTab] = useState("users"); // 'users' | 'approvals'
+
+  // Pending limit approval requests (managers / ultimates)
+  const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [approvalsLoading, setApprovalsLoading] = useState(false);
+  const [resolvingSaving, setResolvingSaving] = useState(null);
   // TODO: Re-enable showAdd and add-user form state when feature is brought back
   // const [showAdd, setShowAdd] = useState(false);
   // const [newEmail, setNewEmail] = useState("");
@@ -147,6 +153,36 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
   }, []);
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
+
+  const fetchApprovals = useCallback(async () => {
+    setApprovalsLoading(true);
+    const data = await fetchPendingApprovals({
+      managerId: userProfile?.id,
+      isUltimate: actorRole === "ultimate",
+    });
+    setPendingApprovals(data);
+    setApprovalsLoading(false);
+  }, [userProfile?.id, actorRole]);
+
+  useEffect(() => { fetchApprovals(); }, [fetchApprovals]);
+
+  // Per-request custom limit state: { [requestId]: number }
+  const [approvalLimits, setApprovalLimits] = useState({});
+
+  const handleResolve = async (request, approved) => {
+    setResolvingSaving(request.id);
+    const customLimit = approvalLimits[request.id] ?? 65; // default: 45 base + 20 extra
+    const ok = await resolveApprovalRequest({
+      requestId: request.id,
+      repEmail: request.rep_email,
+      approved,
+      approvedLimit: approved ? Math.max(customLimit, 46) : 45, // must be above 45 to be meaningful
+    });
+    if (ok) {
+      setPendingApprovals(prev => prev.filter(r => r.id !== request.id));
+    }
+    setResolvingSaving(null);
+  };
 
   // ── Toggle active ─────────────────────────────────────────────────────────
   const toggleActive = async (user) => {
@@ -201,6 +237,48 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
       .eq("id", user.id);
       
     if (!err) setUsers(prev => prev.map(u => u.id === user.id ? { ...u, manager_id: managerId || null, manager_name: managerName } : u));
+    setSaving(null);
+  };
+
+  /**
+   * Manually bump a rep's daily email limit override for today.
+   * Accessible to both managers (for their reps) and ultimates (for anyone).
+   */
+  const setDailyOverride = async (user, newLimit) => {
+    const limit = parseInt(newLimit, 10);
+    if (isNaN(limit) || limit < 1) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    setSaving(user.id);
+    const { error: err } = await supabase
+      .from("reps_whitelist")
+      .update({
+        daily_limit_override: limit,
+        daily_limit_override_date: todayStr,
+      })
+      .eq("id", user.id);
+    if (!err) {
+      setUsers(prev => prev.map(u =>
+        u.id === user.id
+          ? { ...u, daily_limit_override: limit, daily_limit_override_date: todayStr }
+          : u
+      ));
+    }
+    setSaving(null);
+  };
+
+  const clearDailyOverride = async (user) => {
+    setSaving(user.id);
+    const { error: err } = await supabase
+      .from("reps_whitelist")
+      .update({ daily_limit_override: null, daily_limit_override_date: null })
+      .eq("id", user.id);
+    if (!err) {
+      setUsers(prev => prev.map(u =>
+        u.id === user.id
+          ? { ...u, daily_limit_override: null, daily_limit_override_date: null }
+          : u
+      ));
+    }
     setSaving(null);
   };
 
@@ -324,6 +402,36 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
         </div>
 
         <div className="p-8 space-y-6">
+
+          {/* Tab nav */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl gap-1 w-fit">
+            <button
+              onClick={() => setActiveTab("users")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                activeTab === "users" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <Users className="w-4 h-4" /> Users
+            </button>
+            <button
+              onClick={() => { setActiveTab("approvals"); fetchApprovals(); }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                activeTab === "approvals" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <Bell className="w-4 h-4" />
+              Limit Approvals
+              {pendingApprovals.length > 0 && (
+                <span className="bg-red-500 text-white text-[10px] font-bold min-w-[18px] h-[18px] rounded-full flex items-center justify-center px-1">
+                  {pendingApprovals.length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* ── Users Tab ── */}
+          {activeTab === "users" && (
+            <>
 
           {/* Stats */}
           <div className="grid grid-cols-3 gap-4">
@@ -500,7 +608,7 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
-                    {["User", "Role", "Rep ID", actorRole !== "rep" && "Manager", "Status", "Added", "Actions"].filter(Boolean).map(h => (
+                    {["User", "Role", "Rep ID", actorRole !== "rep" && "Manager", actorRole !== "rep" && "Today's Limit", "Status", "Added", "Actions"].filter(Boolean).map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">{h}</th>
                     ))}
                   </tr>
@@ -568,6 +676,56 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                             )}
                           </td>
                         )}
+                        {/* Daily limit override column — only visible to managers/ultimates */}
+                        {actorRole !== "rep" && (() => {
+                          const todayStr = new Date().toISOString().slice(0, 10);
+                          const hasOverride = user.role === "rep" && user.daily_limit_override && user.daily_limit_override_date === todayStr;
+                          const displayLimit = hasOverride ? user.daily_limit_override : 45;
+                          return (
+                            <td className="px-4 py-3">
+                              {user.role === "rep" ? (
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max="999"
+                                      defaultValue={displayLimit}
+                                      key={`${user.id}-${displayLimit}`}
+                                      disabled={isBusy}
+                                      onBlur={e => {
+                                        const val = parseInt(e.target.value, 10);
+                                        if (!isNaN(val) && val !== displayLimit) setDailyOverride(user, val);
+                                      }}
+                                      onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
+                                      className={`w-16 text-xs font-bold text-center border rounded-lg px-2 py-1 outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 transition-all ${
+                                        hasOverride
+                                          ? "border-violet-300 bg-violet-50 text-violet-700"
+                                          : "border-slate-200 bg-white text-slate-500"
+                                      }`}
+                                      title="Daily email limit for today. Press Enter or click away to save."
+                                    />
+                                    {hasOverride && (
+                                      <button
+                                        onClick={() => clearDailyOverride(user)}
+                                        disabled={isBusy}
+                                        title="Reset to default (45)"
+                                        className="text-slate-300 hover:text-red-500 transition-colors text-sm font-bold leading-none"
+                                      >
+                                        ×
+                                      </button>
+                                    )}
+                                  </div>
+                                  {hasOverride && (
+                                    <p className="text-[9px] text-violet-500 font-bold">override active</p>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-slate-300">—</span>
+                              )}
+                            </td>
+                          );
+                        })()}
                         <td className="px-4 py-3">
                           {deletable ? (
                             <button
@@ -617,10 +775,111 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
             )}
           </div>
 
-          {/* Ultimate protection notice */}
-          {/* <p className="text-xs text-slate-400 text-center">
-            🔒 Ultimate accounts are protected | they can only be added or removed directly in Supabase.
-          </p> */}
+          </> 
+          )}
+
+          {/* ── Approvals Tab ── */}
+          {activeTab === "approvals" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-slate-800 text-sm">Pending Limit Requests</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Reps who've hit their 45-email daily limit and need more sends today.
+                    Set how many emails they can send in total today, then approve.
+                  </p>
+                </div>
+                <button onClick={fetchApprovals} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+              </div>
+
+              {approvalsLoading ? (
+                <div className="flex items-center justify-center py-10 text-slate-400">
+                  <RefreshCw className="w-5 h-5 animate-spin mr-3" /> Loading requests…
+                </div>
+              ) : pendingApprovals.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 border border-slate-200 rounded-2xl text-center">
+                  <CheckCircle2 className="w-10 h-10 text-green-300 mb-3" />
+                  <p className="text-slate-500 font-semibold text-sm">No pending requests</p>
+                  <p className="text-xs text-slate-400 mt-1">All reps are within their daily limits.</p>
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-100">
+                  {pendingApprovals.map(req => {
+                    const isBusy = resolvingSaving === req.id;
+                    const customLimit = approvalLimits[req.id] ?? 65;
+                    const requestedAt = req.requested_at
+                      ? new Date(req.requested_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                      : "—";
+                    return (
+                      <div key={req.id} className={`px-5 py-4 transition-colors ${isBusy ? "opacity-50" : "hover:bg-slate-50"}`}>
+                        <div className="flex items-start gap-4">
+                          {/* Avatar */}
+                          <div className="w-9 h-9 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-sm font-bold shrink-0 mt-0.5">
+                            {(req.rep_name || req.rep_email || "?")[0]?.toUpperCase()}
+                          </div>
+
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <p className="font-bold text-slate-800 text-sm">{req.rep_name || req.rep_email}</p>
+                            <p className="text-[10px] text-slate-400 font-mono truncate">{req.rep_email}</p>
+                            <p className="text-[10px] text-slate-500 mt-0.5">
+                              Hit their 45-email limit · Requested {requestedAt}
+                            </p>
+
+                            {/* Action row */}
+                            <div className="flex items-center gap-2 mt-3 flex-wrap">
+                              {/* Custom limit input */}
+                              <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-3 py-1.5">
+                                <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">Grant limit:</span>
+                                <input
+                                  type="number"
+                                  min="46"
+                                  max="999"
+                                  value={customLimit}
+                                  onChange={e => setApprovalLimits(prev => ({ ...prev, [req.id]: parseInt(e.target.value, 10) || 65 }))}
+                                  disabled={isBusy}
+                                  className="w-14 text-xs font-bold text-center border-0 outline-none bg-transparent text-violet-700"
+                                  title="Set the total emails this rep can send today"
+                                />
+                                <span className="text-[10px] text-slate-400">emails today</span>
+                              </div>
+                              <span className="text-[10px] text-slate-400">
+                                ({customLimit > 45 ? `+${customLimit - 45} above limit` : "must be above 45"})
+                              </span>
+
+                              {/* Deny */}
+                              <button
+                                onClick={() => handleResolve(req, false)}
+                                disabled={isBusy}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 bg-white border border-slate-300 hover:bg-red-50 hover:text-red-700 hover:border-red-300 rounded-xl transition-colors disabled:opacity-50"
+                              >
+                                <XCircle className="w-3.5 h-3.5" /> Deny
+                              </button>
+
+                              {/* Approve */}
+                              <button
+                                onClick={() => handleResolve(req, true)}
+                                disabled={isBusy || customLimit <= 45}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-xl transition-colors disabled:opacity-50 shadow-sm"
+                              >
+                                {isBusy
+                                  ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Processing…</>
+                                  : <><CheckCircle2 className="w-3.5 h-3.5" /> Approve ({customLimit} today)</>}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+
         </div>
       </div>
     </div>
