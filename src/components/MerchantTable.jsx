@@ -390,7 +390,7 @@ export default function MerchantTable({
   // ── Select / Exclude all currently-filtered merchants ───────────────────────────
   const handleSelectAllFiltered = () => {
     const ids = new Set(filteredMerchants.map(m => m.id));
-    setMerchants(prev => prev.map(m => ids.has(m.id) ? { ...m, selected: true } : m));
+    setMerchants(prev => prev.map(m => ({ ...m, selected: ids.has(m.id) })));
   };
 
   const handleDeselectAllFiltered = () => {
@@ -476,7 +476,7 @@ export default function MerchantTable({
               Smart Exclude {showExcludePanel ? "▲" : "▼"}
             </button>
             <div className="text-sm font-semibold text-slate-500 bg-white border border-slate-200 px-3 py-1 rounded-lg">
-              Selected: <span className="text-dd-red">{filteredMerchants.filter(m => m.selected).length}</span> / {filteredMerchants.length}
+              Selected: <span className="text-dd-red">{merchants.filter(m => m.selected).length}</span> / {merchants.length}
             </div>
           </div>
         </div>
@@ -620,7 +620,7 @@ export default function MerchantTable({
                 >
                   <Zap className="w-3.5 h-3.5" /> Select All Filtered ({filteredMerchants.length})
                 </button>
-                <span className="text-xs text-slate-400">Selects every merchant currently visible in the table</span>
+                <span className="text-xs text-slate-400">Selects only the visible merchants, deselecting all others</span>
               </div>
             </div>
           )}
@@ -934,7 +934,7 @@ export default function MerchantTable({
         <div className="flex justify-end pt-4 pb-6 px-6 bg-slate-50 border-t border-slate-200">
           <button
             onClick={() => onContinue()}
-            disabled={filteredMerchants.filter(m => m.selected).length === 0}
+            disabled={merchants.filter(m => m.selected).length === 0}
             className="flex items-center gap-2 px-8 py-3.5 bg-dd-red text-white font-bold rounded-xl shadow-md hover:bg-dd-red-dark hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0 disabled:cursor-not-allowed"
           >
             Continue to Configure Promos

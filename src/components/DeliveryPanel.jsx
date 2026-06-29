@@ -40,79 +40,101 @@ const copyHtmlToClipboard = async (draft) => {
 };
 
 // GAS script the user deploys once to enable rich HTML drafts.
-// Uses e.parameter (form-encoded POST) so the browser can send Google
-// session cookies automatically no OAuth setup needed.
-const GAS_SCRIPT = `// ─── MSM Campaign Dispatcher — Gmail Drafts Bridge ───────────────────────────
-// Deploy as a Web App:
-//   Execute as : Me
-//   Who has access : Anyone within DoorDash
-// After deploying, open the Web App URL once in your browser to grant Gmail
-// permissions, then paste the URL into ⚙ Settings → Google Apps Script URL.
-// ─────────────────────────────────────────────────────────────────────────────
+const GAS_SCRIPT = `/**
+ * MSM Campaign Dispatcher – Gmail Drafts Bridge
+ *
+ * Deploy as a Web App:
+ *   Execute as : Me
+ *   Who has access : Anyone within DoorDash
+ *
+ * After deploying, open the Web App URL once in your browser to grant Gmail
+ * permissions, then paste the URL into ⚙ Settings → Google Apps Script URL.
+ */
+
 function doGet(e) {
-  return ContentService.createTextOutput(
-    "✅ Authorization successful! You can close this tab and return to the Dispatcher."
-  );
+  // Simple GET endpoint to confirm the script is authorized and reachable.
+  return ContentService
+    .createTextOutput(
+      "✅ Authorization successful! You can close this tab and return to the Dispatcher."
+    )
+    .setMimeType(ContentService.MimeType.TEXT);
 }
 
+/**
+ * POST endpoint used by the Dispatcher.
+ * Expects either:
+ *   - payload_encoded : URL-encoded JSON string (preferred, preserves emojis)
+ *   - payload         : Base64-encoded JSON string
+ *   - emails          : raw JSON string (fallback)
+ *
+ * It ONLY creates drafts; it never sends mail directly.
+ * The rep must open Gmail Drafts and click Send manually —
+ * this ensures Salesforce logs the email as manual ([outreach] [Email] manual [out]).
+ */
 function doPost(e) {
-  var action = e.parameter.action || "draft";
   var emails = [];
-  
+
   try {
-    // MUST use payload_encoded to prevent emojis like 🚀 from turning into 
+    // Prefer the explicitly encoded payload to avoid emoji corruption.
     if (e.parameter.payload_encoded) {
       var jsonStr = decodeURIComponent(e.parameter.payload_encoded);
       emails = JSON.parse(jsonStr);
     } else if (e.parameter.payload) {
+      // Base64-encoded fallback.
       var decodedBytes = Utilities.base64Decode(e.parameter.payload);
       var jsonStr = Utilities.newBlob(decodedBytes).getDataAsString();
       emails = JSON.parse(jsonStr);
     } else {
+      // Legacy fallback.
       emails = JSON.parse(e.parameter.emails || "[]");
     }
   } catch (err) {
-    // silently fail back to empty array
+    // If parsing fails, treat as empty list so the script doesn't crash.
+    emails = [];
   }
 
-  emails.forEach(function(email) {
+  // Create a draft for each email object.
+  // NOTE: We never call GmailApp.sendEmail() here.
+  // Sending must be done manually by the rep inside Gmail
+  // so that Salesforce/Outreach tags the message as [manual out].
+  emails.forEach(function (email) {
     var opts = {
       cc:       email.cc || "",
       htmlBody: email.htmlBody || "",
-      name:     email.name || "DoorDash Merchant Success",
+      name:     email.name || "DoorDash Merchant Success"
     };
-    if (action === "draft") {
-      GmailApp.createDraft(email.to, email.subject, email.plainTextBody || "", opts);
-    } else {
-      GmailApp.sendEmail(email.to, email.subject, email.plainTextBody || "", opts);
-    }
+    GmailApp.createDraft(
+      email.to,
+      email.subject,
+      email.plainTextBody || "",  // plain-text body (required)
+      opts
+    );
   });
 
+  // Respond with a simple JSON payload so the frontend can show a count.
   return ContentService
     .createTextOutput(JSON.stringify({ ok: true, count: emails.length }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// Optional helper to quickly blast out existing drafts, with a limit!
+/**
+ * OPTIONAL: Helper to send a limited number of existing drafts from the script editor.
+ * WARNING: Do NOT call this from the web-app endpoint if you need the "manual" tag
+ * in Salesforce. Sending from Apps Script will always tag as automated.
+ */
+/*
 function sendAllMyDrafts() {
-  var MAX_SENDS = 50; // Change this number to whatever limit you want
-  
+  var MAX_SENDS = 50; // adjust as needed
   var drafts = GmailApp.getDrafts();
   var sentCount = 0;
-  
+
   for (var i = 0; i < drafts.length; i++) {
-    // Stop the loop if we've reached our maximum allowed sends
     if (sentCount >= MAX_SENDS) {
       Logger.log("Reached maximum limit of " + MAX_SENDS + " sends. Stopping.");
-      break; 
+      break;
     }
-    
-    // SAFETY CHECK: Get the "To" address of this specific draft
     var toAddress = drafts[i].getMessage().getTo();
-    
-    // If the "To" address is empty or just spaces, stop the entire script!
     if (!toAddress || toAddress.trim() === "") {
-      Logger.log("⚠️ Draft missing recipient! Stopping early for safety at email " + (i + 1));
       break; 
     }
     
@@ -359,9 +381,10 @@ export default function DeliveryPanel({
       setIsSending(false);
       setSendStatus({
         type: "success",
-        msg: `Submitted ${payloads.length} ${emailFormat === "plain" ? "plain-text" : "rich HTML"} draft${payloads.length > 1 ? "s" : ""} to GAS. Check your Gmail Drafts folder in ~5 seconds to confirm they arrived.`,
+        msg: `${payloads.length} draft${payloads.length > 1 ? "s" : ""} created in Gmail. Open your Drafts folder, then send each one manually — this ensures Salesforce logs them as manual.`,
+        draftsUrl: "https://mail.google.com/mail/u/0/#drafts",
       });
-      // Log each send event
+      // Log each draft creation event
       targets.forEach(t => {
         logEmailSend({
           repEmail: userProfile?.email || repSettings?.email || "",
@@ -448,7 +471,18 @@ export default function DeliveryPanel({
         {sendStatus && (
           <div className={`flex items-center gap-3 px-5 py-4 rounded-2xl text-sm font-semibold ${sendStatus.type === "success" ? "bg-green-50 border border-green-200 text-green-800" : "bg-red-50 border border-red-200 text-red-700"}`}>
             {sendStatus.type === "success" ? <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" /> : <AlertTriangle className="w-5 h-5 text-red-500 shrink-0" />}
-            {sendStatus.msg}
+            <span className="flex-1">{sendStatus.msg}</span>
+            {sendStatus.draftsUrl && (
+              <a
+                href={sendStatus.draftsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-xs font-bold rounded-xl transition-colors whitespace-nowrap shrink-0"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                View Drafts →
+              </a>
+            )}
           </div>
         )}
 
