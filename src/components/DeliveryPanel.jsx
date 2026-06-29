@@ -7,31 +7,20 @@ import {
   ChevronUp, Copy, Check, Clipboard,
 } from "lucide-react";
 
-// ─── mailto: link builder ────────────────────────────────────────────────────
-// Uses the OS/browser mailto: protocol handler rather than opening Gmail's
-// web compose URL directly. When Gmail is the registered mailto handler,
-// this opens compose through a native browser action instead of a
-// programmatic window.open() — Outreach may classify these sends as manual.
-//
-// Plain-text body is included in the mailto: link (HTML not supported by
-// the mailto: protocol). Rich HTML is copied to clipboard separately so
-// the rep can Ctrl+V to upgrade formatting after compose opens.
-//
-// Body is capped at 1800 chars to stay safely within OS URL-length limits.
-const buildMailtoLink = ({ to, cc, draft }) => {
-  const subject = draft.subject || "";
-  const rawBody = draft.plainTextBody || "";
-  const body = rawBody.length > 1800 ? rawBody.slice(0, 1800) + "\n\n[...]" : rawBody;
-
-  const params = [
-    `subject=${encodeURIComponent(subject)}`,
-    body ? `body=${encodeURIComponent(body)}` : "",
+// ─── Gmail Compose URL builder ────────────────────────────────────────────────
+// Opens Gmail compose with To, CC, Subject pre-filled.
+// Body is NOT included in the URL | we copy the full rich HTML to clipboard
+// instead so the rep presses Ctrl+V to paste formatted content with buttons.
+const buildGmailComposeUrl = ({ to, cc, draft }) => {
+  const parts = [
+    `to=${encodeURIComponent(to)}`,
     cc ? `cc=${encodeURIComponent(cc)}` : "",
-  ].filter(Boolean).join("&");
-
-  return `mailto:${encodeURIComponent(to)}?${params}`;
+    `su=${encodeURIComponent(draft.subject || "")}`,
+  ].filter(Boolean);
+  return `https://mail.google.com/mail/?view=cm&fs=1&${parts.join("&")}`;
 };
 
+// ─── Clipboard Copy Helper ──────────────────────────────────────────────────
 // Copy the email's HTML to clipboard so Ctrl+V in Gmail pastes rich content
 const copyHtmlToClipboard = async (draft) => {
   const html = draft.htmlBody || "";
@@ -185,7 +174,7 @@ export default function DeliveryPanel({
   // ── Open Gmail Queue (one by one) ──────────────────────────────────────────
   const handleOpenGmailQueue = () => {
     const items = buildTargets();
-    setQueue({ items, opened: new Set(), confirmed: new Set() });
+    setQueue({ items, opened: new Set(), allOpened: false });
     setSendStatus(null);
     setClipStatus({});
     setManualCopyStatus({});
@@ -199,17 +188,8 @@ export default function DeliveryPanel({
     const target = queue.items[idx];
     setClipStatus(prev => ({ ...prev, [idx]: "copying" }));
 
-    // Fire mailto: link via a hidden <a> element — goes through the browser's
-    // native protocol handler rather than window.open() to a Google URL.
-    // This is the key change: Outreach may classify mailto:-triggered sends
-    // as manual instead of automated.
-    const mailtoUrl = buildMailtoLink(target);
-    const a = document.createElement("a");
-    a.href = mailtoUrl;
-    a.style.display = "none";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const url = buildGmailComposeUrl(target);
+    window.open(url, "_blank", "noopener,noreferrer");
 
     // Copy the right body to clipboard based on mode
     let ok;
@@ -233,22 +213,10 @@ export default function DeliveryPanel({
       ok = await copyHtmlToClipboard({ ...target.draft, htmlBody: target.draft.richBody || target.draft.htmlBody });
     }
     setClipStatus(prev => ({ ...prev, [idx]: ok ? "done" : "error" }));
-    // Mark compose as opened (pending — NOT confirmed yet)
     setQueue(prev => {
       const opened = new Set(prev.opened);
       opened.add(idx);
       return { ...prev, opened };
-    });
-    // ⚠ Do NOT log here — we log only when the rep clicks "Mark Sent"
-  };
-
-  // Rep confirms they actually clicked Send in Gmail → log + mark green
-  const markSent = (idx) => {
-    const target = queue.items[idx];
-    setQueue(prev => {
-      const confirmed = new Set(prev.confirmed);
-      confirmed.add(idx);
-      return { ...prev, confirmed };
     });
     logEmailSend({
       repEmail: userProfile?.email || repSettings?.email || "",
@@ -307,12 +275,12 @@ export default function DeliveryPanel({
   };
 
   const closeQueue = () => {
-    const sentCount = queue?.confirmed?.size || 0;
+    const doneCount = queue?.opened?.size || 0;
     setQueue(null);
-    if (sentCount > 0) {
+    if (doneCount > 0) {
       setSendStatus({
         type: "success",
-        msg: `${sentCount} email${sentCount > 1 ? "s" : ""} sent and logged successfully.`,
+        msg: `Opened ${doneCount} Gmail compose window${doneCount > 1 ? "s" : ""}. Review each draft and click Send.`,
       });
     }
   };
@@ -602,41 +570,36 @@ export default function DeliveryPanel({
               <div>
                 <h2 className="text-lg font-bold text-slate-800">Gmail Send Queue</h2>
                 <p className="text-sm text-slate-500 mt-0.5">
-                  Opens your email client (Gmail/Outlook) with recipient and subject pre-filled + plain text body. Press{" "}
-                  <kbd className="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-mono">Ctrl+V</kbd>{" "}
-                  to upgrade to rich HTML formatting.
+                  {queue.rapidMode
+                    ? <>Tab 1 opened. Click <strong>"Open in Gmail"</strong> for each remaining row | content is pre-filled automatically.</>
+                    : <>Gmail opens with content pre-filled. Optionally press <kbd className="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-mono">Ctrl+V</kbd> to upgrade to rich HTML formatting.</>
+                  }
                 </p>
               </div>
               <span className="text-sm font-bold text-slate-500">
-                {queue.confirmed.size}/{queue.items.length} sent
+                {queue.opened.size}/{queue.items.length} opened
               </span>
             </div>
 
             <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
               {queue.items.map((item, idx) => {
                 const isOpened = queue.opened.has(idx);
-                const isConfirmed = queue.confirmed.has(idx);
                 return (
-                  <div key={idx} className={`flex items-center gap-3 px-5 py-3.5 transition-colors ${isConfirmed ? "bg-green-50" : isOpened ? "bg-amber-50" : "hover:bg-slate-50"
-                    }`}>
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${isConfirmed ? "bg-green-500 text-white" : isOpened ? "bg-amber-400 text-white" : "bg-slate-100 text-slate-500"
-                      }`}>
-                      {isConfirmed ? <CheckCircle2 className="w-4 h-4" /> : idx + 1}
+                  <div key={idx} className={`flex items-center gap-3 px-5 py-3.5 transition-colors ${isOpened ? "bg-green-50" : "hover:bg-slate-50"}`}>
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${isOpened ? "bg-green-500 text-white" : "bg-slate-100 text-slate-500"}`}>
+                      {isOpened ? <CheckCircle2 className="w-4 h-4" /> : idx + 1}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-slate-800 text-sm truncate">{item.label}</p>
                       <p className="text-xs text-slate-500 truncate">{item.to}{item.cc ? ` · CC: ${item.cc}` : ""}</p>
-                      {isConfirmed && (
-                        <p className="text-[10px] text-emerald-600 font-bold mt-0.5">✓ Sent & logged</p>
-                      )}
-                      {isOpened && !isConfirmed && (
-                        <p className="text-[10px] text-amber-600 font-bold mt-0.5">Gmail opened — click Send there, then mark below</p>
+                      {clipStatus[idx] === "done" && (
+                        <p className="text-[10px] text-emerald-600 font-bold mt-0.5">✓ Copied | press Ctrl+V in Gmail</p>
                       )}
                       {clipStatus[idx] === "error" && (
                         <p className="text-[10px] text-amber-600 font-bold mt-0.5">⚠ Clipboard unavailable | paste manually</p>
                       )}
-                      {manualCopyStatus[idx] === "done" && !isConfirmed && (
-                        <p className="text-[10px] text-blue-600 font-bold mt-0.5">✓ Copied | paste into your email client, then mark sent</p>
+                      {manualCopyStatus[idx] === "done" && (
+                        <p className="text-[10px] text-blue-600 font-bold mt-0.5">✓ Copied | paste into your email client</p>
                       )}
                     </div>
                     {/* Copy — no compose window */}
@@ -652,34 +615,17 @@ export default function DeliveryPanel({
                         : <><Clipboard className="w-3.5 h-3.5" /> Copy</>}
                     </button>
                     {/* Open in Gmail */}
-                    {!isConfirmed && (
-                      <button
-                        onClick={() => openOneInGmail(idx)}
-                        disabled={clipStatus[idx] === "copying"}
-                        className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap disabled:opacity-60 ${isOpened
-                            ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
-                            : "bg-dd-red text-white hover:bg-[#ff3019] shadow-sm"
-                          }`}
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        {clipStatus[idx] === "copying" ? "Opening…" : isOpened ? "Re-open" : "Open in Gmail"}
-                      </button>
-                    )}
-                    {/* Mark Sent — appears after Gmail is opened, logs to Supabase */}
-                    {isOpened && !isConfirmed && (
-                      <button
-                        onClick={() => markSent(idx)}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap bg-green-600 hover:bg-green-500 text-white shadow-sm"
-                      >
-                        <Check className="w-3.5 h-3.5" /> Mark Sent
-                      </button>
-                    )}
-                    {/* Already confirmed state */}
-                    {isConfirmed && (
-                      <span className="flex items-center gap-1 text-xs font-bold text-green-600 whitespace-nowrap">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Sent
-                      </span>
-                    )}
+                    <button
+                      onClick={() => openOneInGmail(idx)}
+                      disabled={clipStatus[idx] === "copying"}
+                      className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap disabled:opacity-60 ${isOpened
+                          ? "bg-green-100 text-green-700 hover:bg-green-200"
+                          : "bg-dd-red text-white hover:bg-[#ff3019] shadow-sm"
+                        }`}
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      {clipStatus[idx] === "copying" ? "Opening…" : isOpened ? "Re-open" : "Open in Gmail"}
+                    </button>
                   </div>
                 );
               })}
@@ -687,11 +633,11 @@ export default function DeliveryPanel({
 
             <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 shrink-0 flex items-center justify-between gap-3">
               <p className="text-xs text-slate-500">
-                {queue.confirmed.size === 0
-                  ? queue.opened.size > 0 ? `${queue.opened.size} Gmail window${queue.opened.size > 1 ? "s" : ""} opened — mark sent after each send.` : "Open Gmail for each merchant, then mark as sent."
-                  : queue.confirmed.size === queue.items.length
-                    ? "\u2705 All emails sent and logged."
-                    : `${queue.confirmed.size} sent — ${queue.items.length - queue.confirmed.size} remaining.`}
+                {queue.opened.size === 0
+                  ? "No emails opened yet."
+                  : queue.opened.size === queue.items.length
+                    ? "✅ All emails opened | close when done."
+                    : `${queue.items.length - queue.opened.size} remaining.`}
               </p>
               <button onClick={closeQueue}
                 className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-bold rounded-xl transition-colors">
