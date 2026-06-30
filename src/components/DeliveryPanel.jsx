@@ -122,28 +122,27 @@ function doPost(e) {
  * WARNING: Do NOT call this from the web-app endpoint if you need the "manual" tag
  * in Salesforce. Sending from Apps Script will always tag as automated.
  */
-/*
-function sendAllMyDrafts() {
-  var MAX_SENDS = 50; // adjust as needed
-  var drafts = GmailApp.getDrafts();
-  var sentCount = 0;
-
-  for (var i = 0; i < drafts.length; i++) {
-    if (sentCount >= MAX_SENDS) {
-      Logger.log("Reached maximum limit of " + MAX_SENDS + " sends. Stopping.");
-      break;
-    }
-    var toAddress = drafts[i].getMessage().getTo();
-    if (!toAddress || toAddress.trim() === "") {
-      break; 
-    }
-    
-    drafts[i].send();
-    sentCount++;
-  }
-  
-  Logger.log("Finished! Total emails sent this run: " + sentCount);
-}`;
+// function sendAllMyDrafts() {
+//   var MAX_SENDS = 50; // adjust as needed
+//   var drafts = GmailApp.getDrafts();
+//   var sentCount = 0;
+// 
+//   for (var i = 0; i < drafts.length; i++) {
+//     if (sentCount >= MAX_SENDS) {
+//       Logger.log("Reached maximum limit of " + MAX_SENDS + " sends. Stopping.");
+//       break;
+//     }
+//     var toAddress = drafts[i].getMessage().getTo();
+//     if (!toAddress || toAddress.trim() === "") {
+//       break; 
+//     }
+//     
+//     drafts[i].send();
+//     sentCount++;
+//   }
+//   
+//   Logger.log("Finished! Total emails sent this run: " + sentCount);
+// }`;
 
 // Fallback only — real limit comes from reps_whitelist.daily_email_limit
 const DEFAULT_DAILY_LIMIT = 45;
