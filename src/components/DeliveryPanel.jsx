@@ -248,12 +248,12 @@ export default function DeliveryPanel({
     setQueue({ items, opened: new Set(), allOpened: false });
     setSendStatus(null);
     setClipStatus({});
-    setManualCopyStatus({});
+    setDraftStatus({});
   };
 
 
   const [clipStatus, setClipStatus] = useState({});       // idx -> 'copying'|'done'|'error'
-  const [manualCopyStatus, setManualCopyStatus] = useState({}); // idx -> 'done'|'error'
+  const [draftStatus, setDraftStatus] = useState({}); // idx -> 'drafting'|'done'|'error'
 
   const openOneInGmail = async (idx) => {
     const target = queue.items[idx];
@@ -305,48 +305,83 @@ export default function DeliveryPanel({
     if (isRep && !isBlankSend) refreshQuota();
   };
 
-  // Copy email body to clipboard WITHOUT opening Gmail (for paste into Outlook, OWA, etc.)
-  const copyManual = async (idx) => {
-    const target = queue.items[idx];
-    let ok;
-    if (emailFormat === "plain") {
-      const cleanHtml = target.draft.cleanBody || target.draft.htmlBody || "";
-      const plainFall = target.draft.plainTextBody || "";
-      try {
-        await navigator.clipboard.write([
-          new ClipboardItem({
-            "text/html": new Blob([cleanHtml], { type: "text/html" }),
-            "text/plain": new Blob([plainFall], { type: "text/plain" }),
-          }),
-        ]);
-        ok = true;
-      } catch {
-        try { await navigator.clipboard.writeText(plainFall); ok = true; } catch { ok = false; }
-      }
-    } else {
-      ok = await copyHtmlToClipboard({ ...target.draft, htmlBody: target.draft.richBody || target.draft.htmlBody });
+  // Create a draft for a single email via GAS
+  const createOneGasDraft = (idx) => {
+    if (!repSettings.gasUrl) {
+      setSendStatus({ type: "error", msg: "No GAS URL configured. Please set up Gmail Drafts in settings." });
+      return;
     }
-    setManualCopyStatus(prev => ({ ...prev, [idx]: ok ? "done" : "error" }));
-    // Mark as opened so the counter advances
-    setQueue(prev => {
-      const opened = new Set(prev.opened);
-      opened.add(idx);
-      return { ...prev, opened };
-    });
-    logEmailSend({
-      repEmail: userProfile?.email || repSettings?.email || "",
-      repName: userProfile?.full_name || `${repSettings?.firstName || ""} ${repSettings?.lastName || ""}`.trim() || "",
-      merchantName: target.merchant?.merchantName || "",
-      merchantId: target.merchant?.businessId || target.merchant?.id || "",
-      toEmail: target.to,
-      ccEmails: target.cc || "",
-      subject: target.draft.subject,
-      promoTypes: selectedPromos,
-      deliveryMethod: "gmail_tab",
-      emailFormat,
-    });
-    // Refresh quota after each send (non-blocking)
-    if (isRep && !isBlankSend) refreshQuota();
+    
+    setDraftStatus(prev => ({ ...prev, [idx]: "drafting" }));
+
+    const t = queue.items[idx];
+    const senderName = userProfile?.full_name || `${repSettings.firstName || ""} ${repSettings.lastName || ""}`.trim() || "DoorDash Merchant Success";
+    const payload = {
+      to: t.to,
+      cc: t.cc,
+      subject: t.draft.subject,
+      htmlBody: emailFormat === "plain"
+        ? (t.draft.cleanBody || t.draft.htmlBody)
+        : (t.draft.richBody || t.draft.htmlBody),
+      plainTextBody: t.draft.plainTextBody,
+      name: senderName,
+    };
+
+    const FRAME_ID = "__gas_bridge_frame__";
+    let iframe = document.getElementById(FRAME_ID);
+    if (!iframe) {
+      iframe = document.createElement("iframe");
+      iframe.id = FRAME_ID;
+      iframe.name = FRAME_ID;
+      iframe.style.cssText = "position:fixed;width:1px;height:1px;top:-9999px;left:-9999px;border:0;opacity:0;pointer-events:none;";
+      document.body.appendChild(iframe);
+    }
+
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = repSettings.gasUrl;
+    form.target = FRAME_ID;
+    form.style.display = "none";
+
+    const addField = (name, value) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    };
+
+    const jsonStr = JSON.stringify([payload]);
+    const encodedPayload = encodeURIComponent(jsonStr);
+
+    addField("action", "draft");
+    addField("payload_encoded", encodedPayload);
+
+    document.body.appendChild(form);
+    form.submit();
+    requestAnimationFrame(() => document.body.removeChild(form));
+
+    setTimeout(() => {
+      setDraftStatus(prev => ({ ...prev, [idx]: "done" }));
+      setQueue(prev => {
+        const opened = new Set(prev.opened);
+        opened.add(idx);
+        return { ...prev, opened };
+      });
+      logEmailSend({
+        repEmail: userProfile?.email || repSettings?.email || "",
+        repName: userProfile?.full_name || senderName,
+        merchantName: t.merchant?.merchantName || "",
+        merchantId: t.merchant?.businessId || t.merchant?.id || "",
+        toEmail: t.to,
+        ccEmails: t.cc || "",
+        subject: t.draft.subject,
+        promoTypes: selectedPromos,
+        deliveryMethod: "gmail_tab",
+        emailFormat,
+      });
+      if (isRep && !isBlankSend) refreshQuota();
+    }, 1500);
   };
 
   const closeQueue = () => {
@@ -790,21 +825,25 @@ export default function DeliveryPanel({
                       {clipStatus[idx] === "error" && (
                         <p className="text-[10px] text-amber-600 font-bold mt-0.5">⚠ Clipboard unavailable | paste manually</p>
                       )}
-                      {manualCopyStatus[idx] === "done" && (
-                        <p className="text-[10px] text-blue-600 font-bold mt-0.5">✓ Copied | paste into your email client</p>
+                      {draftStatus[idx] === "done" && (
+                        <p className="text-[10px] text-blue-600 font-bold mt-0.5">✓ Draft created in Gmail</p>
                       )}
                     </div>
-                    {/* Copy — no compose window */}
+                    {/* Draft - one by one */}
                     <button
-                      onClick={() => copyManual(idx)}
-                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${manualCopyStatus[idx] === "done"
-                          ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+                      onClick={() => createOneGasDraft(idx)}
+                      disabled={draftStatus[idx] === "drafting" || draftStatus[idx] === "done"}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${draftStatus[idx] === "done"
+                          ? "bg-blue-50 text-blue-700 border-blue-200"
                           : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
                         }`}
+                      title="Create Gmail Draft"
                     >
-                      {manualCopyStatus[idx] === "done"
-                        ? <><Check className="w-3.5 h-3.5" /> Copied!</>
-                        : <><Clipboard className="w-3.5 h-3.5" /> Copy</>}
+                      {draftStatus[idx] === "drafting"
+                        ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Drafting…</>
+                        : draftStatus[idx] === "done"
+                        ? <><Check className="w-3.5 h-3.5" /> Drafted!</>
+                        : <><FileText className="w-3.5 h-3.5" /> Draft</>}
                     </button>
                     {/* Open in Gmail */}
                     <button
