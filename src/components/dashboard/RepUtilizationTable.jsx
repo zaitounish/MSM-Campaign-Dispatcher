@@ -91,7 +91,7 @@ export default function RepUtilizationTable({ repMetrics, rawSessions, onlineRep
       return 0;
     });
     return rows;
-  }, [repsOnly, search, sortKey, sortDir]);
+  }, [repsToDisplay, search, sortKey, sortDir]);
 
   const handleExportSummary = () => {
     const rows = displayed.map(r => ({
