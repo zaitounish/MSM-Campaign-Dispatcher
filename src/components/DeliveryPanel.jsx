@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import * as XLSX from "xlsx";
 import { logEmailSend, getRepDailyCount, getRepDailyLimitOverride, submitLimitApprovalRequest } from "../lib/supabase";
+import { trackFormSubmit } from "../lib/analytics";
 import {
   DownloadCloud, CheckCircle2, Layers, FileText,
   Loader2, AlertTriangle, Mail, ExternalLink, ChevronDown,
@@ -68,7 +69,7 @@ function doGet(e) {
  *   - emails          : raw JSON string (fallback)
  *
  * It ONLY creates drafts; it never sends mail directly.
- * The rep must open Gmail Drafts and click Send manually —
+ * The rep must open Gmail Drafts and click Send manually  
  * this ensures Salesforce logs the email as manual ([outreach] [Email] manual [out]).
  */
 function doPost(e) {
@@ -144,13 +145,13 @@ function doPost(e) {
 //   Logger.log("Finished! Total emails sent this run: " + sentCount);
 // }`;
 
-// Fallback only — real limit comes from reps_whitelist.daily_email_limit
+// Fallback only   real limit comes from reps_whitelist.daily_email_limit
 const DEFAULT_DAILY_LIMIT = 45;
 
 export default function DeliveryPanel({
   merchants, emailDrafts, repSettings, dispatchMode, setDispatchMode,
   emailFormat = "html", setEmailFormat,
-  userProfile, selectedPromos = [],
+  userProfile, selectedPromos = [], sessionId = null,
 }) {
   // Base daily limit: from backend (reps_whitelist.daily_email_limit), fallback to 45
   const baseLimit = userProfile?.daily_email_limit ?? DEFAULT_DAILY_LIMIT;
@@ -196,7 +197,7 @@ export default function DeliveryPanel({
     setApprovalRequesting(true);
     const repName = userProfile?.full_name ||
       `${repSettings?.firstName || ""} ${repSettings?.lastName || ""}`.trim() || repEmail;
-    // manager_id comes from the whitelist profile — we expose it via userProfile if available
+    // manager_id comes from the whitelist profile   we expose it via userProfile if available
     const managerId = userProfile?.manager_id || null;
     const ok = await submitLimitApprovalRequest({ repEmail, repName, managerId });
     setApprovalRequesting(false);
@@ -300,6 +301,13 @@ export default function DeliveryPanel({
       deliveryMethod: "gmail_tab",
       emailFormat,
     });
+    // Fire analytics event (fire-and-forget)
+    trackFormSubmit(sessionId, userProfile?.email || repSettings?.email || "", "delivery_panel", {
+      deliveryMethod: "gmail_tab",
+      promoTypes: selectedPromos,
+      merchantCount: 1,
+      emailFormat,
+    });
     // Refresh quota after each send (non-blocking)
     if (isRep && !isBlankSend) refreshQuota();
   };
@@ -310,7 +318,7 @@ export default function DeliveryPanel({
       setSendStatus({ type: "error", msg: "No GAS URL configured. Please set up Gmail Drafts in settings." });
       return;
     }
-    
+
     setDraftStatus(prev => ({ ...prev, [idx]: "drafting" }));
 
     const t = queue.items[idx];
@@ -470,7 +478,7 @@ export default function DeliveryPanel({
       setIsSending(false);
       setSendStatus({
         type: "success",
-        msg: `${payloads.length} draft${payloads.length > 1 ? "s" : ""} created in Gmail. Open your Drafts folder, then send each one manually — this ensures Salesforce logs them as manual.`,
+        msg: `${payloads.length} draft${payloads.length > 1 ? "s" : ""} created in Gmail. Open your Drafts folder, then send each one manually   this ensures Salesforce logs them as manual.`,
         draftsUrl: "https://mail.google.com/mail/u/0/#drafts",
       });
       // Log each draft creation event
@@ -561,10 +569,10 @@ export default function DeliveryPanel({
         {/* ── Daily Quota Bar (reps only, skip for blank sends) ──────────────── */}
         {!isRep ? null : isBlankSend ? (
           <div className="rounded-2xl border px-5 py-3 bg-violet-50 border-violet-200 flex items-center justify-between">
-             <div className="flex items-center gap-2">
-               <span className="text-sm font-bold text-violet-700">Blank Email Selected</span>
-             </div>
-             <p className="text-xs text-violet-600 font-semibold">These emails do not count toward your daily limit.</p>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-violet-700">Blank Email Selected</span>
+            </div>
+            <p className="text-xs text-violet-600 font-semibold">These emails do not count toward your daily limit.</p>
           </div>
         ) : (() => {
           const pct = Math.min((dailySentCount / effectiveLimit) * 100, 100);
@@ -573,13 +581,12 @@ export default function DeliveryPanel({
           const wouldExceed = isRep && !isBlankSend && (dailySentCount + totalCount) > effectiveLimit;
 
           return (
-            <div className={`rounded-2xl border px-5 py-4 space-y-3 ${
-              isAtLimit
+            <div className={`rounded-2xl border px-5 py-4 space-y-3 ${isAtLimit
                 ? "bg-red-50 border-red-200"
                 : wouldExceed
                   ? "bg-amber-50 border-amber-200"
                   : "bg-slate-50 border-slate-200"
-            }`}>
+              }`}>
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <TrendingUp className={`w-4 h-4 ${isAtLimit ? "text-red-500" : "text-slate-500"}`} />
@@ -592,9 +599,8 @@ export default function DeliveryPanel({
                     </span>
                   )}
                 </div>
-                <span className={`text-sm font-bold tabular-nums ${
-                  isAtLimit ? "text-red-700" : wouldExceed ? "text-amber-700" : "text-slate-700"
-                }`}>
+                <span className={`text-sm font-bold tabular-nums ${isAtLimit ? "text-red-700" : wouldExceed ? "text-amber-700" : "text-slate-700"
+                  }`}>
                   {quotaLoading ? "…" : `${dailySentCount} / ${effectiveLimit}`}
                 </span>
               </div>
@@ -602,15 +608,14 @@ export default function DeliveryPanel({
               {/* Progress bar */}
               <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all duration-500 ${
-                    isAtLimit ? "bg-red-500" : pct >= 80 ? "bg-amber-500" : "bg-dd-red"
-                  }`}
+                  className={`h-full rounded-full transition-all duration-500 ${isAtLimit ? "bg-red-500" : pct >= 80 ? "bg-amber-500" : "bg-dd-red"
+                    }`}
                   style={{ width: `${pct}%` }}
                 />
               </div>
 
               {isAtLimit ? (
-                // Limit reached — show approval request
+                // Limit reached   show approval request
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-red-700">
                     ⛔ You've reached your {effectiveLimit}-email daily limit. Ask your manager to grant you additional sends.
@@ -706,7 +711,7 @@ export default function DeliveryPanel({
                   </button>
                 )}
 
-                {/* Open One by One — all roles */}
+                {/* Open One by One   all roles */}
                 <button onClick={handleOpenGmailQueue}
                   className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-dd-red hover:bg-[#ff3019] text-white transition-all shadow-md text-sm">
                   <Mail className="w-4 h-4" /> Open One by One
@@ -829,28 +834,30 @@ export default function DeliveryPanel({
                       )}
                     </div>
                     {/* Draft - one by one */}
-                    <button
-                      onClick={() => createOneGasDraft(idx)}
-                      disabled={draftStatus[idx] === "drafting" || draftStatus[idx] === "done"}
-                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${draftStatus[idx] === "done"
+                    {!isRep && (
+                      <button
+                        onClick={() => createOneGasDraft(idx)}
+                        disabled={draftStatus[idx] === "drafting" || draftStatus[idx] === "done"}
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${draftStatus[idx] === "done"
                           ? "bg-blue-50 text-blue-700 border-blue-200"
                           : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
-                        }`}
-                      title="Create Gmail Draft"
-                    >
-                      {draftStatus[idx] === "drafting"
-                        ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Drafting…</>
-                        : draftStatus[idx] === "done"
-                        ? <><Check className="w-3.5 h-3.5" /> Drafted!</>
-                        : <><FileText className="w-3.5 h-3.5" /> Draft</>}
-                    </button>
+                          }`}
+                        title="Create Gmail Draft"
+                      >
+                        {draftStatus[idx] === "drafting"
+                          ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Drafting…</>
+                          : draftStatus[idx] === "done"
+                            ? <><Check className="w-3.5 h-3.5" /> Drafted!</>
+                            : <><FileText className="w-3.5 h-3.5" /> Draft</>}
+                      </button>
+                    )}
                     {/* Open in Gmail */}
                     <button
                       onClick={() => openOneInGmail(idx)}
                       disabled={clipStatus[idx] === "copying"}
                       className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap disabled:opacity-60 ${isOpened
-                          ? "bg-green-100 text-green-700 hover:bg-green-200"
-                          : "bg-dd-red text-white hover:bg-[#ff3019] shadow-sm"
+                        ? "bg-green-100 text-green-700 hover:bg-green-200"
+                        : "bg-dd-red text-white hover:bg-[#ff3019] shadow-sm"
                         }`}
                     >
                       <ExternalLink className="w-3.5 h-3.5" />

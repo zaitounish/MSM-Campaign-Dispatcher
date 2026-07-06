@@ -1,4 +1,4 @@
-import { StrictMode, useState, useEffect, useMemo } from 'react'
+import { StrictMode, useState, useEffect, useMemo, useRef } from 'react'
 import { Analytics } from "@vercel/analytics/react"
 import { createRoot } from 'react-dom/client'
 import { RouterProvider, createHashRouter } from 'react-router-dom'
@@ -6,6 +6,7 @@ import './index.css'
 import App from './App.jsx'
 import OTPLoginScreen from './components/OTPLoginScreen.jsx'
 import { supabase, getWhitelistProfile } from './lib/supabase.js'
+import { startRepSession, endRepSession } from './lib/analytics.js'
 
 /**
  * Root | authentication gate + router provider
@@ -18,6 +19,8 @@ import { supabase, getWhitelistProfile } from './lib/supabase.js'
 function Root() {
   const [authState, setAuthState] = useState("loading");
   const [userProfile, setUserProfile] = useState(null);
+  // Persists the analytics session UUID across renders without causing re-renders
+  const sessionIdRef = useRef(null);
 
   // ── On mount: check for existing valid session ──────────────────────────
   useEffect(() => {
@@ -29,6 +32,8 @@ function Root() {
         if (profile && profile.is_active) {
           setUserProfile(profile);
           setAuthState("authenticated");
+          // Start analytics session (fire-and-forget)
+          sessionIdRef.current = await startRepSession(session.user.email);
           return;
         }
         // Session exists but user is not whitelisted or inactive | sign out silently
@@ -42,20 +47,41 @@ function Root() {
     // Listen for auth state changes (session expiry, sign-out)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event) => {
       if (event === "SIGNED_OUT") {
+        // Close analytics session on explicit sign-out
+        if (sessionIdRef.current) {
+          endRepSession(sessionIdRef.current);
+          sessionIdRef.current = null;
+        }
         setUserProfile(null);
         setAuthState("unauthenticated");
       }
     });
 
-    return () => subscription.unsubscribe();
+    // Also close the session if the user closes the browser tab
+    const handleUnload = () => {
+      if (sessionIdRef.current) endRepSession(sessionIdRef.current);
+    };
+    window.addEventListener("beforeunload", handleUnload);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener("beforeunload", handleUnload);
+    };
   }, []);
 
-  const handleAuthenticated = (profile) => {
+  const handleAuthenticated = async (profile) => {
     setUserProfile(profile);
     setAuthState("authenticated");
+    // Start analytics session after OTP login (fire-and-forget)
+    sessionIdRef.current = await startRepSession(profile.email);
   };
 
   const handleSignOut = async () => {
+    // Close analytics session before signing out
+    if (sessionIdRef.current) {
+      await endRepSession(sessionIdRef.current);
+      sessionIdRef.current = null;
+    }
     await supabase.auth.signOut();
     setUserProfile(null);
     setAuthState("unauthenticated");
@@ -68,7 +94,7 @@ function Root() {
   // Phase logic lives entirely in App via useLocation() | nothing changes there.
   const router = useMemo(() => {
     if (!userProfile) return null;
-    const appEl = <App userProfile={userProfile} onSignOut={handleSignOut} />;
+    const appEl = <App userProfile={userProfile} onSignOut={handleSignOut} sessionId={sessionIdRef.current} />;
     return createHashRouter([
       { path: "/*", element: appEl },
     ]);

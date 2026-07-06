@@ -22,7 +22,7 @@ export const PROMO_CATALOG = [
   }
 ];
 
-// The blank campaign is separate — mutually exclusive with all others
+// The blank campaign is separate   mutually exclusive with all others
 export const BLANK_PROMO = {
   id: "blank",
   name: "Blank Email",
@@ -35,7 +35,7 @@ export default function PromoSelector({ selectedPromos, setSelectedPromos }) {
 
   const togglePromo = (id) => {
     if (id === "blank") {
-      // Blank is mutually exclusive — clear everything else and toggle blank
+      // Blank is mutually exclusive   clear everything else and toggle blank
       setSelectedPromos(prev => prev.includes("blank") ? [] : ["blank"]);
       return;
     }
@@ -78,13 +78,12 @@ export default function PromoSelector({ selectedPromos, setSelectedPromos }) {
                   key={promo.id}
                   onClick={() => togglePromo(promo.id)}
                   disabled={isDisabled}
-                  className={`relative text-left p-5 rounded-2xl border transition-all duration-200 bg-white shadow-sm flex flex-col gap-3 outline-none ${
-                    isDisabled
+                  className={`relative text-left p-5 rounded-2xl border transition-all duration-200 bg-white shadow-sm flex flex-col gap-3 outline-none ${isDisabled
                       ? "border-slate-200 opacity-40 cursor-not-allowed"
                       : isSelected
                         ? "border-dd-red bg-red-50/10 ring-1 ring-dd-red shadow-md"
                         : "border-slate-200 hover:border-dd-red hover:shadow-md"
-                  }`}
+                    }`}
                 >
                   {isSelected && (
                     <div className="absolute top-4 right-4 text-dd-red bg-white rounded-full">
@@ -127,13 +126,12 @@ export default function PromoSelector({ selectedPromos, setSelectedPromos }) {
                 key={promo.id}
                 onClick={() => togglePromo(promo.id)}
                 disabled={isDisabled}
-                className={`relative text-left p-5 rounded-2xl border transition-all duration-200 bg-white shadow-sm flex flex-col gap-3 outline-none ${
-                  isDisabled
+                className={`relative text-left p-5 rounded-2xl border transition-all duration-200 bg-white shadow-sm flex flex-col gap-3 outline-none ${isDisabled
                     ? "border-slate-200 opacity-40 cursor-not-allowed"
                     : isSelected
                       ? "border-violet-400 bg-violet-50/20 ring-1 ring-violet-400 shadow-md"
                       : "border-slate-200 hover:border-violet-400 hover:shadow-md"
-                }`}
+                  }`}
               >
                 {isSelected && (
                   <div className="absolute top-4 right-4 text-violet-500 bg-white rounded-full">

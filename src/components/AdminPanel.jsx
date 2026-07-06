@@ -2,9 +2,10 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   X, UserPlus, ShieldCheck, Users, User, Trash2,
   RefreshCw, Check, AlertCircle, Search, ToggleLeft,
-  ToggleRight, Lock, Mail, Send, Bell, CheckCircle2, XCircle,
+  ToggleRight, Lock, Mail, Send, Bell, CheckCircle2, XCircle, BarChart2,
 } from "lucide-react";
 import { supabase, fetchPendingApprovals, resolveApprovalRequest } from "../lib/supabase";
+import UltimateDashboard from "./dashboard/UltimateDashboard";
 
 // ── Role configuration ──────────────────────────────────────────────────────
 const ROLE_CONFIG = {
@@ -21,7 +22,7 @@ const ROLE_CONFIG = {
 //   if (actorRole === "manager") return ["rep"];
 //   return [];
 // };
-const addableRoles = (_actorRole) => []; // temporarily disabled — no role can add users
+const addableRoles = (_actorRole) => []; // temporarily disabled   no role can add users
 
 // Can actor delete/suspend target?
 const canDelete = (actorRole, targetRole) => {
@@ -120,7 +121,7 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
   const [saving, setSaving] = useState(null);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [activeTab, setActiveTab] = useState("users"); // 'users' | 'approvals'
+  const [activeTab, setActiveTab] = useState("users"); // 'users' | 'approvals' | 'utilization'
 
   // Pending limit approval requests (managers / ultimates)
   const [pendingApprovals, setPendingApprovals] = useState([]);
@@ -227,7 +228,7 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
     setSaving(user.id);
 
     // Look up the manager's human-readable name to store in the DB for easy viewing
-    const managerName = managerId 
+    const managerName = managerId
       ? (users.find(m => m.id === managerId)?.full_name || users.find(m => m.id === managerId)?.email || "Unknown")
       : null;
 
@@ -235,7 +236,7 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
       .from("reps_whitelist")
       .update({ manager_id: managerId || null, manager_name: managerName })
       .eq("id", user.id);
-      
+
     if (!err) setUsers(prev => prev.map(u => u.id === user.id ? { ...u, manager_id: managerId || null, manager_name: managerName } : u));
     setSaving(null);
   };
@@ -374,7 +375,7 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
   const canAddUsers = addableRoles(actorRole).length > 0;
 
   return (
-    <div 
+    <div
       className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-start justify-center p-4 pt-16 overflow-y-auto"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
@@ -407,17 +408,15 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
           <div className="flex items-center bg-slate-100 p-1 rounded-xl gap-1 w-fit">
             <button
               onClick={() => setActiveTab("users")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                activeTab === "users" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
-              }`}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === "users" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
             >
               <Users className="w-4 h-4" /> Users
             </button>
             <button
               onClick={() => { setActiveTab("approvals"); fetchApprovals(); }}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                activeTab === "approvals" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
-              }`}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === "approvals" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
             >
               <Bell className="w-4 h-4" />
               Limit Approvals
@@ -427,51 +426,62 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                 </span>
               )}
             </button>
+            {/* Utilization tab — ultimates and managers */}
+            {(actorRole === "ultimate" || actorRole === "manager") && (
+              <button
+                onClick={() => setActiveTab("utilization")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === "utilization" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                  }`}
+              >
+                <BarChart2 className="w-4 h-4" />
+                Utilization
+              </button>
+            )}
           </div>
 
           {/* ── Users Tab ── */}
           {activeTab === "users" && (
             <>
 
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-4">
-            {["rep", "manager", "ultimate"].map(role => {
-              const cfg = ROLE_CONFIG[role];
-              const Icon = cfg.icon;
-              return (
-                <div key={role} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
-                  <div className={`inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full border mb-2 ${cfg.color}`}>
-                    <Icon className="w-3 h-3" /> {cfg.label}
-                  </div>
-                  <p className="text-2xl font-bold text-slate-800">{stats[role]}</p>
-                  <p className="text-xs text-slate-400">active</p>
-                </div>
-              );
-            })}
-          </div>
+              {/* Stats */}
+              <div className="grid grid-cols-3 gap-4">
+                {["rep", "manager", "ultimate"].map(role => {
+                  const cfg = ROLE_CONFIG[role];
+                  const Icon = cfg.icon;
+                  return (
+                    <div key={role} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
+                      <div className={`inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full border mb-2 ${cfg.color}`}>
+                        <Icon className="w-3 h-3" /> {cfg.label}
+                      </div>
+                      <p className="text-2xl font-bold text-slate-800">{stats[role]}</p>
+                      <p className="text-xs text-slate-400">active</p>
+                    </div>
+                  );
+                })}
+              </div>
 
-          {/* Your role notice */}
-          {/* TODO: Re-enable manager notice when add-user feature is brought back */}
-          {/* {actorRole === "manager" && (
+              {/* Your role notice */}
+              {/* TODO: Re-enable manager notice when add-user feature is brought back */}
+              {/* {actorRole === "manager" && (
             <div className="flex items-center gap-2 text-xs bg-violet-50 border border-violet-200 text-violet-700 rounded-xl px-4 py-3">
               <Users className="w-3.5 h-3.5 shrink-0" />
               As a Manager, you can <strong>add Reps</strong> only. Suspending, deleting, or changing roles requires an Ultimate admin.
             </div>
           )} */}
 
-          {/* Toolbar */}
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search by email, name, or rep ID…"
-                className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all"
-              />
-            </div>
-            {/* TODO: Re-enable Add User button when feature is brought back */}
-            {/* {canAddUsers && (
+              {/* Toolbar */}
+              <div className="flex items-center gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Search by email, name, or rep ID…"
+                    className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all"
+                  />
+                </div>
+                {/* TODO: Re-enable Add User button when feature is brought back */}
+                {/* {canAddUsers && (
               <button
                 onClick={() => setShowAdd(v => !v)}
                 className="flex items-center gap-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm rounded-xl transition-all shadow-md shadow-amber-200"
@@ -480,18 +490,18 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                 {showAdd ? "Cancel" : "Add User"}
               </button>
             )} */}
-          </div>
+              </div>
 
-          {/* TODO: Re-enable success banner and add-user form when feature is brought back */}
-          {/* Success banner */}
-          {/* {addSuccess && (
+              {/* TODO: Re-enable success banner and add-user form when feature is brought back */}
+              {/* Success banner */}
+              {/* {addSuccess && (
             <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
               <Check className="w-4 h-4 shrink-0" /> {addSuccess}
             </div>
           )} */}
 
-          {/* Add user form */}
-          {/* {showAdd && canAddUsers && (
+              {/* Add user form */}
+              {/* {showAdd && canAddUsers && (
             <form onSubmit={handleAddUser}
               className="bg-amber-50 border border-amber-200 rounded-2xl p-5 space-y-4">
               <h3 className="font-bold text-amber-900 text-sm">New Whitelist Entry</h3>
@@ -587,195 +597,194 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
             </form>
           )} */}
 
-          {error && (
-            <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-              <AlertCircle className="w-4 h-4 shrink-0" /> {error}
-            </div>
-          )}
+              {error && (
+                <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                  <AlertCircle className="w-4 h-4 shrink-0" /> {error}
+                </div>
+              )}
 
-          {/* User table */}
-          <div className="border border-slate-200 rounded-2xl overflow-hidden">
-            {loading ? (
-              <div className="flex items-center justify-center py-12 text-slate-400">
-                <RefreshCw className="w-5 h-5 animate-spin mr-3" /> Loading users…
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Users className="w-10 h-10 text-slate-300 mb-2" />
-                <p className="text-slate-500 font-semibold">No users found</p>
-              </div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 border-b border-slate-200">
-                  <tr>
-                    {["User", "Role", "Rep ID", actorRole !== "rep" && "Manager", actorRole !== "rep" && "Today's Limit", "Status", "Added", "Actions"].filter(Boolean).map(h => (
-                      <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleUsers.map((user, i) => {
-                    const isUltimate = user.role === "ultimate";
-                    const isBusy = saving === user.id;
-                    const deletable = canDelete(actorRole, user.role);
-                    const roleChange = canChangeRole(actorRole, user.role);
+              {/* User table */}
+              <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                {loading ? (
+                  <div className="flex items-center justify-center py-12 text-slate-400">
+                    <RefreshCw className="w-5 h-5 animate-spin mr-3" /> Loading users…
+                  </div>
+                ) : filtered.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <Users className="w-10 h-10 text-slate-300 mb-2" />
+                    <p className="text-slate-500 font-semibold">No users found</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                      <tr>
+                        {["User", "Role", "Rep ID", actorRole !== "rep" && "Manager", actorRole !== "rep" && "Today's Limit", "Status", "Added", "Actions"].filter(Boolean).map(h => (
+                          <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleUsers.map((user, i) => {
+                        const isUltimate = user.role === "ultimate";
+                        const isBusy = saving === user.id;
+                        const deletable = canDelete(actorRole, user.role);
+                        const roleChange = canChangeRole(actorRole, user.role);
 
-                    return (
-                      <tr key={user.id}
-                        className={`border-b border-slate-100 transition-colors ${isBusy ? "opacity-50" : "hover:bg-slate-50"} ${i % 2 === 0 ? "" : "bg-slate-50/30"}`}>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            {isUltimate && <Lock className="w-3 h-3 text-amber-500 shrink-0" title="Ultimate | protected" />}
-                            <div>
-                              <p className="font-bold text-slate-800 text-xs">{user.full_name || "|"}</p>
-                              <p className="text-[10px] text-slate-500 font-mono">{user.email}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          {roleChange ? (
-                            <select
-                              value={user.role || "rep"}
-                              onChange={e => changeRole(user, e.target.value)}
-                              disabled={isBusy}
-                              className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white appearance-none cursor-pointer outline-none focus:border-amber-400"
-                            >
-                              {assignableRoles(actorRole).map(r => (
-                                <option key={r} value={r}>{ROLE_CONFIG[r].label}</option>
-                              ))}
-                            </select>
-                          ) : (
-                            <RoleBadge role={user.role} />
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-xs font-mono text-slate-500">{user.rep_id || "."}</span>
-                        </td>
-                        {/* Manager column Ultimate: editable dropdown for reassignment; Manager: read-only badge */}
-                        {actorRole !== "rep" && (
-                          <td className="px-4 py-3">
-                            {actorRole === "ultimate" && user.role === "rep" ? (
-                              // Ultimate sees a dropdown to assign/reassign this rep to any manager
-                              <select
-                                value={user.manager_id || ""}
-                                onChange={e => changeManager(user, e.target.value)}
-                                disabled={isBusy}
-                                className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white appearance-none cursor-pointer outline-none focus:border-amber-400 max-w-[140px] truncate"
-                                title="Assign to manager"
-                              >
-                                <option value="">. Unassigned .</option>
-                                {managerUsers.map(m => (
-                                  <option key={m.id} value={m.id}>{m.full_name || m.email}</option>
-                                ))}
-                              </select>
-                            ) : (
-                              // Manager sees a read-only badge (or dash if unassigned)
-                              user.manager_id && managerLookup[user.manager_id]
-                                ? <span className="text-xs text-violet-700 bg-violet-50 border border-violet-200 px-2 py-0.5 rounded-full font-semibold">{managerLookup[user.manager_id]}</span>
-                                : <span className="text-[10px] text-slate-300">.</span>
-                            )}
-                          </td>
-                        )}
-                        {/* Daily limit override column — only visible to managers/ultimates */}
-                        {actorRole !== "rep" && (() => {
-                          const todayStr = new Date().toISOString().slice(0, 10);
-                          const hasOverride = user.role === "rep" && user.daily_limit_override && user.daily_limit_override_date === todayStr;
-                          const displayLimit = hasOverride ? user.daily_limit_override : 45;
-                          return (
+                        return (
+                          <tr key={user.id}
+                            className={`border-b border-slate-100 transition-colors ${isBusy ? "opacity-50" : "hover:bg-slate-50"} ${i % 2 === 0 ? "" : "bg-slate-50/30"}`}>
                             <td className="px-4 py-3">
-                              {user.role === "rep" ? (
-                                <div className="space-y-0.5">
-                                  <div className="flex items-center gap-1.5">
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      max="999"
-                                      defaultValue={displayLimit}
-                                      key={`${user.id}-${displayLimit}`}
-                                      disabled={isBusy}
-                                      onBlur={e => {
-                                        const val = parseInt(e.target.value, 10);
-                                        if (!isNaN(val) && val !== displayLimit) setDailyOverride(user, val);
-                                      }}
-                                      onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
-                                      className={`w-16 text-xs font-bold text-center border rounded-lg px-2 py-1 outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 transition-all ${
-                                        hasOverride
-                                          ? "border-violet-300 bg-violet-50 text-violet-700"
-                                          : "border-slate-200 bg-white text-slate-500"
-                                      }`}
-                                      title="Daily email limit for today. Press Enter or click away to save."
-                                    />
-                                    {hasOverride && (
-                                      <button
-                                        onClick={() => clearDailyOverride(user)}
-                                        disabled={isBusy}
-                                        title="Reset to default (45)"
-                                        className="text-slate-300 hover:text-red-500 transition-colors text-sm font-bold leading-none"
-                                      >
-                                        ×
-                                      </button>
-                                    )}
-                                  </div>
-                                  {hasOverride && (
-                                    <p className="text-[9px] text-violet-500 font-bold">override active</p>
-                                  )}
+                              <div className="flex items-center gap-2">
+                                {isUltimate && <Lock className="w-3 h-3 text-amber-500 shrink-0" title="Ultimate | protected" />}
+                                <div>
+                                  <p className="font-bold text-slate-800 text-xs">{user.full_name || "|"}</p>
+                                  <p className="text-[10px] text-slate-500 font-mono">{user.email}</p>
                                 </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              {roleChange ? (
+                                <select
+                                  value={user.role || "rep"}
+                                  onChange={e => changeRole(user, e.target.value)}
+                                  disabled={isBusy}
+                                  className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white appearance-none cursor-pointer outline-none focus:border-amber-400"
+                                >
+                                  {assignableRoles(actorRole).map(r => (
+                                    <option key={r} value={r}>{ROLE_CONFIG[r].label}</option>
+                                  ))}
+                                </select>
                               ) : (
-                                <span className="text-[10px] text-slate-300">—</span>
+                                <RoleBadge role={user.role} />
                               )}
                             </td>
-                          );
-                        })()}
-                        <td className="px-4 py-3">
-                          {deletable ? (
-                            <button
-                              onClick={() => toggleActive(user)}
-                              disabled={isBusy}
-                              className="flex items-center gap-1.5 text-xs font-bold transition-colors"
-                            >
-                              {user.is_active
-                                ? <><ToggleRight className="w-5 h-5 text-green-500" /><span className="text-green-700">Active</span></>
-                                : <><ToggleLeft className="w-5 h-5 text-slate-400" /><span className="text-slate-500">Inactive</span></>
-                              }
-                            </button>
-                          ) : (
-                            <span className={`text-xs font-bold ${user.is_active ? "text-green-700" : "text-slate-400"}`}>
-                              {user.is_active ? "Active" : "Inactive"}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
-                          {user.created_at
-                            ? new Date(user.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-                            : "|"}
-                        </td>
-                        <td className="px-4 py-3">
-                          {isUltimate ? (
-                            <span className="text-[10px] text-amber-600 flex items-center gap-1">
-                              <Lock className="w-3 h-3" /> Protected
-                            </span>
-                          ) : deletable ? (
-                            <button
-                              onClick={() => deleteUser(user)}
-                              disabled={isBusy}
-                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40"
-                              title="Remove from whitelist"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          ) : (
-                            <span className="text-[10px] text-slate-400">|</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
+                            <td className="px-4 py-3">
+                              <span className="text-xs font-mono text-slate-500">{user.rep_id || "."}</span>
+                            </td>
+                            {/* Manager column Ultimate: editable dropdown for reassignment; Manager: read-only badge */}
+                            {actorRole !== "rep" && (
+                              <td className="px-4 py-3">
+                                {actorRole === "ultimate" && user.role === "rep" ? (
+                                  // Ultimate sees a dropdown to assign/reassign this rep to any manager
+                                  <select
+                                    value={user.manager_id || ""}
+                                    onChange={e => changeManager(user, e.target.value)}
+                                    disabled={isBusy}
+                                    className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white appearance-none cursor-pointer outline-none focus:border-amber-400 max-w-[140px] truncate"
+                                    title="Assign to manager"
+                                  >
+                                    <option value="">. Unassigned .</option>
+                                    {managerUsers.map(m => (
+                                      <option key={m.id} value={m.id}>{m.full_name || m.email}</option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  // Manager sees a read-only badge (or dash if unassigned)
+                                  user.manager_id && managerLookup[user.manager_id]
+                                    ? <span className="text-xs text-violet-700 bg-violet-50 border border-violet-200 px-2 py-0.5 rounded-full font-semibold">{managerLookup[user.manager_id]}</span>
+                                    : <span className="text-[10px] text-slate-300">.</span>
+                                )}
+                              </td>
+                            )}
+                            {/* Daily limit override column   only visible to managers/ultimates */}
+                            {actorRole !== "rep" && (() => {
+                              const todayStr = new Date().toISOString().slice(0, 10);
+                              const hasOverride = user.role === "rep" && user.daily_limit_override && user.daily_limit_override_date === todayStr;
+                              const displayLimit = hasOverride ? user.daily_limit_override : 45;
+                              return (
+                                <td className="px-4 py-3">
+                                  {user.role === "rep" ? (
+                                    <div className="space-y-0.5">
+                                      <div className="flex items-center gap-1.5">
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          max="999"
+                                          defaultValue={displayLimit}
+                                          key={`${user.id}-${displayLimit}`}
+                                          disabled={isBusy}
+                                          onBlur={e => {
+                                            const val = parseInt(e.target.value, 10);
+                                            if (!isNaN(val) && val !== displayLimit) setDailyOverride(user, val);
+                                          }}
+                                          onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
+                                          className={`w-16 text-xs font-bold text-center border rounded-lg px-2 py-1 outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 transition-all ${hasOverride
+                                              ? "border-violet-300 bg-violet-50 text-violet-700"
+                                              : "border-slate-200 bg-white text-slate-500"
+                                            }`}
+                                          title="Daily email limit for today. Press Enter or click away to save."
+                                        />
+                                        {hasOverride && (
+                                          <button
+                                            onClick={() => clearDailyOverride(user)}
+                                            disabled={isBusy}
+                                            title="Reset to default (45)"
+                                            className="text-slate-300 hover:text-red-500 transition-colors text-sm font-bold leading-none"
+                                          >
+                                            ×
+                                          </button>
+                                        )}
+                                      </div>
+                                      {hasOverride && (
+                                        <p className="text-[9px] text-violet-500 font-bold">override active</p>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-300"> </span>
+                                  )}
+                                </td>
+                              );
+                            })()}
+                            <td className="px-4 py-3">
+                              {deletable ? (
+                                <button
+                                  onClick={() => toggleActive(user)}
+                                  disabled={isBusy}
+                                  className="flex items-center gap-1.5 text-xs font-bold transition-colors"
+                                >
+                                  {user.is_active
+                                    ? <><ToggleRight className="w-5 h-5 text-green-500" /><span className="text-green-700">Active</span></>
+                                    : <><ToggleLeft className="w-5 h-5 text-slate-400" /><span className="text-slate-500">Inactive</span></>
+                                  }
+                                </button>
+                              ) : (
+                                <span className={`text-xs font-bold ${user.is_active ? "text-green-700" : "text-slate-400"}`}>
+                                  {user.is_active ? "Active" : "Inactive"}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
+                              {user.created_at
+                                ? new Date(user.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                                : "|"}
+                            </td>
+                            <td className="px-4 py-3">
+                              {isUltimate ? (
+                                <span className="text-[10px] text-amber-600 flex items-center gap-1">
+                                  <Lock className="w-3 h-3" /> Protected
+                                </span>
+                              ) : deletable ? (
+                                <button
+                                  onClick={() => deleteUser(user)}
+                                  disabled={isBusy}
+                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40"
+                                  title="Remove from whitelist"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-slate-400">|</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
 
-          </> 
+            </>
           )}
 
           {/* ── Approvals Tab ── */}
@@ -811,7 +820,7 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                     const customLimit = approvalLimits[req.id] ?? 65;
                     const requestedAt = req.requested_at
                       ? new Date(req.requested_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-                      : "—";
+                      : " ";
                     return (
                       <div key={req.id} className={`px-5 py-4 transition-colors ${isBusy ? "opacity-50" : "hover:bg-slate-50"}`}>
                         <div className="flex items-start gap-4">
@@ -881,6 +890,14 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
 
 
         </div>
+
+        {/* ── Utilization Tab ── */}
+        {activeTab === "utilization" && (actorRole === "ultimate" || actorRole === "manager") && (
+          <div className="p-8">
+            <UltimateDashboard userProfile={userProfile} />
+          </div>
+        )}
+
       </div>
     </div>
   );

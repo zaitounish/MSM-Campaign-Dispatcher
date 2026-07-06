@@ -9,13 +9,13 @@ import { sanitizeHtml } from "../lib/sanitize";
 // 8 handles: corners + edge midpoints
 const HANDLE_DEFS = [
   { id: "nw", cursor: "nw-resize", top: -5, left: -5 },
-  { id: "n",  cursor: "n-resize",  top: -5, left: "50%", transform: "translateX(-50%)" },
+  { id: "n", cursor: "n-resize", top: -5, left: "50%", transform: "translateX(-50%)" },
   { id: "ne", cursor: "ne-resize", top: -5, right: -5 },
-  { id: "e",  cursor: "e-resize",  top: "50%", right: -5, transform: "translateY(-50%)" },
+  { id: "e", cursor: "e-resize", top: "50%", right: -5, transform: "translateY(-50%)" },
   { id: "se", cursor: "se-resize", bottom: -5, right: -5 },
-  { id: "s",  cursor: "s-resize",  bottom: -5, left: "50%", transform: "translateX(-50%)" },
+  { id: "s", cursor: "s-resize", bottom: -5, left: "50%", transform: "translateX(-50%)" },
   { id: "sw", cursor: "sw-resize", bottom: -5, left: -5 },
-  { id: "w",  cursor: "w-resize",  top: "50%", left: -5, transform: "translateY(-50%)" },
+  { id: "w", cursor: "w-resize", top: "50%", left: -5, transform: "translateY(-50%)" },
 ];
 
 // ── Image resize overlay ───────────────────────────────────────────────────────
@@ -80,12 +80,12 @@ function ImgResizeOverlay({ imgEl, containerRef, onDeselect }) {
         }
         imgEl.style.width = `${Math.round(newW)}px`;
         imgEl.style.height = `${Math.round(newH)}px`;
-      } 
+      }
       // Horizontal edges (e, w): force height to auto to preserve aspect ratio
       else if (hid === "e" || hid === "w") {
         imgEl.style.width = `${Math.round(newW)}px`;
         imgEl.style.height = "auto";
-      } 
+      }
       // Vertical edges (n, s): force width to auto to preserve aspect ratio
       else if (hid === "n" || hid === "s") {
         imgEl.style.width = "auto";
@@ -262,7 +262,7 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
   };
 
   return (
-    <div 
+    <div
       className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
       onMouseDown={(e) => { if (e.target === e.currentTarget && formData.repId) onClose(); }}
     >
@@ -328,7 +328,7 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
               )}
             </div>
 
-            {/* Signature area — relative container for the resize overlay */}
+            {/* Signature area   relative container for the resize overlay */}
             <div ref={sigContainerRef} className="relative">
               <div
                 ref={signatureRef}
@@ -363,7 +363,7 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
                 </p>
               )}
 
-              {/* Draggable resize overlay — appears over the selected image */}
+              {/* Draggable resize overlay   appears over the selected image */}
               {selImg && sigContainerRef.current && (
                 <ImgResizeOverlay
                   imgEl={selImg}
@@ -374,7 +374,7 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
             </div>
 
             <p className="text-xs text-slate-400 leading-relaxed">
-              Paste from Gmail or Outreach. <strong>Click any image</strong> to show 8 drag handles — pull any dot to resize. Use the alignment buttons above for Left / Center / Right positioning.
+              Paste from Gmail or Outreach. <strong>Click any image</strong> to show 8 drag handles   pull any dot to resize. Use the alignment buttons above for Left / Center / Right positioning.
             </p>
           </div>
 

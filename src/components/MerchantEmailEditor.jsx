@@ -99,19 +99,19 @@ export default function MerchantEmailEditor({
     };
     reader.readAsDataURL(file);
     e.target.value = "";
-  }; 
-  
+  };
+
   const handleImageCropComplete = (croppedDataUrl) => {
     setPendingImageToCrop(null);
     if (!croppedDataUrl || !editorRef.current) return;
-    
+
     editorRef.current.focus();
     const sel = window.getSelection();
     sel.removeAllRanges();
     if (savedImageRange.current) {
       sel.addRange(savedImageRange.current);
     }
-    
+
     if (sel?.rangeCount > 0) {
       const range = sel.getRangeAt(0);
       range.deleteContents();
@@ -556,7 +556,7 @@ Rules:
     }
   };
 
-  // Preview srcDoc — mirrors the email's compiled CSS so spacing matches the editor
+  // Preview srcDoc   mirrors the email's compiled CSS so spacing matches the editor
   const PREVIEW_RESET = `
     body { margin:0; padding:0; }
     p { margin:0 0 8px 0; }
@@ -744,9 +744,8 @@ Rules:
                           document.execCommand("fontName", false, f);
                           setFontFamilyOpen(false);
                         }}
-                        className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 transition-colors ${
-                          fontFamily === f ? "font-bold text-dd-red" : "text-slate-700"
-                        }`}
+                        className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 transition-colors ${fontFamily === f ? "font-bold text-dd-red" : "text-slate-700"
+                          }`}
                         style={{ fontFamily: f }}
                       >
                         {f}
@@ -775,9 +774,8 @@ Rules:
                         key={sz}
                         type="button"
                         onMouseDown={e => { e.preventDefault(); applyFontSize(sz); }}
-                        className={`w-full text-left px-4 py-1.5 text-sm hover:bg-slate-50 transition-colors font-mono ${
-                          fontSize === sz ? "font-bold text-dd-red bg-red-50" : "text-slate-700"
-                        }`}
+                        className={`w-full text-left px-4 py-1.5 text-sm hover:bg-slate-50 transition-colors font-mono ${fontSize === sz ? "font-bold text-dd-red bg-red-50" : "text-slate-700"
+                          }`}
                       >
                         {sz}px
                       </button>
@@ -944,7 +942,7 @@ Rules:
         </div>
 
       </div>
-      
+
       {pendingImageToCrop && (
         <ImageEditorModal
           imageSrc={pendingImageToCrop}

@@ -379,7 +379,7 @@ export const buildPersonalizedOpener = (merchant, selectedPromos = []) => {
   const openers = [
     `I was reviewing your store's performance on DoorDash and wanted to personally reach out about ${promoNote} that I think would be a great fit${locationNote}.`,
     `After looking at recent trends in your area, I put together ${promoNote} that I believe can make a real difference for your business${locationNote}.`,
-    `I've been working with a number of partners in your area and identified ${promoNote} that have been performing really well — I'd love to walk you through them${locationNote}.`,
+    `I've been working with a number of partners in your area and identified ${promoNote} that have been performing really well   I'd love to walk you through them${locationNote}.`,
     `Your store stood out to me while I was reviewing opportunities this week, and I wanted to personally share ${promoNote} I think you'd find valuable${locationNote}.`,
     `I've been doing some analysis on stores similar to yours and put together ${promoNote} that I think could drive meaningful results${locationNote}.`,
     `I noticed some strong growth opportunities for your business on DoorDash and wanted to reach out directly about ${promoNote}${locationNote}.`,

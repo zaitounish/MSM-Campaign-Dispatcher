@@ -154,10 +154,10 @@ export const analyzeBOB = (sheetsData) => {
   //   1. "Business Name" / "Merchant Name"  (merchantNameColIdx)
   //   2. "Store Name"                        (storeNameColIdx)
   //   3. Generic "name" fallback             (merchantNameColIdx, only if neither above found)
-  let storeIdColIdx      = -1;
-  let businessIdColIdx   = -1;
+  let storeIdColIdx = -1;
+  let businessIdColIdx = -1;
   let merchantNameColIdx = -1;
-  let storeNameColIdx    = -1;
+  let storeNameColIdx = -1;
   rawHeaders.forEach((h, idx) => {
     if (!h) return;
     const n = normalizeHeader(h);
@@ -165,7 +165,7 @@ export const analyzeBOB = (sheetsData) => {
     if ((n.includes("business id") || n === "business_id" || n === "biz id" || n === "biz_id") && businessIdColIdx === -1) businessIdColIdx = idx;
     if ((n.includes("business name") || n.includes("merchant name")) && merchantNameColIdx === -1) merchantNameColIdx = idx;
     if (n.includes("store name") && storeNameColIdx === -1) storeNameColIdx = idx;
-    // Generic "name" fallback — only if neither of the above name columns found yet
+    // Generic "name" fallback   only if neither of the above name columns found yet
     if ((n === "name" || (n.endsWith(" name") && merchantNameColIdx === -1 && storeNameColIdx === -1)) && merchantNameColIdx === -1) merchantNameColIdx = idx;
   });
 
@@ -185,7 +185,7 @@ export const analyzeBOB = (sheetsData) => {
   sheetsData.forEach(({ ws, json }) => {
     const localHeaderIdx = findHeaderRowIndex(json);
     if (localHeaderIdx === -1) return;
-    
+
     const rows = json.slice(localHeaderIdx + 1);
     rows.forEach((row, offset) => {
       if (isValidRow(row)) {
@@ -299,21 +299,21 @@ export const analyzeBOB = (sheetsData) => {
       colValues[col.normalized] = v;
     });
 
-    // Merchant identifiers — attached so MerchantTable can join rowAnalytics entries
+    // Merchant identifiers   attached so MerchantTable can join rowAnalytics entries
     // back to deduplicated merchant objects using businessId-first priority (Bug 9).
-    const rowBusinessId   = getVal(businessIdColIdx) || "";
-    const rowStoreId      = getVal(storeIdColIdx) || "";
+    const rowBusinessId = getVal(businessIdColIdx) || "";
+    const rowStoreId = getVal(storeIdColIdx) || "";
     const rowMerchantName = getVal(merchantNameColIdx) || getVal(storeNameColIdx) || "";
 
     return {
       // fillColor,
       colValues,
       // Identifiers used by MerchantTable businessId-first lookup map
-      businessId:   rowBusinessId,
-      storeId:      rowStoreId,
+      businessId: rowBusinessId,
+      storeId: rowStoreId,
       merchantName: rowMerchantName,
       knownOpps: {
-        slOpp:    isTruthy(getVal(oppMap.slOpp)),
+        slOpp: isTruthy(getVal(oppMap.slOpp)),
         promoOpp: isTruthy(getVal(oppMap.promoOpp)),
         loyalOpp: isTruthy(getVal(oppMap.loyalOpp)),
         slCredit: isTruthy(getVal(oppMap.slCredit)),
@@ -323,7 +323,7 @@ export const analyzeBOB = (sheetsData) => {
 
   // ── 3. Compute known opportunity stats ─────────────────────────────────────
   const oppStats = {
-    slOpp:    rowAnalytics.filter(r => r.knownOpps.slOpp).length,
+    slOpp: rowAnalytics.filter(r => r.knownOpps.slOpp).length,
     promoOpp: rowAnalytics.filter(r => r.knownOpps.promoOpp).length,
     loyalOpp: rowAnalytics.filter(r => r.knownOpps.loyalOpp).length,
     slCredit: rowAnalytics.filter(r => r.knownOpps.slCredit).length,
@@ -375,10 +375,10 @@ export const analyzeBOB = (sheetsData) => {
       const ageBuckets = { stale: 0, recent: 0, thisWeek: 0, today: 0, noDate: totalRows - dates.length };
       dates.forEach(d => {
         const diffDays = (now - d.getTime()) / 86400000;
-        if (diffDays < 1)        ageBuckets.today++;
-        else if (diffDays < 7)   ageBuckets.thisWeek++;
-        else if (diffDays < 30)  ageBuckets.recent++;
-        else                     ageBuckets.stale++;
+        if (diffDays < 1) ageBuckets.today++;
+        else if (diffDays < 7) ageBuckets.thisWeek++;
+        else if (diffDays < 30) ageBuckets.recent++;
+        else ageBuckets.stale++;
       });
       return { ...col, widget: "recency", ageBuckets, totalWithDate: dates.length };
     }
@@ -438,8 +438,8 @@ export const sanitizeBOBForAI = (payload, merchants) => {
     idMap[m.merchantName] = `Merchant_${String(i + 1).padStart(3, "0")}`;
   });
 
-  const EMAIL_RE  = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
-  const PHONE_RE  = /(\+?\d[\s\-.]?){7,14}/g;
+  const EMAIL_RE = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+  const PHONE_RE = /(\+?\d[\s\-.]?){7,14}/g;
   const DOLLAR_RE = /\$[\d,]+(\.\d{1,2})?/g;
 
   const stripPII = (str) =>
@@ -450,23 +450,23 @@ export const sanitizeBOBForAI = (payload, merchants) => {
 
   // Sanitize widget distribution labels (status values could contain names)
   const safeWidgets = payload.widgets.map(w => ({
-    column:  stripPII(w.rawHeader),
-    type:    w.type,
-    widget:  w.widget,
-    ...(w.widget === "donut"      && { trueCount: w.trueCount, total: payload.totalRows }),
-    ...(w.widget === "statusBar"  && { distribution: w.distribution.map(d => ({ label: stripPII(d.label), count: d.count, pct: d.pct })) }),
-    ...(w.widget === "histogram"  && { histogram: w.histogram, avg: w.avg, max: w.max, untouched: w.untouched }),
-    ...(w.widget === "recency"    && { ageBuckets: w.ageBuckets, totalWithDate: w.totalWithDate }),
+    column: stripPII(w.rawHeader),
+    type: w.type,
+    widget: w.widget,
+    ...(w.widget === "donut" && { trueCount: w.trueCount, total: payload.totalRows }),
+    ...(w.widget === "statusBar" && { distribution: w.distribution.map(d => ({ label: stripPII(d.label), count: d.count, pct: d.pct })) }),
+    ...(w.widget === "histogram" && { histogram: w.histogram, avg: w.avg, max: w.max, untouched: w.untouched }),
+    ...(w.widget === "recency" && { ageBuckets: w.ageBuckets, totalWithDate: w.totalWithDate }),
   }));
 
   const sanitizedPayload = {
-    totalLeads:  payload.totalRows,
-    oppStats:    payload.oppStats,
+    totalLeads: payload.totalRows,
+    oppStats: payload.oppStats,
     // colorGroups: payload.colorGroups.map(c => ({ hex: c.hex, count: c.count, label: c.label || "Unlabeled" })),
-    widgets:     safeWidgets,
+    widgets: safeWidgets,
     meta: {
       // hasColorData:  payload.hasColorData,
-      hasTouchData:  payload.hasTouchData,
+      hasTouchData: payload.hasTouchData,
       hasStatusData: payload.hasStatusData,
     },
   };

@@ -13,6 +13,7 @@ import SendLogDashboard from "./components/SendLogDashboard";
 import AdminPanel from "./components/AdminPanel";
 import { ArrowRight, Settings } from "lucide-react";
 import { buildAllDeepLinks } from "./lib/deepLinkBuilder";
+import { trackNavigation } from "./lib/analytics";
 import {
   generateInitialBlocks,
   buildEmailSubject,
@@ -53,20 +54,28 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-export default function App({ userProfile, onSignOut }) {
+export default function App({ userProfile, onSignOut, sessionId }) {
   return (
     <ErrorBoundary>
-      <AppInner userProfile={userProfile} onSignOut={onSignOut} />
+      <AppInner userProfile={userProfile} onSignOut={onSignOut} sessionId={sessionId} />
     </ErrorBoundary>
   );
 }
 
-function AppInner({ userProfile, onSignOut }) {
+function AppInner({ userProfile, onSignOut, sessionId }) {
   // ── Phase: plain state | no router dependency ─────────────────────────
   // Using useState instead of useNavigate/useLocation keeps navigation
   // simple and reliable. The router context is still available for any
   // component that needs it, but phase transitions are instant state updates.
   const [phase, setPhase] = useState("upload");
+  const repEmail = userProfile?.email || "";
+
+  // Track every phase transition as a navigation event
+  useEffect(() => {
+    if (sessionId && repEmail) {
+      trackNavigation(sessionId, repEmail, phase);
+    }
+  }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
   const [merchants, setMerchants] = useState([]);
   const [activeMerchantIds, setActiveMerchantIds] = useState(new Set());
   const [analyticsPayload, setAnalyticsPayload] = useState(null);  // BOB Intelligence Suite data
@@ -320,7 +329,7 @@ function AppInner({ userProfile, onSignOut }) {
             <PromoCustomizer selectedPromos={selectedPromos} promoConfigs={promoConfigs} setPromoConfigs={setPromoConfigs} userProfile={userProfile} />
 
             <div className="flex flex-col items-end gap-3 pt-8">
-              {/* Promo config error gate — reps & managers only */}
+              {/* Promo config error gate   reps & managers only */}
               {(() => {
                 const isUltimate = userProfile?.role === "ultimate";
                 const promoErrors = getPromoConfigErrors(selectedPromos, promoConfigs, isUltimate);
@@ -389,6 +398,7 @@ function AppInner({ userProfile, onSignOut }) {
                   setEmailFormat={setEmailFormat}
                   userProfile={userProfile}
                   selectedPromos={selectedPromos}
+                  sessionId={sessionId}
                 />
               </>
             )}

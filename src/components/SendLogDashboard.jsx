@@ -179,7 +179,7 @@ export default function SendLogDashboard({ userProfile, onClose }) {
   const [whitelist, setWhitelist] = useState([]);
   const [whitelistLoaded, setWhitelistLoaded] = useState(false);
   const [repNames, setRepNames] = useState({});
-  // Backend-sourced set of all emails that have ever sent — used for filter dropdowns
+  // Backend-sourced set of all emails that have ever sent   used for filter dropdowns
   const [activeSenders, setActiveSenders] = useState(new Set());
 
   const role = userProfile?.role || "rep";
@@ -227,7 +227,7 @@ export default function SendLogDashboard({ userProfile, onClose }) {
       const myTeamEmails = whitelist
         .filter(u => u.manager_id === userProfile?.id || u.email === userProfile?.email)
         .map(u => u.email);
-      
+
       if (repFilter !== "all") {
         if (myTeamEmails.includes(repFilter)) {
           query = query.eq("rep_email", repFilter);
@@ -326,7 +326,7 @@ export default function SendLogDashboard({ userProfile, onClose }) {
     // Build a set of manager IDs that have at least one REP with a send log
     const activeManagerIds = new Set();
     whitelist.forEach(u => {
-      // Only count reps (not managers) — a manager sending emails doesn't create a "team" entry
+      // Only count reps (not managers)   a manager sending emails doesn't create a "team" entry
       if (u.role === "rep" && u.manager_id && activeRepEmails.has(u.email)) {
         activeManagerIds.add(u.manager_id);
       }
@@ -344,7 +344,7 @@ export default function SendLogDashboard({ userProfile, onClose }) {
       : "Your team's activity";
 
   return (
-    <div 
+    <div
       className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-start justify-center p-4 pt-16 overflow-y-auto"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >

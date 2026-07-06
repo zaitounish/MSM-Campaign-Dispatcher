@@ -2,7 +2,7 @@ import React from "react";
 import { Settings2, DollarSign, Clock, Users, ArrowRight } from "lucide-react";
 import { PROMO_CATALOG } from "./PromoSelector";
 
-// ── Exported validator — used by App.jsx to gate the next-step button ──────────
+// ── Exported validator   used by App.jsx to gate the next-step button ──────────
 // Returns an array of human-readable error strings.
 // Empty array = all configs valid.
 export function getPromoConfigErrors(selectedPromos, promoConfigs, isUltimate) {
@@ -52,7 +52,7 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
     return [first, first + step, first + step * 2];
   };
 
-  // Blank campaign has no configuration panel — it's purely a free-form email
+  // Blank campaign has no configuration panel   it's purely a free-form email
   if (selectedPromos.length === 0 || (selectedPromos.length === 1 && selectedPromos[0] === "blank")) return null;
 
   const updateConfig = (promoId, field, value) => {
@@ -75,7 +75,7 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
     return val;
   };
 
-  // Exclude 'blank' from the config items list — it has no configurable fields
+  // Exclude 'blank' from the config items list   it has no configurable fields
   const selectedItems = PROMO_CATALOG.flatMap(c => c.items).filter(i => selectedPromos.includes(i.id) && i.id !== "blank");
 
   return (
@@ -332,7 +332,7 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
                           );
                         })()}
 
-                        {/* Max discount cap — ultimate only */}
+                        {/* Max discount cap   ultimate only */}
                         {isUltimate && (
                           <div className="max-w-xs">
                             <label className="block text-sm font-semibold text-slate-700 mb-1.5">Max Discount Cap</label>

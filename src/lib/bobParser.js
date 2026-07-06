@@ -45,7 +45,7 @@ export const processSheetData = (json) => {
     if (normalized.includes("store name")) {
       if (colMap.storeName === -1) colMap.storeName = idx;
     }
-    // Generic "name" fallback — only if neither of the above columns found yet
+    // Generic "name" fallback   only if neither of the above columns found yet
     if (normalized === "name" || (normalized.endsWith(" name") && colMap.merchantName === -1 && colMap.storeName === -1)) {
       if (colMap.merchantName === -1) colMap.merchantName = idx;
     }
@@ -113,7 +113,7 @@ export const processSheetData = (json) => {
 
   // ── Two-Pass Deduplication Algorithm ────────────────────────────────────────
   // Key change: dmEmails and storeEmails are now ARRAYS so we collect ALL
-  // email addresses from every sibling row — not just the first non-empty one.
+  // email addresses from every sibling row   not just the first non-empty one.
   const pass1Map = new Map(); // by businessId
   const noBizIdRows = [];
 
@@ -283,7 +283,7 @@ export const processSheetData = (json) => {
       if (isTruthy(p2Merchant.loyalOpp)) existing.loyalOpp = "1";
       if (isTruthy(p2Merchant.slCredit)) existing.slCredit = "1";
     } else {
-      // No overlap — add as a new record and index its emails
+      // No overlap   add as a new record and index its emails
       const newIdx = finalResults.length;
       finalResults.push(p2Merchant);
       p2Merchant.dmEmails.forEach(e => { if (!emailToFinalIdx.has(e)) emailToFinalIdx.set(e, newIdx); });

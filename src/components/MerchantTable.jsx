@@ -107,21 +107,21 @@ export default function MerchantTable({
   // (many raw rows → one merchant), so index-based matching is fundamentally broken.
   // We now build three maps keyed on the identifiers bobAnalyzer attaches to each entry:
   //
-  //   byBizId   — keyed on businessId (ABSOLUTE primary per pipeline rules)
-  //   byStoreId — keyed on each individual storeId (per-location fallback)
-  //   byName    — keyed on normalized merchantName (last resort only)
+  //   byBizId     keyed on businessId (ABSOLUTE primary per pipeline rules)
+  //   byStoreId   keyed on each individual storeId (per-location fallback)
+  //   byName      keyed on normalized merchantName (last resort only)
   //
   // A merchant can span multiple raw rows; all matching entries are stored so callers
   // can scan across siblings (e.g. the first row with a color wins for color checks).
   const rowAnalyticsLookup = useMemo(() => {
     if (!analyticsPayload?.rowAnalytics) return { byBizId: {}, byStoreId: {}, byName: {} };
-    const byBizId  = {};
+    const byBizId = {};
     const byStoreId = {};
-    const byName   = {};
+    const byName = {};
     analyticsPayload.rowAnalytics.forEach(row => {
       const bizId = (row.businessId || "").toLowerCase().trim();
-      const sid   = (row.storeId || "").toLowerCase().trim();
-      const name  = (row.merchantName || "").toLowerCase().trim();
+      const sid = (row.storeId || "").toLowerCase().trim();
+      const name = (row.merchantName || "").toLowerCase().trim();
       // businessId bucket
       if (bizId && bizId !== "0" && bizId !== "null" && bizId !== "-") {
         if (!byBizId[bizId]) byBizId[bizId] = [];
@@ -148,20 +148,20 @@ export default function MerchantTable({
     if (!analyticsPayload?.rowAnalytics) return null;
     const { byBizId, byStoreId, byName } = rowAnalyticsLookup;
 
-    // 1. businessId — absolute primary identifier
+    // 1. businessId   absolute primary identifier
     const bizId = (merchant.businessId || "").toLowerCase().trim();
     if (bizId && bizId !== "0" && bizId !== "null" && byBizId[bizId]?.length) {
       return byBizId[bizId][0];
     }
 
-    // 2. storeId — per-location fallback (check every sid the merchant owns)
+    // 2. storeId   per-location fallback (check every sid the merchant owns)
     const sids = (merchant.originalSids || merchant.sids || "")
       .split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
     for (const sid of sids) {
       if (byStoreId[sid]?.length) return byStoreId[sid][0];
     }
 
-    // 3. merchantName — last resort
+    // 3. merchantName   last resort
     const name = (merchant.merchantName || "").toLowerCase().trim();
     return (name && byName[name]?.length) ? byName[name][0] : null;
   };
@@ -333,7 +333,7 @@ export default function MerchantTable({
     if (!hasExcludeStatusFilters && !hasExcludeColorFilter) return [];
 
     return merchants.filter((m) => {
-      // Uses the same businessId-first getMerchantRowData — Bug 6 fixed by Bug 1
+      // Uses the same businessId-first getMerchantRowData   Bug 6 fixed by Bug 1
       const rowData = getMerchantRowData(m);
       if (!rowData) return false;
 

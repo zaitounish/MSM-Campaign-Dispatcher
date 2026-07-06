@@ -3,6 +3,9 @@
  *
  * All API calls go through this one shared instance.
  * Values are loaded from .env.local (never committed to git).
+ *
+ * NOTE: Session/event tracking helpers live in lib/analytics.js.
+ * They are fire-and-forget and never block the main app flow.
  */
 import { createClient } from "@supabase/supabase-js";
 
@@ -47,7 +50,7 @@ export async function getWhitelistProfile(email) {
 
 /**
  * Fetch the distinct set of rep_emails that have ever sent at least one email.
- * This is the backend source of truth for populating filter dropdowns —
+ * This is the backend source of truth for populating filter dropdowns  
  * it is NOT filtered by date range, rep, or any UI state.
  * Returns a Set<string> of email addresses.
  */
