@@ -702,14 +702,14 @@ export default function DeliveryPanel({
               </div>
             ) : (
               <>
-                {/* Gmail Drafts via GAS manager/ultimate only */}
-                {!isRep && (
+                {/* Gmail Drafts via GAS – all roles */}
+                {
                   <button onClick={handleGasDraft} disabled={isSending}
                     className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md disabled:opacity-60 text-sm">
                     {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
                     Gmail Drafts (HTML)
                   </button>
-                )}
+                }
 
                 {/* Open One by One   all roles */}
                 <button onClick={handleOpenGmailQueue}
@@ -721,8 +721,8 @@ export default function DeliveryPanel({
           </div>
         </div>
 
-        {/* Gmail info + GAS setup manager/ultimate only */}
-        {!isRep && (
+        {/* Gmail info + GAS setup – all roles */}
+        {(
           <>
             <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-5 py-4 text-xs text-blue-800">
               <ExternalLink className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
@@ -833,8 +833,8 @@ export default function DeliveryPanel({
                         <p className="text-[10px] text-blue-600 font-bold mt-0.5">✓ Draft created in Gmail</p>
                       )}
                     </div>
-                    {/* Draft - one by one */}
-                    {!isRep && (
+                    {/* Draft - one by one (all roles) */}
+                    {
                       <button
                         onClick={() => createOneGasDraft(idx)}
                         disabled={draftStatus[idx] === "drafting" || draftStatus[idx] === "done"}
@@ -850,7 +850,7 @@ export default function DeliveryPanel({
                             ? <><Check className="w-3.5 h-3.5" /> Drafted!</>
                             : <><FileText className="w-3.5 h-3.5" /> Draft</>}
                       </button>
-                    )}
+                    }
                     {/* Open in Gmail */}
                     <button
                       onClick={() => openOneInGmail(idx)}

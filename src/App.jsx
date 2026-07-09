@@ -103,10 +103,27 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
     // based on user feedback to keep edits regardless of promo changes.
   }, []);
 
+  // Full reset used when "Blank Email" is selected: clears global state AND all
+  // per-merchant email/subject overrides so old promo deep links can't bleed in.
+  const applyBlankReset = useCallback((newPromos) => {
+    setSelectedPromos(newPromos);
+    setGlobalBlocks([]);
+    setGlobalHtmlTemplate("");
+    setMerchants(prev =>
+      prev.map(m => ({ ...m, emailOverride: null, cleanOverride: null, subjectOverride: undefined }))
+    );
+  }, []);
+
   const handlePromoChange = useCallback((newPromos) => {
     const resolvedPromos = typeof newPromos === "function" ? newPromos(selectedPromos) : newPromos;
-    applyPromoWipe(resolvedPromos);
-  }, [applyPromoWipe, selectedPromos]);
+    // If the new selection is blank, perform a full reset including per-merchant overrides
+    // so that previously-selected promo deep links don't bleed into the blank email.
+    if (resolvedPromos.length === 1 && resolvedPromos[0] === "blank") {
+      applyBlankReset(resolvedPromos);
+    } else {
+      applyPromoWipe(resolvedPromos);
+    }
+  }, [applyBlankReset, applyPromoWipe, selectedPromos]);
 
   // Scaffolding states for later phases
   const [repSettings, setRepSettings] = useState(() => {
