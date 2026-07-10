@@ -167,6 +167,9 @@ export default function DeliveryPanel({
   const [quotaLoading, setQuotaLoading] = useState(false);
   const [approvalRequesting, setApprovalRequesting] = useState(false);
   const [approvalSent, setApprovalSent] = useState(false);
+  // Optimistic local counter — increments synchronously on every send click
+  // so quota enforcement is never dependent on async DB refresh timing.
+  const [sessionSentCount, setSessionSentCount] = useState(0);
 
   const isRep = userProfile?.role === "rep";
   // Blank campaign sends don't count against the daily limit
@@ -183,6 +186,9 @@ export default function DeliveryPanel({
       getRepDailyLimitOverride(repEmail),
     ]);
     setDailySentCount(count);
+    // Sync the optimistic counter to the real DB value after every refresh
+    // so it self-corrects if anything was missed.
+    setSessionSentCount(count);
     // override (manager-granted today-only bump) takes priority over the base backend limit
     setEffectiveLimit(override ?? baseLimit);
     setQuotaLoading(false);
@@ -255,6 +261,11 @@ export default function DeliveryPanel({
   const [draftStatus, setDraftStatus] = useState({}); // idx -> 'drafting'|'done'|'error'
 
   const openOneInGmail = async (idx) => {
+    // 🔒 Hard quota gate using the optimistic counter (never stale due to async delay)
+    if (isRep && !isBlankSend && sessionSentCount >= effectiveLimit) return;
+    // Increment immediately — blocks any further clicks in the same tick
+    if (isRep && !isBlankSend) setSessionSentCount(c => c + 1);
+
     const target = queue.items[idx];
     setClipStatus(prev => ({ ...prev, [idx]: "copying" }));
 
@@ -313,6 +324,11 @@ export default function DeliveryPanel({
 
   // Create a draft for a single email via GAS
   const createOneGasDraft = (idx) => {
+    // 🔒 Hard quota gate using the optimistic counter (never stale due to async delay)
+    if (isRep && !isBlankSend && sessionSentCount >= effectiveLimit) return;
+    // Increment immediately — blocks any further clicks in the same tick
+    if (isRep && !isBlankSend) setSessionSentCount(c => c + 1);
+
     if (!repSettings.gasUrl) {
       setSendStatus({ type: "error", msg: "No GAS URL configured. Please set up Gmail Drafts in settings." });
       return;
@@ -800,19 +816,43 @@ export default function DeliveryPanel({
       {queue && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col animate-in zoom-in-95 duration-200">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between shrink-0">
-              <div>
+            <div className="px-6 py-4 border-b border-slate-200 flex flex-col gap-2 shrink-0">
+              <div className="flex items-center justify-between">
                 <h2 className="text-lg font-bold text-slate-800">Gmail Send Queue</h2>
-                <p className="text-sm text-slate-500 mt-0.5">
-                  {queue.rapidMode
-                    ? <>Tab 1 opened. Click <strong>"Open in Gmail"</strong> for each remaining row | content is pre-filled automatically.</>
-                    : <>Gmail opens with content pre-filled. Optionally press <kbd className="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-mono">Ctrl+V</kbd> to upgrade to rich HTML formatting.</>
-                  }
-                </p>
+                <span className="text-sm font-bold text-slate-500">
+                  {queue.opened.size}/{queue.items.length} opened
+                </span>
               </div>
-              <span className="text-sm font-bold text-slate-500">
-                {queue.opened.size}/{queue.items.length} opened
-              </span>
+              <p className="text-sm text-slate-500">
+                {queue.rapidMode
+                  ? <>Tab 1 opened. Click <strong>"Open in Gmail"</strong> for each remaining row | content is pre-filled automatically.</>
+                  : <>Gmail opens with content pre-filled. Optionally press <kbd className="bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-mono">Ctrl+V</kbd> to upgrade to rich HTML formatting.</>
+                }
+              </p>
+              {/* Live quota bar — reps only, skip for blank sends */}
+              {isRep && !isBlankSend && (() => {
+                const pct = Math.min((sessionSentCount / effectiveLimit) * 100, 100);
+                const remaining = Math.max(effectiveLimit - sessionSentCount, 0);
+                const atLimit = sessionSentCount >= effectiveLimit;
+                return (
+                  <div className={`rounded-xl px-4 py-2.5 space-y-1.5 ${atLimit ? "bg-red-50 border border-red-200" : "bg-slate-50 border border-slate-200"}`}>
+                    <div className="flex items-center justify-between text-xs font-bold">
+                      <span className={atLimit ? "text-red-700" : "text-slate-600"}>
+                        {atLimit ? "⛔ Daily limit reached" : `${remaining} email${remaining !== 1 ? "s" : ""} remaining today`}
+                      </span>
+                      <span className={atLimit ? "text-red-700" : "text-slate-500"}>
+                        {sessionSentCount} / {effectiveLimit}
+                      </span>
+                    </div>
+                    <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${atLimit ? "bg-red-500" : pct >= 80 ? "bg-amber-500" : "bg-dd-red"}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
@@ -837,35 +877,52 @@ export default function DeliveryPanel({
                       )}
                     </div>
                     {/* Draft - one by one (all roles) */}
-                    {
-                      <button
-                        onClick={() => createOneGasDraft(idx)}
-                        disabled={draftStatus[idx] === "drafting" || draftStatus[idx] === "done"}
-                        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${draftStatus[idx] === "done"
-                          ? "bg-blue-50 text-blue-700 border-blue-200"
-                          : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
+                    {(() => {
+                      // Rep quota gate: block if at or over limit AND this row hasn't been drafted yet
+                      const repAtLimit = isRep && !isBlankSend && sessionSentCount >= effectiveLimit && draftStatus[idx] !== "done";
+                      return (
+                        <button
+                          onClick={() => createOneGasDraft(idx)}
+                          disabled={draftStatus[idx] === "drafting" || draftStatus[idx] === "done" || repAtLimit}
+                          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
+                            draftStatus[idx] === "done"
+                              ? "bg-blue-50 text-blue-700 border-blue-200"
+                              : repAtLimit
+                                ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                                : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
                           }`}
-                        title="Create Gmail Draft"
-                      >
-                        {draftStatus[idx] === "drafting"
-                          ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Drafting…</>
-                          : draftStatus[idx] === "done"
-                            ? <><Check className="w-3.5 h-3.5" /> Drafted!</>
-                            : <><FileText className="w-3.5 h-3.5" /> Draft</>}
-                      </button>
-                    }
+                          title={repAtLimit ? "Daily limit reached" : "Create Gmail Draft"}
+                        >
+                          {draftStatus[idx] === "drafting"
+                            ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Drafting…</>
+                            : draftStatus[idx] === "done"
+                              ? <><Check className="w-3.5 h-3.5" /> Drafted!</>
+                              : <><FileText className="w-3.5 h-3.5" /> Draft</>}
+                        </button>
+                      );
+                    })()}
                     {/* Open in Gmail */}
-                    <button
-                      onClick={() => openOneInGmail(idx)}
-                      disabled={clipStatus[idx] === "copying"}
-                      className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap disabled:opacity-60 ${isOpened
-                        ? "bg-green-100 text-green-700 hover:bg-green-200"
-                        : "bg-dd-red text-white hover:bg-[#ff3019] shadow-sm"
-                        }`}
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      {clipStatus[idx] === "copying" ? "Opening…" : isOpened ? "Re-open" : "Open in Gmail"}
-                    </button>
+                    {(() => {
+                      // Rep quota gate: block if at or over limit AND this row hasn't been opened yet
+                      const repAtLimit = isRep && !isBlankSend && sessionSentCount >= effectiveLimit && !isOpened;
+                      return (
+                        <button
+                          onClick={() => openOneInGmail(idx)}
+                          disabled={clipStatus[idx] === "copying" || repAtLimit}
+                          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap disabled:opacity-60 ${
+                            repAtLimit
+                              ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
+                              : isOpened
+                                ? "bg-green-100 text-green-700 hover:bg-green-200"
+                                : "bg-dd-red text-white hover:bg-[#ff3019] shadow-sm"
+                          }`}
+                          title={repAtLimit ? "Daily limit reached" : undefined}
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          {repAtLimit ? "Limit Reached" : clipStatus[idx] === "copying" ? "Opening…" : isOpened ? "Re-open" : "Open in Gmail"}
+                        </button>
+                      );
+                    })()}
                   </div>
                 );
               })}

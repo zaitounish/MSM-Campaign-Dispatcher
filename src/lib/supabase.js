@@ -98,8 +98,10 @@ export async function logEmailSend({
  */
 export async function getRepDailyCount(repEmail) {
   if (!repEmail) return 0;
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  // Always use UTC midnight so the window matches Supabase's stored timestamps
+  // regardless of the rep's local timezone.
+  const now = new Date();
+  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
   const { data, error } = await supabase
     .from("email_send_log")
