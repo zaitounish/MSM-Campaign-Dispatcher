@@ -166,30 +166,35 @@ export const processSheetData = (json) => {
   const finalResults = Array.from(pass1Map.values());
 
   noBizIdRows.forEach((row) => {
-    // If it has a valid DM Email, group by that
-    if (row.dmEmail && validateEmail(row.dmEmail)) {
-      if (!pass2Map.has(row.dmEmail)) {
+    // Pre-parse the raw email strings to handle comma-separated values (e.g. "a@x.com, b@x.com")
+    // before we try to run validateEmail on them.
+    const rawSplitDm = row.dmEmail
+      ? row.dmEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
+      : [];
+    const rawSplitStore = row.storeEmail
+      ? row.storeEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
+      : [];
+
+    const firstValidDm = rawSplitDm.find(validateEmail);
+    const firstValidStore = rawSplitStore.find(validateEmail);
+
+    // If it has at least one valid DM Email, group by that first valid email
+    if (firstValidDm) {
+      if (!pass2Map.has(firstValidDm)) {
         const { dmEmail: _d, storeEmail: _s, ...cleanRow } = row;
-        pass2Map.set(row.dmEmail, {
+        pass2Map.set(firstValidDm, {
           ...cleanRow,
           sids: [row.storeId],
-          dmEmails: row.dmEmail
-            ? row.dmEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
-            : [],
-          storeEmails: row.storeEmail
-            ? row.storeEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
-            : [],
+          dmEmails: rawSplitDm,
+          storeEmails: rawSplitStore,
         });
       } else {
-        const existing = pass2Map.get(row.dmEmail);
+        const existing = pass2Map.get(firstValidDm);
         if (!existing.sids.includes(row.storeId)) {
           existing.sids.push(row.storeId);
         }
         if (!existing.dmName && row.dmName) existing.dmName = row.dmName;
-        if (row.storeEmail) {
-          row.storeEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
-            .forEach(e => { if (!existing.storeEmails.includes(e)) existing.storeEmails.push(e); });
-        }
+        rawSplitStore.forEach(e => { if (!existing.storeEmails.includes(e)) existing.storeEmails.push(e); });
         if (isTruthy(row.slOpp)) existing.slOpp = "1";
         if (isTruthy(row.promoOpp)) existing.promoOpp = "1";
         if (isTruthy(row.loyalOpp)) existing.loyalOpp = "1";
@@ -197,29 +202,22 @@ export const processSheetData = (json) => {
         if (!existing.merchantName && row.merchantName) existing.merchantName = row.merchantName;
       }
     } else {
-      // Group by storeEmail if dmEmail is missing
-      if (row.storeEmail && validateEmail(row.storeEmail)) {
-        if (!pass2Map.has(row.storeEmail)) {
+      // Group by storeEmail if valid dmEmail is missing
+      if (firstValidStore) {
+        if (!pass2Map.has(firstValidStore)) {
           const { dmEmail: _d, storeEmail: _s, ...cleanRow } = row;
-          pass2Map.set(row.storeEmail, {
+          pass2Map.set(firstValidStore, {
             ...cleanRow,
             sids: [row.storeId],
-            dmEmails: row.dmEmail
-              ? row.dmEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
-              : [],
-            storeEmails: row.storeEmail
-              ? row.storeEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
-              : [],
+            dmEmails: rawSplitDm,
+            storeEmails: rawSplitStore,
           });
         } else {
-          const existing = pass2Map.get(row.storeEmail);
+          const existing = pass2Map.get(firstValidStore);
           if (!existing.sids.includes(row.storeId)) {
             existing.sids.push(row.storeId);
           }
-          if (row.dmEmail) {
-            row.dmEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
-              .forEach(e => { if (!existing.dmEmails.includes(e)) existing.dmEmails.push(e); });
-          }
+          rawSplitDm.forEach(e => { if (!existing.dmEmails.includes(e)) existing.dmEmails.push(e); });
           if (isTruthy(row.slOpp)) existing.slOpp = "1";
           if (isTruthy(row.promoOpp)) existing.promoOpp = "1";
           if (isTruthy(row.loyalOpp)) existing.loyalOpp = "1";
@@ -232,12 +230,8 @@ export const processSheetData = (json) => {
         finalResults.push({
           ...cleanRow,
           sids: [row.storeId],
-          dmEmails: row.dmEmail
-            ? row.dmEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
-            : [],
-          storeEmails: row.storeEmail
-            ? row.storeEmail.split(EMAIL_SEP_RE).map(e => e.trim().toLowerCase()).filter(Boolean)
-            : [],
+          dmEmails: rawSplitDm,
+          storeEmails: rawSplitStore,
         });
       }
     }

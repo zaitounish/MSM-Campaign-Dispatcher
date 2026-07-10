@@ -160,6 +160,11 @@ export function formatDmName(raw) {
   const clean = firstWord.replace(/[^a-zA-Z'-]/g, "");
   if (!clean) return null;
 
+  // Filter out placeholder names
+  const lowerClean = clean.toLowerCase();
+  const placeholders = ["unknown", "unkown", "n/a", "na", "null", "none"];
+  if (placeholders.includes(lowerClean)) return null;
+
   // Title-case: first letter uppercase, rest lowercase
   return clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
 }
