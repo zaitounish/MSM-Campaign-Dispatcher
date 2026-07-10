@@ -702,14 +702,14 @@ export default function DeliveryPanel({
               </div>
             ) : (
               <>
-                {/* Gmail Drafts via GAS – all roles */}
-                {
+                {/* Gmail Drafts via GAS – hidden for reps */}
+                {!isRep && (
                   <button onClick={handleGasDraft} disabled={isSending}
                     className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md disabled:opacity-60 text-sm">
                     {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
                     Gmail Drafts (HTML)
                   </button>
-                }
+                )}
 
                 {/* Open One by One   all roles */}
                 <button onClick={handleOpenGmailQueue}
@@ -728,7 +728,7 @@ export default function DeliveryPanel({
               <ExternalLink className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
               <div className="space-y-1">
                 <p><strong>Open in Gmail →</strong> copies the full rich email to your clipboard, then opens Gmail compose pre-filled with recipient &amp; subject. Just press <strong>Ctrl+V</strong> inside Gmail to paste the formatted email with all links intact.</p>
-                <p><strong>Gmail Drafts (HTML)</strong> creates fully-formatted rich HTML drafts in your Gmail Drafts folder via Google Apps Script | no paste needed. Requires one-time setup below.</p>
+                {!isRep && <p><strong>Gmail Drafts (HTML)</strong> creates fully-formatted rich HTML drafts in your Gmail Drafts folder via Google Apps Script | no paste needed. Requires one-time setup below.</p>}
               </div>
             </div>
 
