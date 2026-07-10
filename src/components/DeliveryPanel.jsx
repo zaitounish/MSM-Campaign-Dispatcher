@@ -669,12 +669,7 @@ export default function DeliveryPanel({
           );
         })()}
 
-        {/* Blank send note */}
-        {isRep && isBlankSend && (
-          <div className="flex items-center gap-2 bg-violet-50 border border-violet-200 rounded-2xl px-5 py-3">
-            <span className="text-xs font-bold text-violet-700">✦ Blank emails don't count toward your 45-email daily limit.</span>
-          </div>
-        )}
+
 
         {/* Status banner */}
         {sendStatus && (
