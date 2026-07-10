@@ -101,8 +101,7 @@ function doPost(e) {
   emails.forEach(function (email) {
     var opts = {
       cc:       email.cc || "",
-      htmlBody: email.htmlBody || "",
-      name:     email.name || "DoorDash Merchant Success"
+      htmlBody: email.htmlBody || ""
     };
     GmailApp.createDraft(
       email.to,
@@ -531,8 +530,12 @@ export default function DeliveryPanel({
     XLSX.writeFile(wb, `Campaign_${new Date().toISOString().split("T")[0]}.xlsx`);
   };
 
+  const displayScript = isRep 
+    ? GAS_SCRIPT.replace(/\/\*\*[\s\n\r]*\* OPTIONAL:[\s\S]*$/, "").trim() 
+    : GAS_SCRIPT;
+
   const handleCopyScript = () => {
-    navigator.clipboard.writeText(GAS_SCRIPT).then(() => {
+    navigator.clipboard.writeText(displayScript).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
@@ -774,7 +777,7 @@ export default function DeliveryPanel({
                   {/* Script code block */}
                   <div className="relative">
                     <pre className="bg-slate-900 text-green-300 rounded-xl p-4 text-xs overflow-x-auto leading-relaxed font-mono whitespace-pre">
-                      {GAS_SCRIPT}
+                      {displayScript}
                     </pre>
                     <button onClick={handleCopyScript}
                       className="absolute top-3 right-3 flex items-center gap-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors">
