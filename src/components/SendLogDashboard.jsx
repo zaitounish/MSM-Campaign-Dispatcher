@@ -169,6 +169,11 @@ function RepBreakdownPanel({ logs, repNames }) {
  */
 export default function SendLogDashboard({ userProfile, onClose }) {
   const [logs, setLogs] = useState([]);
+  const [totalCount, setTotalCount] = useState(null);              // backend: all-time total
+  const [countToday, setCountToday] = useState(null);              // backend: sent today
+  const [countWeek, setCountWeek] = useState(null);                // backend: sent this week
+  const [countUniqueMerchants, setCountUniqueMerchants] = useState(null); // backend: distinct merchants
+  const [countActiveReps, setCountActiveReps] = useState(null);    // backend: distinct active reps
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [repFilter, setRepFilter] = useState("all");
@@ -215,8 +220,7 @@ export default function SendLogDashboard({ userProfile, onClose }) {
     let query = supabase
       .from("email_send_log")
       .select("*")
-      .order("sent_at", { ascending: false })
-      .limit(1000);
+      .order("sent_at", { ascending: false });
 
     if (dateFrom) query = query.gte("sent_at", dateFrom);
     if (dateTo) query = query.lte("sent_at", `${dateTo}T23:59:59.999Z`);
@@ -257,15 +261,99 @@ export default function SendLogDashboard({ userProfile, onClose }) {
 
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
+  // ── Shared scope helper ───────────────────────────────────────────────────
+  // Applies the role / team / rep filter to any Supabase query so every
+  // backend count stays scoped correctly to what the current user can see.
+  const applyScopeFilters = useCallback((q) => {
+    if (role === "rep") return q.eq("rep_email", userProfile?.email);
+    if (role === "manager") {
+      const emails = whitelist
+        .filter(u => u.manager_id === userProfile?.id || u.email === userProfile?.email)
+        .map(u => u.email);
+      return q.in("rep_email", emails.length ? emails : ["no-one"]);
+    }
+    if (role === "ultimate") {
+      if (repFilter !== "all") return q.eq("rep_email", repFilter);
+      if (teamFilter !== "all") {
+        const emails = whitelist
+          .filter(u => u.manager_id === teamFilter || u.id === teamFilter)
+          .map(u => u.email);
+        return q.in("rep_email", emails.length ? emails : ["no-one"]);
+      }
+    }
+    return q;
+  }, [role, repFilter, teamFilter, userProfile?.email, userProfile?.id, whitelist]);
+
+  // ── Backend stat counts ───────────────────────────────────────────────────
+  // All counts use count:'exact', head:true — Supabase evaluates the full
+  // result set server-side and returns only the integer in the response header.
+  // No row data is transferred and the 1000-row page cap is completely bypassed.
+  // Distinct merchant/rep counts need a lightweight column-only fetch so we can
+  // deduplicate client-side (Supabase JS v2 has no SELECT DISTINCT COUNT).
+  const fetchStatCounts = useCallback(async () => {
+    if (isManager && !whitelistLoaded) return;
+
+    const now = new Date();
+    const todayStart = now.toISOString().slice(0, 10); // "YYYY-MM-DD" — gte matches ISO timestamps
+    const weekStart  = new Date(now - 7 * 86400000).toISOString();
+
+    // ── Five queries fired in parallel ─────────────────────────────────────
+    const [allTime, today, week, merchantRows, repRows] = await Promise.all([
+
+      // 1. All-time total (no date filter)
+      applyScopeFilters(
+        supabase.from("email_send_log").select("*", { count: "exact", head: true })
+      ),
+
+      // 2. Sent today
+      applyScopeFilters(
+        supabase.from("email_send_log").select("*", { count: "exact", head: true })
+          .gte("sent_at", todayStart)
+      ),
+
+      // 3. Sent this week (last 7 days)
+      applyScopeFilters(
+        supabase.from("email_send_log").select("*", { count: "exact", head: true })
+          .gte("sent_at", weekStart)
+      ),
+
+      // 4. Distinct merchants — fetch only merchant_id column, deduplicate below
+      applyScopeFilters(
+        supabase.from("email_send_log").select("merchant_id")
+          .not("merchant_id", "is", null)
+      ),
+
+      // 5. Distinct active reps — fetch only rep_email column, deduplicate below
+      applyScopeFilters(
+        supabase.from("email_send_log").select("rep_email")
+          .not("rep_email", "is", null)
+      ),
+    ]);
+
+    if (!allTime.error && allTime.count !== null) setTotalCount(allTime.count);
+    if (!today.error   && today.count   !== null) setCountToday(today.count);
+    if (!week.error    && week.count    !== null) setCountWeek(week.count);
+
+    if (!merchantRows.error && merchantRows.data) {
+      setCountUniqueMerchants(new Set(merchantRows.data.map(r => r.merchant_id)).size);
+    }
+    if (!repRows.error && repRows.data) {
+      setCountActiveReps(new Set(repRows.data.map(r => r.rep_email)).size);
+    }
+  }, [applyScopeFilters, isManager, whitelistLoaded]);
+
+  useEffect(() => { fetchStatCounts(); }, [fetchStatCounts]);
+
   // ── Derived stats ──────────────────────────────────────────────────────────
   const now = new Date();
   const todayStr = now.toISOString().slice(0, 10);
   const weekAgo = new Date(now - 7 * 86400000).toISOString();
 
-  const logsToday = logs.filter(l => l.sent_at?.startsWith(todayStr));
-  const logsWeek = logs.filter(l => l.sent_at >= weekAgo);
-  const uniqueMerchants = new Set(logs.map(l => l.merchant_id).filter(Boolean)).size;
-  const uniqueRepsCount = new Set(logs.map(l => l.rep_email).filter(Boolean)).size;
+  // In-memory fallback values — used while backend counts are loading on first render
+  const logsToday           = logs.filter(l => l.sent_at?.startsWith(todayStr));
+  const logsWeek            = logs.filter(l => l.sent_at >= weekAgo);
+  const localUniqueMerchants = new Set(logs.map(l => l.merchant_id).filter(Boolean)).size;
+  const localUniqueReps      = new Set(logs.map(l => l.rep_email).filter(Boolean)).size;
 
   // ── Filtered display rows ──────────────────────────────────────────────────
   const filtered = logs.filter(l => {
@@ -364,7 +452,7 @@ export default function SendLogDashboard({ userProfile, onClose }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={fetchLogs}
+            <button onClick={() => { fetchLogs(); fetchStatCounts(); }}
               className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
               <RefreshCw className="w-4 h-4" />
             </button>
@@ -379,12 +467,12 @@ export default function SendLogDashboard({ userProfile, onClose }) {
 
           {/* ── Stats grid ── */}
           <div className={`grid gap-4 ${isManager ? "grid-cols-2 lg:grid-cols-5" : "grid-cols-2 lg:grid-cols-4"}`}>
-            <StatCard icon={Mail} label="Emails Today" value={logsToday.length} color="red" />
-            <StatCard icon={TrendingUp} label="This Week" value={logsWeek.length} color="violet" />
-            <StatCard icon={Calendar} label="All Time" value={logs.length} color="green" />
-            <StatCard icon={User} label="Unique Merchants" value={uniqueMerchants} color="amber" />
+            <StatCard icon={Mail}       label="Emails Today"     value={countToday            ?? logsToday.length}          color="red"    />
+            <StatCard icon={TrendingUp} label="This Week"         value={countWeek             ?? logsWeek.length}           color="violet" />
+            <StatCard icon={Calendar}   label="All Time"          value={totalCount            ?? logs.length}               color="green"  />
+            <StatCard icon={User}       label="Unique Merchants"  value={countUniqueMerchants  ?? localUniqueMerchants}      color="amber"  />
             {isManager && (
-              <StatCard icon={Users} label="Active Reps" value={uniqueRepsCount} color="blue" />
+              <StatCard icon={Users}    label="Active Reps"       value={countActiveReps       ?? localUniqueReps}           color="blue"   />
             )}
           </div>
 

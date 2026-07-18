@@ -178,18 +178,26 @@ export const processSheetData = (json) => {
     const firstValidDm = rawSplitDm.find(validateEmail);
     const firstValidStore = rawSplitStore.find(validateEmail);
 
-    // If it has at least one valid DM Email, group by that first valid email
+    // ── Composite key: email + normalized merchant name ─────────────────────
+    // Keying on email alone would incorrectly merge two DIFFERENT franchise
+    // locations that share the same owner/contact email but have distinct names
+    // (e.g. "Subway - Times Sq" and "Subway - Broadway" both owned by the same
+    // franchisee). The composite key preserves them as separate records.
+    const normName = (row.merchantName || "").trim().toLowerCase();
+
+    // If it has at least one valid DM Email, group by email:::name
     if (firstValidDm) {
-      if (!pass2Map.has(firstValidDm)) {
+      const p2Key = `${firstValidDm}:::${normName}`;
+      if (!pass2Map.has(p2Key)) {
         const { dmEmail: _d, storeEmail: _s, ...cleanRow } = row;
-        pass2Map.set(firstValidDm, {
+        pass2Map.set(p2Key, {
           ...cleanRow,
           sids: [row.storeId],
           dmEmails: rawSplitDm,
           storeEmails: rawSplitStore,
         });
       } else {
-        const existing = pass2Map.get(firstValidDm);
+        const existing = pass2Map.get(p2Key);
         if (!existing.sids.includes(row.storeId)) {
           existing.sids.push(row.storeId);
         }
@@ -202,18 +210,19 @@ export const processSheetData = (json) => {
         if (!existing.merchantName && row.merchantName) existing.merchantName = row.merchantName;
       }
     } else {
-      // Group by storeEmail if valid dmEmail is missing
+      // Group by storeEmail:::name if valid dmEmail is missing
       if (firstValidStore) {
-        if (!pass2Map.has(firstValidStore)) {
+        const p2Key = `${firstValidStore}:::${normName}`;
+        if (!pass2Map.has(p2Key)) {
           const { dmEmail: _d, storeEmail: _s, ...cleanRow } = row;
-          pass2Map.set(firstValidStore, {
+          pass2Map.set(p2Key, {
             ...cleanRow,
             sids: [row.storeId],
             dmEmails: rawSplitDm,
             storeEmails: rawSplitStore,
           });
         } else {
-          const existing = pass2Map.get(firstValidStore);
+          const existing = pass2Map.get(p2Key);
           if (!existing.sids.includes(row.storeId)) {
             existing.sids.push(row.storeId);
           }

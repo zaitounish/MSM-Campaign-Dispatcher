@@ -12,7 +12,7 @@
  */
 
 import React, { useState } from "react";
-import { RefreshCw, BarChart2, Users, TrendingUp, AlertTriangle, Activity, Wifi, WifiOff } from "lucide-react";
+import { RefreshCw, BarChart2, Users, TrendingUp, AlertTriangle, Activity } from "lucide-react";
 import { useActivityData } from "../../hooks/useActivityData";
 import { useRealtimeUpdates } from "../../hooks/useRealtimeUpdates";
 import { useManagerAlerts } from "../../hooks/useManagerAlerts";
@@ -59,8 +59,6 @@ export default function UltimateDashboard({ userProfile }) {
     refresh();
   };
 
-  const isConnected = true; // Supabase Realtime connection   simplified indicator
-
   return (
     <div className="space-y-6">
       {/* Dashboard header / controls */}
@@ -68,18 +66,8 @@ export default function UltimateDashboard({ userProfile }) {
         <div className="flex items-center gap-2">
           <Activity className="w-5 h-5 text-indigo-600" />
           <h2 className="text-lg font-bold text-slate-800">Tool Utilization Analytics</h2>
-          {/* Realtime indicator */}
-          <div className="flex items-center gap-1 ml-3">
-            {isConnected
-              ? <Wifi className="w-3.5 h-3.5 text-green-600" />
-              : <WifiOff className="w-3.5 h-3.5 text-red-500" />
-            }
-            <span className={`text-[10px] font-bold uppercase tracking-wider ${isConnected ? "text-green-600" : "text-red-500"}`}>
-              {isConnected ? "Live" : "Offline"}
-            </span>
-          </div>
           {onlineReps.size > 0 && (
-            <span className="text-[10px] font-bold bg-green-100 text-green-700 border border-green-200 rounded-full px-2 py-0.5 ml-2">
+            <span className="text-[10px] font-bold bg-green-100 text-green-700 border border-green-200 rounded-full px-2 py-0.5 ml-3">
               {onlineReps.size} online
             </span>
           )}
