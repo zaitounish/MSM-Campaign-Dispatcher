@@ -71,24 +71,26 @@ export async function getActiveSenders() {
 
 /**
  * Log an email send event to the tracking table.
- * Fire-and-forget | does not block the send flow.
+ * Supports both single object or array of objects for bulk insert.
  */
-export async function logEmailSend({
-  repEmail, repName, merchantName, merchantId,
-  toEmail, ccEmails, subject, promoTypes, deliveryMethod, emailFormat,
-}) {
-  const { error } = await supabase.from("email_send_log").insert({
-    rep_email: repEmail,
-    rep_name: repName,
-    merchant_name: merchantName,
-    merchant_id: merchantId,
-    to_email: toEmail,
-    cc_emails: ccEmails,
-    subject,
-    promo_types: promoTypes,
-    delivery_method: deliveryMethod,
-    email_format: emailFormat,
-  });
+export async function logEmailSend(eventOrEvents) {
+  const payload = Array.isArray(eventOrEvents) ? eventOrEvents : [eventOrEvents];
+  if (payload.length === 0) return;
+
+  const mapped = payload.map(e => ({
+    rep_email: e.repEmail,
+    rep_name: e.repName,
+    merchant_name: e.merchantName,
+    merchant_id: e.merchantId,
+    to_email: e.toEmail,
+    cc_emails: e.ccEmails,
+    subject: e.subject,
+    promo_types: e.promoTypes,
+    delivery_method: e.deliveryMethod,
+    email_format: e.emailFormat,
+  }));
+
+  const { error } = await supabase.from("email_send_log").insert(mapped);
   if (error) console.warn("[logEmailSend]", error.message);
 }
 

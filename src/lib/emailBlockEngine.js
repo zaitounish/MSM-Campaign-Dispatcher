@@ -471,9 +471,18 @@ const _toPlainText = htmlToPlainText;
 
 const _renderSignatureHtml = (block) => {
   const { signature, firstName = "", lastName = "", title = "Merchant Success Manager", phone = "" } = block.data.repSettings || {};
-  // If the rep pasted a raw signature, use it directly
+  // If the rep pasted a raw signature, wrap it in a strict layout container.
+  // The <td> establishes a positioning context (position:relative) so any
+  // position:absolute elements inside the pasted signature are anchored here
+  // and cannot escape into the email body. The inner <div> clears floats.
   if (signature && signature.trim()) {
-    return `<div style="margin-top:28px;font-family:sans-serif;font-size:14px;color:#333;line-height:1.6">${signature.trim()}</div>`;
+    return (
+      `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:28px;border-collapse:collapse;">` +
+      `<tr><td style="position:relative;overflow:hidden;padding:0;vertical-align:top;">` +
+      `<div style="position:relative;overflow:hidden;clear:both;font-family:sans-serif;font-size:14px;color:#333;line-height:1.6;">` +
+      `${signature.trim()}` +
+      `</div></td></tr></table>`
+    );
   }
   // Fall back to structured format
   const name = [firstName, lastName].filter(Boolean).join(" ") || "DoorDash Merchant Success Manager";
@@ -707,9 +716,13 @@ export const compileBlocksToCleanHtml = (blocks, deepLinks, merchant) => {
       case BLOCK_TYPES.SIGNATURE: {
         const { signature, firstName = "", lastName = "", title = "Merchant Success Manager", phone = "" } = block.data.repSettings || {};
         if (signature && signature.trim()) {
+          // Same strict wrapper as _renderSignatureHtml — see comment there.
           parts.push(
-            `<div style="margin-top:28px;font-size:14px;color:#1a1a1a;line-height:1.8;${ff}">` +
-            `${signature.trim()}</div>`
+            `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:28px;border-collapse:collapse;">` +
+            `<tr><td style="position:relative;overflow:hidden;padding:0;vertical-align:top;">` +
+            `<div style="position:relative;overflow:hidden;clear:both;font-size:14px;color:#1a1a1a;line-height:1.8;${ff}">` +
+            `${signature.trim()}` +
+            `</div></td></tr></table>`
           );
         } else {
           const name = [firstName, lastName].filter(Boolean).join(" ") || "DoorDash Merchant Success Manager";

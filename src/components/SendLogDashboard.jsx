@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   X, RefreshCw, BarChart2, Mail, Users, Calendar, TrendingUp,
   Download, Search, ChevronDown, Filter, Inbox, User, ChevronRight,
+  AlertTriangle,
 } from "lucide-react";
 import { supabase, getActiveSenders } from "../lib/supabase";
 
@@ -213,6 +214,8 @@ export default function SendLogDashboard({ userProfile, onClose }) {
     init();
   }, [isManager]);
 
+  const [logsCapped, setLogsCapped] = useState(false); // true when result hit the 500-row display limit
+
   const fetchLogs = useCallback(async () => {
     if (isManager && !whitelistLoaded) return;
     setLoading(true);
@@ -220,7 +223,10 @@ export default function SendLogDashboard({ userProfile, onClose }) {
     let query = supabase
       .from("email_send_log")
       .select("*")
-      .order("sent_at", { ascending: false });
+      .order("sent_at", { ascending: false })
+      .range(0, 499); // Explicit cap: always fetch the 500 most recent rows.
+                      // Supabase JS v2 silently caps at 1,000 without this,
+                      // hiding activity from earlier in the day on busy floors.
 
     if (dateFrom) query = query.gte("sent_at", dateFrom);
     if (dateTo) query = query.lte("sent_at", `${dateTo}T23:59:59.999Z`);
@@ -255,6 +261,7 @@ export default function SendLogDashboard({ userProfile, onClose }) {
     const { data, error } = await query;
     if (!error && data) {
       setLogs(data);
+      setLogsCapped(data.length === 500);
     }
     setLoading(false);
   }, [role, repFilter, teamFilter, dateFrom, dateTo, userProfile?.email, userProfile?.id, whitelist, isManager, whitelistLoaded]);
@@ -387,9 +394,9 @@ export default function SendLogDashboard({ userProfile, onClose }) {
     a.click(); URL.revokeObjectURL(url);
   };
 
-  // Build the set of rep emails that have actually sent at least one email
   // Source of truth: activeSenders (fetched from backend, all-time, unfiltered)
-  // NOTE: we keep a derived useMemo only for the fallback when activeSenders is empty
+  // NOTE: we no longer filter the dropdowns by this set, so managers can see
+  // all their reps regardless of whether they have sent any emails yet.
   const activeRepEmails = activeSenders;
 
   const repOptions = useMemo(() => {
@@ -402,27 +409,15 @@ export default function SendLogDashboard({ userProfile, onClose }) {
     } else {
       candidates = [];
     }
-    // Only show reps/managers who have actually sent at least one email (backend source of truth)
-    return candidates.filter(r => activeRepEmails.has(r.email));
-  }, [whitelist, role, teamFilter, userProfile, activeRepEmails]);
+    // Return all candidates so managers can filter by reps who haven't sent yet
+    return candidates;
+  }, [whitelist, role, teamFilter, userProfile]);
 
-  // Teams dropdown: only show a manager's team entry if at least one of their REPS
-  // (not the manager themselves) has sent an email. This means a manager with
-  // no assigned reps who have sent emails will NOT appear.
+  // Teams dropdown: show all managers
   const managerOptions = useMemo(() => {
     if (role !== "ultimate") return [];
-    // Build a set of manager IDs that have at least one REP with a send log
-    const activeManagerIds = new Set();
-    whitelist.forEach(u => {
-      // Only count reps (not managers)   a manager sending emails doesn't create a "team" entry
-      if (u.role === "rep" && u.manager_id && activeRepEmails.has(u.email)) {
-        activeManagerIds.add(u.manager_id);
-      }
-    });
-    return whitelist.filter(u =>
-      (u.role === "manager" || u.role === "ultimate") && activeManagerIds.has(u.id)
-    );
-  }, [whitelist, role, activeRepEmails]);
+    return whitelist.filter(u => u.role === "manager" || u.role === "ultimate");
+  }, [whitelist, role]);
 
   // ── Role label for dashboard header ───────────────────────────────────────
   const dashboardSubtitle = isRep
@@ -558,6 +553,14 @@ export default function SendLogDashboard({ userProfile, onClose }) {
               <Download className="w-4 h-4" /> Export CSV
             </button>
           </div>
+
+          {/* ── Row cap notice ── */}
+          {logsCapped && (
+            <div className="flex items-center gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-semibold">
+              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+              Showing the 500 most recent log entries. Use the date filters above to narrow results and see earlier activity.
+            </div>
+          )}
 
           {/* ── Detailed log table ── */}
           <div className="border border-slate-200 rounded-2xl overflow-hidden">

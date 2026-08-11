@@ -186,9 +186,10 @@ export default function DeliveryPanel({
       getRepDailyLimitOverride(repEmail),
     ]);
     setDailySentCount(count);
-    // Sync the optimistic counter to the real DB value after every refresh
-    // so it self-corrects if anything was missed.
-    setSessionSentCount(count);
+    // Sync the optimistic counter to the real DB value, but NEVER downgrade it.
+    // This prevents race conditions if the rep spams the send button and older
+    // DB reads return before newer inserts finish.
+    setSessionSentCount(prev => Math.max(prev, count));
     // override (manager-granted today-only bump) takes priority over the base backend limit
     setEffectiveLimit(override ?? baseLimit);
     setQuotaLoading(false);
@@ -299,7 +300,7 @@ export default function DeliveryPanel({
       opened.add(idx);
       return { ...prev, opened };
     });
-    logEmailSend({
+    await logEmailSend({
       repEmail: userProfile?.email || repSettings?.email || "",
       repName: userProfile?.full_name || `${repSettings?.firstName || ""} ${repSettings?.lastName || ""}`.trim() || "",
       merchantName: target.merchant?.merchantName || "",
@@ -383,14 +384,14 @@ export default function DeliveryPanel({
     form.submit();
     requestAnimationFrame(() => document.body.removeChild(form));
 
-    setTimeout(() => {
+    setTimeout(async () => {
       setDraftStatus(prev => ({ ...prev, [idx]: "done" }));
       setQueue(prev => {
         const opened = new Set(prev.opened);
         opened.add(idx);
         return { ...prev, opened };
       });
-      logEmailSend({
+      await logEmailSend({
         repEmail: userProfile?.email || repSettings?.email || "",
         repName: userProfile?.full_name || senderName,
         merchantName: t.merchant?.merchantName || "",
@@ -431,11 +432,22 @@ export default function DeliveryPanel({
       setGasExpanded(true);
       return;
     }
+
+    const targets = buildTargets();
+
+    // 🔒 Hard quota gate using the optimistic counter
+    if (isRep && !isBlankSend && sessionSentCount + targets.length > effectiveLimit) {
+      setSendStatus({ type: "error", msg: `Sending this batch would exceed your daily limit of ${effectiveLimit}.` });
+      return;
+    }
+
+    // Increment immediately — blocks any further clicks in the same tick
+    if (isRep && !isBlankSend) setSessionSentCount(c => c + targets.length);
+
     setIsSending(true);
     setSendStatus(null);
 
     const senderName = `${repSettings.firstName || ""} ${repSettings.lastName || ""}`.trim() || "DoorDash Merchant Success";
-    const targets = buildTargets();
     const payloads = targets.map(t => ({
       to: t.to,
       cc: t.cc,
@@ -489,28 +501,27 @@ export default function DeliveryPanel({
     // GAS typically processes within 3–8 seconds.
     // We can't read the iframe response cross-origin, so we show a
     // "check your drafts" message after a short delay.
-    setTimeout(() => {
+    setTimeout(async () => {
       setIsSending(false);
       setSendStatus({
         type: "success",
         msg: `${payloads.length} draft${payloads.length > 1 ? "s" : ""} created in Gmail. Open your Drafts folder, then send each one manually   this ensures Salesforce logs them as manual.`,
         draftsUrl: "https://mail.google.com/mail/u/0/#drafts",
       });
-      // Log each draft creation event
-      targets.forEach(t => {
-        logEmailSend({
-          repEmail: userProfile?.email || repSettings?.email || "",
-          repName: userProfile?.full_name || senderName,
-          merchantName: t.merchant?.merchantName || "",
-          merchantId: t.merchant?.businessId || t.merchant?.id || "",
-          toEmail: t.to,
-          ccEmails: t.cc || "",
-          subject: t.draft.subject,
-          promoTypes: selectedPromos,
-          deliveryMethod: "gas_draft",
-          emailFormat,
-        });
-      });
+      // Log each draft creation event via bulk insert
+      const logEvents = targets.map(t => ({
+        repEmail: userProfile?.email || repSettings?.email || "",
+        repName: userProfile?.full_name || senderName,
+        merchantName: t.merchant?.merchantName || "",
+        merchantId: t.merchant?.businessId || t.merchant?.id || "",
+        toEmail: t.to,
+        ccEmails: t.cc || "",
+        subject: t.draft.subject,
+        promoTypes: selectedPromos,
+        deliveryMethod: "gas_draft",
+        emailFormat,
+      }));
+      await logEmailSend(logEvents);
       // Refresh quota after GAS send (non-blocking)
       if (isRep && !isBlankSend) refreshQuota();
     }, 1500);
@@ -594,10 +605,13 @@ export default function DeliveryPanel({
             <p className="text-xs text-violet-600 font-semibold">These emails do not count toward your daily limit.</p>
           </div>
         ) : (() => {
-          const pct = Math.min((dailySentCount / effectiveLimit) * 100, 100);
-          const remaining = Math.max(effectiveLimit - dailySentCount, 0);
-          const isAtLimit = dailySentCount >= effectiveLimit;
-          const wouldExceed = isRep && !isBlankSend && (dailySentCount + totalCount) > effectiveLimit;
+          // Use the highest known count: either the DB value or the optimistic local counter.
+          // This prevents the bar from flickering backwards between rapid sends.
+          const displayCount = Math.max(dailySentCount, sessionSentCount);
+          const pct = Math.min((displayCount / effectiveLimit) * 100, 100);
+          const remaining = Math.max(effectiveLimit - displayCount, 0);
+          const isAtLimit = displayCount >= effectiveLimit;
+          const wouldExceed = isRep && !isBlankSend && (displayCount + totalCount) > effectiveLimit;
 
           return (
             <div className={`rounded-2xl border px-5 py-4 space-y-3 ${isAtLimit
@@ -620,7 +634,7 @@ export default function DeliveryPanel({
                 </div>
                 <span className={`text-sm font-bold tabular-nums ${isAtLimit ? "text-red-700" : wouldExceed ? "text-amber-700" : "text-slate-700"
                   }`}>
-                  {quotaLoading ? "…" : `${dailySentCount} / ${effectiveLimit}`}
+                  {quotaLoading ? "…" : `${displayCount} / ${effectiveLimit}`}
                 </span>
               </div>
 
@@ -663,6 +677,9 @@ export default function DeliveryPanel({
               ) : (
                 <p className="text-xs text-slate-500">
                   {remaining} email{remaining !== 1 ? "s" : ""} remaining today (limit: {effectiveLimit}).
+                  {sessionSentCount > dailySentCount && (
+                    <span className="ml-1 text-violet-500 font-semibold">({sessionSentCount - dailySentCount} pending sync…)</span>
+                  )}
                 </p>
               )}
             </div>
