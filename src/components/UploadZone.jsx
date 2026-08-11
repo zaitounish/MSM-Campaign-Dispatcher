@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 import { processSheetData } from "../lib/bobParser";
 import { analyzeBOB } from "../lib/bobAnalyzer";
 
-export default function UploadZone({ onDataLoaded }) {
+export default function UploadZone({ onDataLoaded, cachedPipelineMeta = null, onClearPipeline }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -132,7 +132,9 @@ export default function UploadZone({ onDataLoaded }) {
           ? analyzeBOB(sheetsData)
           : null;
 
-        onDataLoaded(merged, analyticsPayload);
+        // Build a combined filename label for persistence
+        const combinedFileName = allStaged.map(f => f.fileName).join(" + ");
+        onDataLoaded(merged, analyticsPayload, combinedFileName);
 
         // Reset all state
         setPendingFiles([]);
@@ -155,6 +157,27 @@ export default function UploadZone({ onDataLoaded }) {
 
   return (
     <div className="flex flex-col items-center justify-center py-16 animate-in fade-in duration-500">
+
+      {/* ── Cached pipeline card ── */}
+      {cachedPipelineMeta && (
+        <div className="w-full max-w-3xl mb-6 bg-emerald-50 border border-emerald-200 rounded-2xl p-5 shadow-sm flex items-center gap-4">
+          <div className="bg-emerald-100 p-3 rounded-xl shrink-0">
+            <FileSpreadsheet className="w-6 h-6 text-emerald-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-emerald-800 text-sm truncate">{cachedPipelineMeta.fileName}</p>
+            <p className="text-xs text-emerald-600 mt-0.5">
+              {cachedPipelineMeta.merchantCount} merchants · loaded today · pipeline is active
+            </p>
+          </div>
+          <button
+            onClick={onClearPipeline}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-red-200 text-red-600 hover:bg-red-50 text-xs font-bold rounded-xl transition-colors whitespace-nowrap shrink-0"
+          >
+            <X className="w-3.5 h-3.5" /> Remove Pipeline
+          </button>
+        </div>
+      )}
 
       {isProcessing && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center">

@@ -300,7 +300,7 @@ export default function DeliveryPanel({
       opened.add(idx);
       return { ...prev, opened };
     });
-    await logEmailSend({
+    const logResult = await logEmailSend({
       repEmail: userProfile?.email || repSettings?.email || "",
       repName: userProfile?.full_name || `${repSettings?.firstName || ""} ${repSettings?.lastName || ""}`.trim() || "",
       merchantName: target.merchant?.merchantName || "",
@@ -312,6 +312,9 @@ export default function DeliveryPanel({
       deliveryMethod: "gmail_tab",
       emailFormat,
     });
+    if (!logResult.success) {
+      setSendStatus({ type: "error", msg: "⚠️ Email opened but the send log failed to save. Please notify your manager so this can be counted manually." });
+    }
     // Fire analytics event (fire-and-forget)
     trackFormSubmit(sessionId, userProfile?.email || repSettings?.email || "", "delivery_panel", {
       deliveryMethod: "gmail_tab",
@@ -391,7 +394,7 @@ export default function DeliveryPanel({
         opened.add(idx);
         return { ...prev, opened };
       });
-      await logEmailSend({
+      const logResult = await logEmailSend({
         repEmail: userProfile?.email || repSettings?.email || "",
         repName: userProfile?.full_name || senderName,
         merchantName: t.merchant?.merchantName || "",
@@ -403,6 +406,9 @@ export default function DeliveryPanel({
         deliveryMethod: "gmail_tab",
         emailFormat,
       });
+      if (!logResult.success) {
+        setSendStatus({ type: "error", msg: "⚠️ Draft created but the send log failed to save. Please notify your manager so this can be counted manually." });
+      }
       if (isRep && !isBlankSend) refreshQuota();
     }, 1500);
   };
@@ -521,7 +527,16 @@ export default function DeliveryPanel({
         deliveryMethod: "gas_draft",
         emailFormat,
       }));
-      await logEmailSend(logEvents);
+      const logResult = await logEmailSend(logEvents);
+      // If the bulk log insert failed, overwrite the success status with a warning
+      // so managers are alerted and can count these manually.
+      if (!logResult.success) {
+        setSendStatus({
+          type: "error",
+          msg: `⚠️ ${payloads.length} draft${payloads.length > 1 ? "s" : ""} were created in Gmail but the send log failed to save. Please notify your manager so these can be counted manually.`,
+          draftsUrl: "https://mail.google.com/mail/u/0/#drafts",
+        });
+      }
       // Refresh quota after GAS send (non-blocking)
       if (isRep && !isBlankSend) refreshQuota();
     }, 1500);

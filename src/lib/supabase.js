@@ -72,10 +72,11 @@ export async function getActiveSenders() {
 /**
  * Log an email send event to the tracking table.
  * Supports both single object or array of objects for bulk insert.
+ * Returns { success: boolean } so callers can surface failures to the user.
  */
 export async function logEmailSend(eventOrEvents) {
   const payload = Array.isArray(eventOrEvents) ? eventOrEvents : [eventOrEvents];
-  if (payload.length === 0) return;
+  if (payload.length === 0) return { success: true };
 
   const mapped = payload.map(e => ({
     rep_email: e.repEmail,
@@ -92,23 +93,29 @@ export async function logEmailSend(eventOrEvents) {
 
   const { error } = await supabase.from("email_send_log").insert(mapped);
   if (error) console.warn("[logEmailSend]", error.message);
+  return { success: !error };
 }
 
 /**
  * Count how many emails the rep has sent today, excluding blank promo sends.
- * Used to enforce the 45-email daily limit for reps.
+ * Used to enforce the daily limit for reps.
+ *
+ * Uses the browser's LOCAL midnight as the start of "today" so the quota
+ * window matches the rep's actual workday, not UTC midnight (which would
+ * incorrectly exclude emails sent in the morning for GMT+ timezones).
+ * Case-insensitive match (ilike) handles any capitalisation differences
+ * between the whitelist email and what was stored in the send log.
  */
 export async function getRepDailyCount(repEmail) {
   if (!repEmail) return 0;
-  // Always use UTC midnight so the window matches Supabase's stored timestamps
-  // regardless of the rep's local timezone.
+  // Local midnight: start of today in the rep's own timezone
   const now = new Date();
-  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // local midnight
 
   const { data, error } = await supabase
     .from("email_send_log")
     .select("id, promo_types")
-    .eq("rep_email", repEmail)
+    .ilike("rep_email", repEmail.trim())   // case-insensitive to handle capitalisation drift
     .gte("sent_at", todayStart.toISOString());
 
   if (error) {

@@ -70,15 +70,54 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
   const [phase, setPhase] = useState("upload");
   const repEmail = userProfile?.email || "";
 
+  // ── Pipeline persistence ─────────────────────────────────────────────────
+  // The parsed merchant pipeline is saved to localStorage so reps don't need
+  // to re-upload their BOB every time they open the app. It is scoped to the
+  // current calendar date — stale pipelines from previous days are ignored
+  // automatically since BOBs change daily.
+  const PIPELINE_KEY = "mcd_pipeline_v1";
+  const todayDateStr = new Date().toLocaleDateString("en-CA"); // "YYYY-MM-DD" in local time
+
+  const [cachedPipelineMeta, setCachedPipelineMeta] = useState(() => {
+    // On mount: check if a same-day pipeline exists in localStorage
+    try {
+      const raw = localStorage.getItem(PIPELINE_KEY);
+      if (!raw) return null;
+      const saved = JSON.parse(raw);
+      if (saved.date !== todayDateStr) return null; // stale — ignore
+      return { fileName: saved.fileName, merchantCount: saved.merchantCount, date: saved.date };
+    } catch {
+      return null;
+    }
+  });
+
+  // Restore pipeline from localStorage on mount if same-day data exists
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PIPELINE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (saved.date !== todayDateStr) return;
+      if (!saved.merchants || saved.merchants.length === 0) return;
+      setMerchants(saved.merchants);
+      setAnalyticsPayload(saved.analyticsPayload || null);
+      // Go straight to the merchant selection screen — skip the upload step
+      setPhase(saved.analyticsPayload ? "analyze" : "select");
+    } catch {
+      /* silently ignore corrupt data */
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [merchants, setMerchants] = useState([]);
+  const [activeMerchantIds, setActiveMerchantIds] = useState(new Set());
+  const [analyticsPayload, setAnalyticsPayload] = useState(null);  // BOB Intelligence Suite data
+
   // Track every phase transition as a navigation event
   useEffect(() => {
     if (sessionId && repEmail) {
       trackNavigation(sessionId, repEmail, phase);
     }
   }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [merchants, setMerchants] = useState([]);
-  const [activeMerchantIds, setActiveMerchantIds] = useState(new Set());
-  const [analyticsPayload, setAnalyticsPayload] = useState(null);  // BOB Intelligence Suite data
 
   // Phase 3 states
   const [selectedPromos, setSelectedPromos] = useState([]);
@@ -254,7 +293,7 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
     });
   }, [resolvedGlobalBlocks, globalHtmlTemplate, targetMerchants, deepLinks, selectedTheme, selectedPromos]);
 
-  const handleDataLoaded = (parsedData, payload) => {
+  const handleDataLoaded = (parsedData, payload, fileName) => {
     setMerchants(parsedData);
     setAnalyticsPayload(payload || null);
 
@@ -265,8 +304,37 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
     setGlobalBlocks([]);
     setGlobalHtmlTemplate("");
 
+    // 💾 Persist parsed pipeline to localStorage so the rep doesn't need to
+    // re-upload on refresh. Scoped to today's date — automatically ignored tomorrow.
+    try {
+      const meta = { fileName: fileName || "pipeline", merchantCount: parsedData.length, date: todayDateStr };
+      localStorage.setItem(PIPELINE_KEY, JSON.stringify({
+        ...meta,
+        merchants: parsedData,
+        analyticsPayload: payload || null,
+      }));
+      setCachedPipelineMeta(meta);
+    } catch (e) {
+      // localStorage quota exceeded — not critical, just skip persistence
+      console.warn("[pipeline] Could not persist to localStorage:", e.message);
+    }
+
     // Navigate to analyze if we have analytics data, otherwise straight to select
     setPhase(payload ? "analyze" : "select");
+  };
+
+  // Allow the rep to wipe the saved pipeline and return to the upload screen
+  const handleClearPipeline = () => {
+    localStorage.removeItem(PIPELINE_KEY);
+    setCachedPipelineMeta(null);
+    setMerchants([]);
+    setActiveMerchantIds(new Set());
+    setAnalyticsPayload(null);
+    setSelectedPromos([]);
+    setPromoConfigs({});
+    setGlobalBlocks([]);
+    setGlobalHtmlTemplate("");
+    setPhase("upload");
   };
 
   const selectedCount = merchants.filter(m => m.selected).length;
@@ -298,7 +366,11 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
         />
 
         {phase === "upload" && (
-          <UploadZone onDataLoaded={handleDataLoaded} />
+          <UploadZone
+            onDataLoaded={handleDataLoaded}
+            cachedPipelineMeta={cachedPipelineMeta}
+            onClearPipeline={handleClearPipeline}
+          />
         )}
 
         {phase === "analyze" && (
