@@ -195,7 +195,11 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
   }, [merchants, activeMerchantIds]);
 
   const deepLinks = useMemo(() => {
-    return buildAllDeepLinks(targetMerchants, selectedPromos, promoConfigs, repSettings.repId);
+    // Null-guards at call site only — builder is frozen DoorDash contract.
+    // Pass values verbatim, no coercion before the builder.
+    const safePromos = selectedPromos ?? [];
+    const safeConfigs = promoConfigs ?? {};
+    return buildAllDeepLinks(targetMerchants, safePromos, safeConfigs, repSettings.repId);
   }, [targetMerchants, selectedPromos, promoConfigs, repSettings.repId]);
 
   // Initialize globalBlocks lazily | only when we have promos and no blocks yet.

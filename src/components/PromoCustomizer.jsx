@@ -5,12 +5,15 @@ import { PROMO_CATALOG } from "./PromoSelector";
 // ── Exported validator   used by App.jsx to gate the next-step button ──────────
 // Returns an array of human-readable error strings.
 // Empty array = all configs valid.
+// Input-only: never rewrites URL shape — values still pass raw to the builder.
 export function getPromoConfigErrors(selectedPromos, promoConfigs, isUltimate) {
+  const safePromos = selectedPromos ?? [];
+  const safeConfigs = promoConfigs ?? {};
   if (isUltimate) return []; // Ultimate has no restrictions
-  if (selectedPromos.length === 1 && selectedPromos[0] === "blank") return []; // Blank needs no config
+  if (safePromos.length === 1 && safePromos[0] === "blank") return []; // Blank needs no config
   const errors = [];
-  if (selectedPromos.includes("discount")) {
-    const cfg = promoConfigs["discount"] || {};
+  if (safePromos.includes("discount")) {
+    const cfg = safeConfigs["discount"] || {};
     const discountType = cfg.discountType || "percentage";
     const mst = parseFloat(cfg.minSubtotal);
 
@@ -29,6 +32,32 @@ export function getPromoConfigErrors(selectedPromos, promoConfigs, isUltimate) {
         errors.push("Discount: Please enter a discount amount.");
       } else if (dollarVal < minDollar) {
         errors.push(`Discount: Dollar off amount must be at least $${minDollar} (10% of $${mst} min subtotal).`);
+      }
+    }
+  }
+  if (safePromos.includes("ads")) {
+    const cfg = safeConfigs["ads"] || {};
+    const raw = cfg.budget;
+    if (raw === undefined || raw === null || String(raw).trim() === "") {
+      errors.push("Sponsored Listing: Please enter a weekly budget.");
+    } else {
+      const budget = parseFloat(raw);
+      if (!isFinite(budget) || isNaN(budget)) {
+        errors.push("Sponsored Listing: Weekly budget must be a number.");
+      } else if (budget <= 0) {
+        errors.push("Sponsored Listing: Weekly budget must be greater than $0.");
+      }
+    }
+  }
+  if (safePromos.includes("delivery_fee")) {
+    const cfg = safeConfigs["delivery_fee"] || {};
+    // UI defaults to "25" and builder falls back to 2500 — only flag explicitly invalid values.
+    if (cfg.minSubtotal !== undefined && cfg.minSubtotal !== null && String(cfg.minSubtotal).trim() !== "") {
+      const mstFee = parseFloat(cfg.minSubtotal);
+      if (isNaN(mstFee) || !isFinite(mstFee)) {
+        errors.push("Delivery Fee: Minimum subtotal must be a number.");
+      } else if (mstFee <= 0) {
+        errors.push("Delivery Fee: Minimum subtotal must be greater than $0.");
       }
     }
   }
