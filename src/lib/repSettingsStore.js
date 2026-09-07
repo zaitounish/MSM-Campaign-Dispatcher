@@ -100,6 +100,30 @@ export async function saveRepSettings(email, settings) {
   }
 }
 
+/**
+ * Mirror the Assisted Rep ID into reps_whitelist.rep_id so the Admin panel
+ * and the BulkSend rep list pick it up.
+ *
+ * Goes through the `set_my_rep_id` RPC (SECURITY DEFINER, updates only the
+ * caller's own row) because RLS cannot scope an UPDATE to a single column.
+ * Fire-and-forget: returns { ok } and never throws.
+ */
+export async function mirrorRepIdToWhitelist(repId) {
+  const id = (repId || "").trim();
+  if (!id) return { ok: false };
+  try {
+    const { error } = await supabase.rpc("set_my_rep_id", { p_rep_id: id });
+    if (error) {
+      console.warn("[repSettings] mirror rep_id:", error.message);
+      return { ok: false };
+    }
+    return { ok: true };
+  } catch (e) {
+    console.warn("[repSettings] mirror rep_id exception:", e.message);
+    return { ok: false };
+  }
+}
+
 /** Read the local instant-paint cache (may be stale — DB wins on load). */
 export function readSettingsCache() {
   try {

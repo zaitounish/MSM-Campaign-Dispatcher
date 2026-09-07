@@ -17,6 +17,7 @@ import { trackNavigation } from "./lib/analytics";
 import {
   loadRepSettings,
   saveRepSettings,
+  mirrorRepIdToWhitelist,
   readSettingsCache,
   writeSettingsCache,
 } from "./lib/repSettingsStore";
@@ -177,8 +178,16 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
   // the DB row always wins on load.
   const [repSettings, setRepSettings] = useState({});
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  // idle | saving | synced | error — surfaced in the settings modal footer
+  // so a failed sync is never silent.
+  const [settingsSync, setSettingsSync] = useState("idle");
   // Snapshot of settings as loaded (JSON) — skips echo saves of unmodified data.
   const loadedSnapshotRef = useRef(null);
+  // Last repId mirrored into reps_whitelist — avoids redundant RPC calls.
+  const mirroredRepIdRef = useRef(null);
+  // Latest settings for the beforeunload flush.
+  const latestSettingsRef = useRef({});
+  useEffect(() => { latestSettingsRef.current = repSettings; });
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
@@ -189,6 +198,7 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
     if (!repEmail) return;
     let cancelled = false;
     loadedSnapshotRef.current = null;
+    mirroredRepIdRef.current = null;
     // Instant paint from cache (may be stale — DB wins below).
     setRepSettings(readSettingsCache());
     (async () => {
@@ -198,6 +208,8 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
         setRepSettings(dbSettings);
         writeSettingsCache(dbSettings);
         loadedSnapshotRef.current = JSON.stringify(dbSettings);
+        mirroredRepIdRef.current = dbSettings.repId || null;
+        setSettingsSync("synced");
       }
       // No DB row (first login, or pre-migration cache): the save effect
       // below backfills the row once settingsLoaded flips true.
@@ -213,7 +225,9 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
     }
   }, [settingsLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Save: synchronous cache write + debounced DB upsert (fire-and-forget).
+  // Save: synchronous cache write + IMMEDIATE DB upsert (fire-and-forget).
+  // Deliberately no debounce — settings only change on explicit modal saves
+  // (rare discrete events), and a delayed write can be lost if the tab closes.
   useEffect(() => {
     if (!repEmail || !settingsLoaded) return;
     if (Object.keys(repSettings).length === 0) return; // nothing to persist yet
@@ -221,11 +235,30 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
     if (snap === loadedSnapshotRef.current) return; // echo of load — no-op
     loadedSnapshotRef.current = snap;
     writeSettingsCache(repSettings);
-    const t = setTimeout(() => {
-      saveRepSettings(repEmail, repSettings);
-    }, 800);
-    return () => clearTimeout(t);
+    setSettingsSync("saving");
+    saveRepSettings(repEmail, repSettings).then(({ ok }) => {
+      setSettingsSync(ok ? "synced" : "error");
+    });
+    // Mirror Assisted Rep ID into the whitelist so the Admin panel and the
+    // BulkSend rep list pick it up. Only fires when the repId actually changed.
+    if (repSettings.repId && repSettings.repId !== mirroredRepIdRef.current) {
+      mirroredRepIdRef.current = repSettings.repId;
+      mirrorRepIdToWhitelist(repSettings.repId).then(({ ok }) => {
+        if (!ok) mirroredRepIdRef.current = null; // retry on next change
+      });
+    }
   }, [repSettings, repEmail, settingsLoaded]);
+
+  // Best-effort flush if the tab closes mid-save.
+  useEffect(() => {
+    if (!repEmail) return;
+    const flush = () => {
+      const s = latestSettingsRef.current;
+      if (s && Object.keys(s).length > 0) saveRepSettings(repEmail, s);
+    };
+    window.addEventListener("beforeunload", flush);
+    return () => window.removeEventListener("beforeunload", flush);
+  }, [repEmail]);
 
   // Derived phase 4 states
   const targetMerchants = useMemo(() => {
@@ -396,6 +429,7 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
         onClose={() => setIsSettingsOpen(false)}
         repSettings={repSettings}
         setRepSettings={setRepSettings}
+        syncStatus={settingsSync}
       />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-8">
