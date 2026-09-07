@@ -275,7 +275,7 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
           </div>
           <div>
             <h2 className="text-xl font-bold text-slate-800 tracking-tight">Rep Configuration</h2>
-            <p className="text-sm text-slate-500 font-medium">Saved locally in your browser.</p>
+            <p className="text-sm text-slate-500 font-medium">Saved to your rep profile · syncs across devices.</p>
           </div>
         </div>
 

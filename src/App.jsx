@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Header from "./components/Header";
 import StepIndicator from "./components/StepIndicator";
 import UploadZone from "./components/UploadZone";
@@ -14,6 +14,12 @@ import AdminPanel from "./components/AdminPanel";
 import { ArrowRight, Settings } from "lucide-react";
 import { buildAllDeepLinks } from "./lib/deepLinkBuilder";
 import { trackNavigation } from "./lib/analytics";
+import {
+  loadRepSettings,
+  saveRepSettings,
+  readSettingsCache,
+  writeSettingsCache,
+} from "./lib/repSettingsStore";
 import {
   generateInitialBlocks,
   buildEmailSubject,
@@ -164,30 +170,62 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
     }
   }, [applyBlankReset, applyPromoWipe, selectedPromos]);
 
-  // Scaffolding states for later phases
-  const [repSettings, setRepSettings] = useState(() => {
-    try {
-      const saved = localStorage.getItem("mcd_rep_settings");
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
+  // ── Rep settings: Supabase is the source of truth ────────────────────────
+  // Stored in the `rep_settings` table keyed per rep email, so settings
+  // follow the rep across devices and survive browser data wipes.
+  // localStorage is only an instant-paint cache + offline fallback —
+  // the DB row always wins on load.
+  const [repSettings, setRepSettings] = useState({});
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  // Snapshot of settings as loaded (JSON) — skips echo saves of unmodified data.
+  const loadedSnapshotRef = useRef(null);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
 
-  // Auto-open settings if repId is missing on App mount
+  // Load: paint instantly from cache, then converge on the DB row.
   useEffect(() => {
-    if (!repSettings.repId) {
+    if (!repEmail) return;
+    let cancelled = false;
+    loadedSnapshotRef.current = null;
+    // Instant paint from cache (may be stale — DB wins below).
+    setRepSettings(readSettingsCache());
+    (async () => {
+      const dbSettings = await loadRepSettings(repEmail);
+      if (cancelled) return;
+      if (dbSettings && Object.keys(dbSettings).length > 0) {
+        setRepSettings(dbSettings);
+        writeSettingsCache(dbSettings);
+        loadedSnapshotRef.current = JSON.stringify(dbSettings);
+      }
+      // No DB row (first login, or pre-migration cache): the save effect
+      // below backfills the row once settingsLoaded flips true.
+      setSettingsLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, [repEmail]);
+
+  // Auto-open settings once loaded if repId is still missing
+  useEffect(() => {
+    if (settingsLoaded && !repSettings.repId) {
       setIsSettingsOpen(true);
     }
-  }, []);
+  }, [settingsLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Save: synchronous cache write + debounced DB upsert (fire-and-forget).
   useEffect(() => {
-    localStorage.setItem("mcd_rep_settings", JSON.stringify(repSettings));
-  }, [repSettings]);
+    if (!repEmail || !settingsLoaded) return;
+    if (Object.keys(repSettings).length === 0) return; // nothing to persist yet
+    const snap = JSON.stringify(repSettings);
+    if (snap === loadedSnapshotRef.current) return; // echo of load — no-op
+    loadedSnapshotRef.current = snap;
+    writeSettingsCache(repSettings);
+    const t = setTimeout(() => {
+      saveRepSettings(repEmail, repSettings);
+    }, 800);
+    return () => clearTimeout(t);
+  }, [repSettings, repEmail, settingsLoaded]);
 
   // Derived phase 4 states
   const targetMerchants = useMemo(() => {
