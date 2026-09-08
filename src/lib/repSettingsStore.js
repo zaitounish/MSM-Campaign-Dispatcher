@@ -63,6 +63,7 @@ export function toDbRow(email, settings) {
  */
 export async function loadRepSettings(email) {
   const key = normalizeRepEmail(email);
+  console.log("[repSettings] LOAD | raw email:", JSON.stringify(email), "→ normalized key:", JSON.stringify(key));
   if (!key) return null;
   try {
     const { data, error } = await supabase
@@ -71,12 +72,15 @@ export async function loadRepSettings(email) {
       .eq("rep_email", key)
       .maybeSingle();
     if (error) {
-      console.warn("[repSettings] load:", error.message);
+      console.error("[repSettings] LOAD ERROR:", error.code, error.message, error.details);
       return null;
     }
+    console.log("[repSettings] LOAD result:", data
+      ? `row found (rep_id=${data.rep_id}, gas_url=${data.gas_url ? "set" : "empty"}, signature=${data.signature ? "set" : "empty"})`
+      : "NO ROW in DB — settings will be blank");
     return fromDbRow(data);
   } catch (e) {
-    console.warn("[repSettings] load exception:", e.message);
+    console.error("[repSettings] LOAD exception:", e.message);
     return null;
   }
 }
@@ -87,18 +91,26 @@ export async function loadRepSettings(email) {
  */
 export async function saveRepSettings(email, settings) {
   const key = normalizeRepEmail(email);
+  console.log("[repSettings] SAVE | normalized key:", JSON.stringify(key),
+    "| rep_id:", settings?.repId, "| gas_url:", settings?.gasUrl ? "set" : "empty",
+    "| signature:", settings?.signature ? "set" : "empty");
   if (!key) return { ok: false };
   try {
+    const row = toDbRow(key, settings);
+    console.log("[repSettings] SAVE | upsert payload:", JSON.stringify({ ...row, signature: row.signature ? `[${row.signature.length} chars]` : null }));
     const { error } = await supabase
       .from("rep_settings")
-      .upsert(toDbRow(key, settings), { onConflict: "rep_email" });
+      .upsert(row, { onConflict: "rep_email" });
     if (error) {
-      console.warn("[repSettings] save:", error.message);
+      console.error("[repSettings] SAVE ERROR:", error.code, error.message, error.details,
+        "\n→ If code=23503: FK still active — run migration 003 in Supabase SQL Editor.",
+        "\n→ If code=42501: RLS blocked — check auth.email() matches rep_email.");
       return { ok: false };
     }
+    console.log("[repSettings] SAVE SUCCESS ✓ — row written to DB for", key);
     return { ok: true };
   } catch (e) {
-    console.warn("[repSettings] save exception:", e.message);
+    console.error("[repSettings] SAVE exception:", e.message);
     return { ok: false };
   }
 }
