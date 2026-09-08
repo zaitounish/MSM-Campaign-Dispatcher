@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Database, Settings, Save, AlertCircle, Sparkles, FileText,
+  Database, Settings, Save, AlertCircle, FileText,
   Bold, Italic, X, AlignLeft, AlignCenter, AlignRight, Trash2,
+  ChevronDown, ChevronUp, ExternalLink, Copy, Check,
 } from "lucide-react";
 import { sanitizeHtml } from "../lib/sanitize";
+import { GAS_SCRIPT } from "../lib/gasScript";
 
 // ── Draggable resize handle positions ─────────────────────────────────────────
 // 8 handles: corners + edge midpoints
@@ -164,10 +166,16 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
   const sigContainerRef = useRef(null); // the scrollable container
   const [sigEmpty, setSigEmpty] = useState(!repSettings.signature);
   const [selImg, setSelImg] = useState(null);
+  const [gasExpanded, setGasExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [authMsg, setAuthMsg] = useState(null);
 
   // Re-sync every time the modal opens
   useEffect(() => {
     if (!isOpen) return;
+    setGasExpanded(false);
+    setCopied(false);
+    setAuthMsg(null);
     setFormData({
       repId: repSettings.repId || "",
       gasUrl: repSettings.gasUrl || "",
@@ -214,6 +222,25 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
   if (!isOpen) return null;
 
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+
+  // Open the GAS URL in a new tab so Google records the Gmail grant (one-time).
+  // Uses the live form value so reps can authorize before hitting Save.
+  const handleAuthorizeGas = () => {
+    const url = (formData.gasUrl || "").trim();
+    if (!url) {
+      setAuthMsg({ type: "error", msg: "Paste your Web App URL into the field above first, then authorize." });
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+    setAuthMsg({ type: "success", msg: "GAS opened in a new tab. If you see a Google permissions screen, click Allow. After that, Gmail Drafts will work silently." });
+  };
+
+  const handleCopyScript = () => {
+    navigator.clipboard.writeText(GAS_SCRIPT).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   const sigExec = (cmd, val = null) => {
     signatureRef.current?.focus();
@@ -403,13 +430,60 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
                 className="w-full bg-slate-50 border border-slate-300 font-mono text-xs rounded-xl px-4 py-2.5 focus:border-dd-red focus:ring-1 focus:ring-dd-red outline-none transition-all" />
             </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 text-violet-500" /> Gemini API Key (AI Insights)
-              </label>
-              <input type="password" name="geminiApiKey" value={formData.geminiApiKey} onChange={handleChange}
-                placeholder="AIza..."
-                className="w-full bg-slate-50 border border-slate-300 font-mono text-xs rounded-xl px-4 py-2.5 focus:border-violet-500 focus:ring-1 focus:ring-violet-400 outline-none transition-all" />
+            <div className="border border-slate-200 rounded-2xl overflow-hidden">
+              <button type="button" onClick={() => setGasExpanded(v => !v)}
+                className="w-full flex items-center justify-between px-5 py-3.5 bg-slate-50 hover:bg-slate-100 transition-colors text-sm font-bold text-slate-700">
+                <span className="flex items-center gap-2">
+                  One-time Google Apps Script Setup
+                  {formData.gasUrl?.trim()
+                    ? <span className="text-[10px] bg-green-100 text-green-700 border border-green-200 px-2 py-0.5 rounded-full font-bold">✓ Configured</span>
+                    : <span className="text-[10px] bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-bold">Not set up</span>
+                  }
+                </span>
+                {gasExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+              </button>
+
+              {gasExpanded && (
+                <div className="px-5 py-5 bg-white space-y-4 border-t border-slate-200 text-sm text-slate-700">
+                  <ol className="list-decimal list-inside space-y-2 text-slate-600">
+                    <li>Go to <a href="https://script.google.com" target="_blank" rel="noreferrer" className="text-blue-600 underline font-semibold">script.google.com</a> and create a <strong>New Project</strong>.</li>
+                    <li>Delete any existing code and paste the script below.</li>
+                    <li>Click <strong>Deploy → New Deployment → Web App</strong>. <span className="text-xs text-amber-600 font-bold">(Always choose &quot;New Deployment&quot; if updating!)</span></li>
+                    <li>Set <em>Execute as</em> = <strong>Me</strong>, <em>Who has access</em> = <strong>Anyone within DoorDash</strong>.</li>
+                    <li>Click Deploy, authorize Gmail permissions, and <strong>copy the Web App URL</strong>.</li>
+                    <li>Paste that URL into the <strong>Google Apps Script Web App URL</strong> field above, then hit <strong>Save Configuration</strong>.</li>
+                    <li className="font-semibold text-slate-800">Click the <span className="bg-emerald-100 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md text-xs">Authorize GAS</span> button below — this opens your script once so Google records your approval. Only needed the first time.</li>
+                  </ol>
+
+                  <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                    <div className="flex-1">
+                      <p className="text-xs font-bold text-amber-800">⚡ First-time authorization required</p>
+                      <p className="text-xs text-amber-700 mt-0.5">Opens your GAS script in a new tab. If Google shows a permissions screen, click <strong>Allow</strong>. Only needed once per browser.</p>
+                    </div>
+                    <button type="button" onClick={handleAuthorizeGas}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-colors whitespace-nowrap shadow-sm">
+                      <ExternalLink className="w-3 h-3" /> Authorize GAS
+                    </button>
+                  </div>
+                  {authMsg && (
+                    <p className={`text-xs font-semibold ${authMsg.type === "error" ? "text-red-600" : "text-green-700"}`}>{authMsg.msg}</p>
+                  )}
+
+                  <div className="relative">
+                    <pre className="bg-slate-900 text-green-300 rounded-xl p-4 text-xs overflow-x-auto leading-relaxed font-mono whitespace-pre">
+                      {GAS_SCRIPT}
+                    </pre>
+                    <button type="button" onClick={handleCopyScript}
+                      className="absolute top-3 right-3 flex items-center gap-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors">
+                      {copied ? <><Check className="w-3 h-3" /> Copied!</> : <><Copy className="w-3 h-3" /> Copy</>}
+                    </button>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    <strong>How it works:</strong> Instead of a network API call, the app submits a hidden browser form to your GAS URL. This automatically includes your DoorDash Google session cookies, so GAS authenticates you silently — no CORS issues, no IT approvals needed.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -419,16 +493,16 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
         <div className="px-8 py-5 border-t border-slate-200 bg-slate-50 flex justify-between items-center gap-3 shrink-0">
           <SyncStatusLabel status={syncStatus} />
           <div className="flex gap-3">
-          {formData.repId && (
-            <button onClick={onClose}
-              className="px-6 py-2.5 rounded-xl font-bold text-slate-600 bg-white border border-slate-300 hover:bg-slate-100 transition-colors shadow-sm">
-              Cancel
+            {formData.repId && (
+              <button onClick={onClose}
+                className="px-6 py-2.5 rounded-xl font-bold text-slate-600 bg-white border border-slate-300 hover:bg-slate-100 transition-colors shadow-sm">
+                Cancel
+              </button>
+            )}
+            <button onClick={handleSave} disabled={!formData.repId}
+              className="flex items-center gap-2 px-8 py-2.5 rounded-xl font-bold text-white bg-dd-red hover:bg-dd-red-dark shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              <Save className="w-4 h-4" /> Save Configuration
             </button>
-          )}
-          <button onClick={handleSave} disabled={!formData.repId}
-            className="flex items-center gap-2 px-8 py-2.5 rounded-xl font-bold text-white bg-dd-red hover:bg-dd-red-dark shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-            <Save className="w-4 h-4" /> Save Configuration
-          </button>
           </div>
         </div>
 
