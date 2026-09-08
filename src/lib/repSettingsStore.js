@@ -66,30 +66,42 @@ export async function loadRepSettings(email) {
   console.log("[repSettings] LOAD | raw email:", JSON.stringify(email), "→ normalized key:", JSON.stringify(key));
   if (!key) return null;
   try {
-    // Verify the client actually has an authenticated session before querying
-    // the RLS-protected table. If the JWT is missing/expired, the query will
-    // return 42501 (permission denied) because auth.email() will be NULL.
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
-      console.error("[repSettings] LOAD aborted — no active Supabase session. " +
-        "The user JWT is missing. RLS will block all rep_settings queries.");
+      console.warn("[repSettings] LOAD skipped — no active Supabase session.");
       return null;
     }
     console.log("[repSettings] LOAD | session OK, user:", session.user?.email);
 
+    // Attempt 1: Direct table query
     const { data, error } = await supabase
       .from("rep_settings")
       .select("rep_id, gas_url, gemini_api_key, first_name, last_name, title, phone, signature, updated_at")
       .eq("rep_email", key)
       .maybeSingle();
-    if (error) {
-      console.error("[repSettings] LOAD ERROR:", error.code, error.message, error.details);
-      return null;
+
+    if (!error) {
+      console.log("[repSettings] LOAD result:", data
+        ? `row found (rep_id=${data.rep_id}, gas_url=${data.gas_url ? "set" : "empty"}, signature=${data.signature ? "set" : "empty"})`
+        : "NO ROW in DB — settings will be blank");
+      return fromDbRow(data);
     }
-    console.log("[repSettings] LOAD result:", data
-      ? `row found (rep_id=${data.rep_id}, gas_url=${data.gas_url ? "set" : "empty"}, signature=${data.signature ? "set" : "empty"})`
-      : "NO ROW in DB — settings will be blank");
-    return fromDbRow(data);
+
+    console.warn("[repSettings] Direct table LOAD failed:", error.code, error.message,
+      "\n→ Attempting fallback via get_my_rep_settings RPC...");
+
+    // Attempt 2: RPC fallback (bypasses table grant issues via SECURITY DEFINER)
+    const { data: rpcData, error: rpcError } = await supabase.rpc("get_my_rep_settings");
+    if (!rpcError && rpcData) {
+      console.log("[repSettings] LOAD success via RPC get_my_rep_settings ✓");
+      return fromDbRow(rpcData);
+    }
+
+    console.error("[repSettings] LOAD ERROR: Table and RPC queries failed.",
+      "\nTable error:", error?.code, error?.message,
+      "\nRPC error:", rpcError?.code, rpcError?.message,
+      "\n→ Run supabase-migrations/004_fix_rep_settings_permissions.sql in Supabase SQL Editor.");
+    return null;
   } catch (e) {
     console.error("[repSettings] LOAD exception:", e.message);
     return null;
@@ -107,28 +119,51 @@ export async function saveRepSettings(email, settings) {
     "| signature:", settings?.signature ? "set" : "empty");
   if (!key) return { ok: false };
   try {
-    // Same session check as loadRepSettings — without a JWT, RLS rejects the upsert.
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
-      console.error("[repSettings] SAVE aborted — no active Supabase session. " +
-        "The user JWT is missing. RLS will block all rep_settings writes.");
+      console.warn("[repSettings] SAVE skipped — no active Supabase session.");
       return { ok: false };
     }
     console.log("[repSettings] SAVE | session OK, user:", session.user?.email);
 
     const row = toDbRow(key, settings);
     console.log("[repSettings] SAVE | upsert payload:", JSON.stringify({ ...row, signature: row.signature ? `[${row.signature.length} chars]` : null }));
+
+    // Attempt 1: Direct table upsert
     const { error } = await supabase
       .from("rep_settings")
       .upsert(row, { onConflict: "rep_email" });
-    if (error) {
-      console.error("[repSettings] SAVE ERROR:", error.code, error.message, error.details,
-        "\n→ If code=23503: FK still active — run migration 003 in Supabase SQL Editor.",
-        "\n→ If code=42501: RLS blocked — check auth.email() matches rep_email.");
-      return { ok: false };
+
+    if (!error) {
+      console.log("[repSettings] SAVE SUCCESS ✓ — row written to DB for", key);
+      return { ok: true };
     }
-    console.log("[repSettings] SAVE SUCCESS ✓ — row written to DB for", key);
-    return { ok: true };
+
+    console.warn("[repSettings] Direct table SAVE failed:", error.code, error.message,
+      "\n→ Attempting fallback via save_my_rep_settings RPC...");
+
+    // Attempt 2: RPC fallback (bypasses table grant issues via SECURITY DEFINER)
+    const { data: rpcSuccess, error: rpcError } = await supabase.rpc("save_my_rep_settings", {
+      p_rep_id: row.rep_id,
+      p_gas_url: row.gas_url,
+      p_gemini_api_key: row.gemini_api_key,
+      p_first_name: row.first_name,
+      p_last_name: row.last_name,
+      p_title: row.title,
+      p_phone: row.phone,
+      p_signature: row.signature,
+    });
+
+    if (!rpcError && rpcSuccess) {
+      console.log("[repSettings] SAVE SUCCESS via RPC fallback ✓ for", key);
+      return { ok: true };
+    }
+
+    console.error("[repSettings] SAVE ERROR: Table and RPC writes both failed.",
+      "\nTable error:", error?.code, error?.message,
+      "\nRPC error:", rpcError?.code, rpcError?.message,
+      "\n→ Run supabase-migrations/004_fix_rep_settings_permissions.sql in Supabase SQL Editor.");
+    return { ok: false };
   } catch (e) {
     console.error("[repSettings] SAVE exception:", e.message);
     return { ok: false };
