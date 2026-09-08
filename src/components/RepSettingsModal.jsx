@@ -151,7 +151,7 @@ function ImgResizeOverlay({ imgEl, containerRef, onDeselect }) {
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
-export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepSettings }) {
+export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepSettings, syncState }) {
   const [formData, setFormData] = useState({
     repId: repSettings.repId || "",
     gasUrl: repSettings.gasUrl || "",
@@ -490,8 +490,29 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
         </div>
 
         {/* Footer */}
-        <div className="px-8 py-5 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 shrink-0">
-          <div className="flex gap-3">
+        <div className="px-8 py-5 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-3 shrink-0">
+          {/* Sync status badge */}
+          <div className="min-w-0">
+            {syncState === "saving" && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                <span className="w-3 h-3 border-2 border-slate-300 border-t-slate-500 rounded-full animate-spin inline-block" />
+                Saving to cloud…
+              </span>
+            )}
+            {syncState === "saved" && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+                <span className="w-4 h-4 rounded-full bg-emerald-100 border border-emerald-300 flex items-center justify-center text-[10px]">✓</span>
+                Saved to cloud
+              </span>
+            )}
+            {syncState === "failed" && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-600">
+                <span className="w-4 h-4 rounded-full bg-red-100 border border-red-300 flex items-center justify-center text-[10px]">✗</span>
+                Sync failed — check console
+              </span>
+            )}
+          </div>
+          <div className="flex gap-3 shrink-0">
             {formData.repId && (
               <button onClick={onClose}
                 className="px-6 py-2.5 rounded-xl font-bold text-slate-600 bg-white border border-slate-300 hover:bg-slate-100 transition-colors shadow-sm">

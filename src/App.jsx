@@ -173,11 +173,15 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
 
   // ── Rep settings: Supabase is the source of truth ────────────────────────
   // Stored in the `rep_settings` table keyed per rep email, so settings
-  // follow the rep across devices and survive browser data wipes.
-  // localStorage is only an instant-paint cache + offline fallback —
-  // the DB row always wins on load.
+  // (Rep ID, GAS URL, signature, name, etc.) follow the rep across devices
+  // and survive browser data wipes. localStorage is only an instant-paint
+  // cache + offline fallback — the DB row always wins on load.
   const [repSettings, setRepSettings] = useState({});
+  // settingsLoaded is reset to false whenever repEmail changes so that the
+  // save-guard stays correct across multiple login cycles without a page reload.
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  // "saving" | "saved" | "failed" | null — passed to RepSettingsModal footer.
+  const [settingsSyncState, setSettingsSyncState] = useState(null);
   // Snapshot of settings as loaded (JSON) — skips echo saves of unmodified data.
   const loadedSnapshotRef = useRef(null);
   // Last repId mirrored into reps_whitelist — avoids redundant RPC calls.
@@ -190,12 +194,15 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
 
-  // Load: paint instantly from cache, then converge on the DB row.
+  // Load: reset settingsLoaded + paint instantly from cache, then converge on DB row.
+  // settingsLoaded is reset at the top so the save-guard is never stale on re-login.
   useEffect(() => {
     if (!repEmail) return;
     let cancelled = false;
+    setSettingsLoaded(false); // ← guard reset: must precede any setRepSettings call
     loadedSnapshotRef.current = null;
     mirroredRepIdRef.current = null;
+    setSettingsSyncState(null);
     // Instant paint from cache (may be stale — DB wins below).
     setRepSettings(readSettingsCache());
     (async () => {
@@ -224,6 +231,7 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
   // Save: synchronous cache write + IMMEDIATE DB upsert (fire-and-forget).
   // Deliberately no debounce — settings only change on explicit modal saves
   // (rare discrete events), and a delayed write can be lost if the tab closes.
+  // Covers: rep_id, gas_url, signature, first_name, last_name, title, phone.
   useEffect(() => {
     if (!repEmail || !settingsLoaded) return;
     if (Object.keys(repSettings).length === 0) return; // nothing to persist yet
@@ -231,9 +239,9 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
     if (snap === loadedSnapshotRef.current) return; // echo of load — no-op
     loadedSnapshotRef.current = snap;
     writeSettingsCache(repSettings);
+    setSettingsSyncState("saving");
     saveRepSettings(repEmail, repSettings).then(({ ok }) => {
-      // Footer no longer shows sync state (per UX); failures still warn here
-      // and data is always preserved in the local cache + retried on unload.
+      setSettingsSyncState(ok ? "saved" : "failed");
       if (!ok) console.warn("[repSettings] DB sync failed — kept in local cache");
     });
     // Mirror Assisted Rep ID into the whitelist so the Admin panel and the
@@ -426,6 +434,7 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
         onClose={() => setIsSettingsOpen(false)}
         repSettings={repSettings}
         setRepSettings={setRepSettings}
+        syncState={settingsSyncState}
       />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-8">
