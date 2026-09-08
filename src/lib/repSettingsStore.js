@@ -8,6 +8,9 @@
  * Identity: keyed by login email (trimmed + lowercased, matching the OTP
  * flow). RLS on rep_settings is exact-match on auth.email(), so
  * normalization here is load-bearing — use it on both read and write.
+ * NOTE (migration 003): there is intentionally NO foreign key to
+ * reps_whitelist(email) — some whitelist emails contain uppercase chars and
+ * a case-sensitive FK rejected those upserts. Ownership is enforced by RLS.
  *
  * Fire-and-forget convention (mirrors lib/analytics.js): helpers warn on
  * failure and never throw, so persistence problems can't break the app.

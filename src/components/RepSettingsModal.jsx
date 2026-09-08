@@ -151,7 +151,7 @@ function ImgResizeOverlay({ imgEl, containerRef, onDeselect }) {
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
-export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepSettings, syncStatus = "idle" }) {
+export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepSettings }) {
   const [formData, setFormData] = useState({
     repId: repSettings.repId || "",
     gasUrl: repSettings.gasUrl || "",
@@ -490,8 +490,7 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
         </div>
 
         {/* Footer */}
-        <div className="px-8 py-5 border-t border-slate-200 bg-slate-50 flex justify-between items-center gap-3 shrink-0">
-          <SyncStatusLabel status={syncStatus} />
+        <div className="px-8 py-5 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 shrink-0">
           <div className="flex gap-3">
             {formData.repId && (
               <button onClick={onClose}
@@ -509,19 +508,6 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
       </div>
     </div>
   );
-}
-
-function SyncStatusLabel({ status }) {
-  if (status === "saving") {
-    return <span className="text-xs font-semibold text-amber-600">Syncing to your profile…</span>;
-  }
-  if (status === "synced") {
-    return <span className="text-xs font-semibold text-green-600">Synced across devices</span>;
-  }
-  if (status === "error") {
-    return <span className="text-xs font-semibold text-red-600">Sync failed — kept in this browser, will retry</span>;
-  }
-  return <span />;
 }
 
 function SigBtn({ onCmd, title, children }) {

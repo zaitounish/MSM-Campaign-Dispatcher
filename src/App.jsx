@@ -178,9 +178,6 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
   // the DB row always wins on load.
   const [repSettings, setRepSettings] = useState({});
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  // idle | saving | synced | error — surfaced in the settings modal footer
-  // so a failed sync is never silent.
-  const [settingsSync, setSettingsSync] = useState("idle");
   // Snapshot of settings as loaded (JSON) — skips echo saves of unmodified data.
   const loadedSnapshotRef = useRef(null);
   // Last repId mirrored into reps_whitelist — avoids redundant RPC calls.
@@ -209,7 +206,6 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
         writeSettingsCache(dbSettings);
         loadedSnapshotRef.current = JSON.stringify(dbSettings);
         mirroredRepIdRef.current = dbSettings.repId || null;
-        setSettingsSync("synced");
       }
       // No DB row (first login, or pre-migration cache): the save effect
       // below backfills the row once settingsLoaded flips true.
@@ -235,9 +231,10 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
     if (snap === loadedSnapshotRef.current) return; // echo of load — no-op
     loadedSnapshotRef.current = snap;
     writeSettingsCache(repSettings);
-    setSettingsSync("saving");
     saveRepSettings(repEmail, repSettings).then(({ ok }) => {
-      setSettingsSync(ok ? "synced" : "error");
+      // Footer no longer shows sync state (per UX); failures still warn here
+      // and data is always preserved in the local cache + retried on unload.
+      if (!ok) console.warn("[repSettings] DB sync failed — kept in local cache");
     });
     // Mirror Assisted Rep ID into the whitelist so the Admin panel and the
     // BulkSend rep list pick it up. Only fires when the repId actually changed.
@@ -429,7 +426,6 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
         onClose={() => setIsSettingsOpen(false)}
         repSettings={repSettings}
         setRepSettings={setRepSettings}
-        syncStatus={settingsSync}
       />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-8">
