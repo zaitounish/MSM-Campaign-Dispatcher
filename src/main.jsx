@@ -70,6 +70,24 @@ function Root() {
   }, []);
 
   const handleAuthenticated = async (profile) => {
+    // Wait until the Supabase client has a confirmed session with a valid JWT.
+    // verifyOtp() sets the session asynchronously — if App mounts and fires
+    // loadRepSettings() before the JWT is committed, RLS sees auth.email()=NULL
+    // and returns 42501 (permission denied). The getSession() call here ensures
+    // the JWT is in place before rep_settings queries are allowed to run.
+    let attempts = 0;
+    let session = null;
+    while (!session && attempts < 10) {
+      const { data } = await supabase.auth.getSession();
+      session = data?.session;
+      if (!session) await new Promise(r => setTimeout(r, 100));
+      attempts++;
+    }
+    if (!session) {
+      console.warn("[auth] handleAuthenticated: session not confirmed after 1s — proceeding anyway.");
+    } else {
+      console.log("[auth] handleAuthenticated: session confirmed for", session.user?.email);
+    }
     setUserProfile(profile);
     setAuthState("authenticated");
     // Start analytics session after OTP login (fire-and-forget)

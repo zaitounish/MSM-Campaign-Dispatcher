@@ -66,6 +66,17 @@ export async function loadRepSettings(email) {
   console.log("[repSettings] LOAD | raw email:", JSON.stringify(email), "→ normalized key:", JSON.stringify(key));
   if (!key) return null;
   try {
+    // Verify the client actually has an authenticated session before querying
+    // the RLS-protected table. If the JWT is missing/expired, the query will
+    // return 42501 (permission denied) because auth.email() will be NULL.
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      console.error("[repSettings] LOAD aborted — no active Supabase session. " +
+        "The user JWT is missing. RLS will block all rep_settings queries.");
+      return null;
+    }
+    console.log("[repSettings] LOAD | session OK, user:", session.user?.email);
+
     const { data, error } = await supabase
       .from("rep_settings")
       .select("rep_id, gas_url, gemini_api_key, first_name, last_name, title, phone, signature, updated_at")
@@ -96,6 +107,15 @@ export async function saveRepSettings(email, settings) {
     "| signature:", settings?.signature ? "set" : "empty");
   if (!key) return { ok: false };
   try {
+    // Same session check as loadRepSettings — without a JWT, RLS rejects the upsert.
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      console.error("[repSettings] SAVE aborted — no active Supabase session. " +
+        "The user JWT is missing. RLS will block all rep_settings writes.");
+      return { ok: false };
+    }
+    console.log("[repSettings] SAVE | session OK, user:", session.user?.email);
+
     const row = toDbRow(key, settings);
     console.log("[repSettings] SAVE | upsert payload:", JSON.stringify({ ...row, signature: row.signature ? `[${row.signature.length} chars]` : null }));
     const { error } = await supabase
