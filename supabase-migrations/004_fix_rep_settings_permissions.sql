@@ -55,20 +55,7 @@ CREATE POLICY "Reps manage own settings" ON public.rep_settings
     lower(rep_email) = lower(coalesce(auth.jwt() ->> 'email', ''))
   );
 
--- 7. Ensure auth.email() helper function exists (for any legacy callers)
-CREATE OR REPLACE FUNCTION auth.email()
-RETURNS text
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-AS $$
-  SELECT coalesce(
-    nullif(current_setting('request.jwt.claim.email', true), ''),
-    (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'email')
-  )::text;
-$$;
-
--- 8. RPC: set_my_rep_id with case-insensitive email match
+-- 7. RPC: set_my_rep_id with case-insensitive email match
 CREATE OR REPLACE FUNCTION public.set_my_rep_id(p_rep_id text)
 RETURNS void
 LANGUAGE plpgsql
@@ -84,7 +71,7 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.set_my_rep_id(text) TO authenticated;
 
--- 9. RPC fallback: get_my_rep_settings (bypasses RLS/grant issues via SECURITY DEFINER)
+-- 8. RPC fallback: get_my_rep_settings (bypasses table grant issues via SECURITY DEFINER)
 CREATE OR REPLACE FUNCTION public.get_my_rep_settings()
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -114,7 +101,7 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.get_my_rep_settings() TO authenticated;
 
--- 10. RPC fallback: save_my_rep_settings (bypasses RLS/grant issues via SECURITY DEFINER)
+-- 9. RPC fallback: save_my_rep_settings (bypasses table grant issues via SECURITY DEFINER)
 CREATE OR REPLACE FUNCTION public.save_my_rep_settings(
   p_rep_id text DEFAULT NULL,
   p_gas_url text DEFAULT NULL,

@@ -56,19 +56,29 @@ export default function EmailPreview({
   const hasOverride = !!(currentMerchant.emailOverride || currentMerchant.cleanOverride);
 
   // Save: persists Rich override, Clean override, and subject independently
-  const handleSave = ({ html, cleanHtml, subject, applyToAll }) => {
+  const handleSave = ({ html, cleanHtml, subject, applyToAll, cleanEdited }) => {
     if (applyToAll) {
-      // Rich: push to global template; Clean: save override on every selected merchant
+      // Rich: push to global template; Clean: only override if Clean mode was actively edited
       setGlobalHtmlTemplate(html);
       setMerchants(prev => prev.map(m =>
         m.selected
-          ? { ...m, emailOverride: null, cleanOverride: cleanHtml || null, subjectOverride: subject || undefined }
+          ? {
+              ...m,
+              emailOverride: null,
+              cleanOverride: cleanEdited ? (cleanHtml || null) : null,
+              subjectOverride: subject || undefined,
+            }
           : m
       ));
     } else {
       setMerchants(prev => prev.map(m =>
         m.id === currentMerchant.id
-          ? { ...m, emailOverride: html || null, cleanOverride: cleanHtml || null, subjectOverride: subject || undefined }
+          ? {
+              ...m,
+              emailOverride: html || null,
+              cleanOverride: cleanHtml || null,
+              subjectOverride: subject || undefined,
+            }
           : m
       ));
     }

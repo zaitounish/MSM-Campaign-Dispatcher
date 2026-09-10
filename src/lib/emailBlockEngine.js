@@ -78,10 +78,21 @@ export const deInjectDeepLinks = (html, dlMap = {}) => {
   Object.entries(dlMap).forEach(([promoId, url]) => {
     if (!url) return;
     const token = deepLinkToken(promoId);
-    // Replace the HTML-encoded form first (&amp;), then the raw form
-    const encoded = url.replace(/&/g, "&amp;");
-    if (encoded !== url) result = result.split(encoded).join(token);
-    result = result.split(url).join(token);
+    // Build set of URL variations (raw, HTML-encoded, %2C case variations)
+    const variants = new Set();
+    variants.add(url);
+    variants.add(url.replace(/&/g, "&amp;"));
+    variants.add(url.replace(/%2C/g, "%2c"));
+    variants.add(url.replace(/%2C/g, "%2c").replace(/&/g, "&amp;"));
+    variants.add(url.replace(/%2c/g, "%2C"));
+    variants.add(url.replace(/%2c/g, "%2C").replace(/&/g, "&amp;"));
+
+    const sorted = Array.from(variants).filter(Boolean).sort((a, b) => b.length - a.length);
+    for (const v of sorted) {
+      if (result.includes(v)) {
+        result = result.split(v).join(token);
+      }
+    }
   });
   return result;
 };
@@ -92,6 +103,9 @@ export const deInjectDeepLinks = (html, dlMap = {}) => {
  * Parallel to deInjectDeepLinks but for variable placeholders. Used at "Apply to All"
  * save time so the globalHtmlTemplate contains universal tokens instead of Merchant 1's
  * real store/DM name. App.jsx's emailDrafts re-interpolates each merchant's own names.
+ *
+ * Handles raw spreadsheet names, formatted DM first names (formatDmName), store-name
+ * fallback greetings ("Store Name team"), and HTML entity encodings (&#39;, &amp;).
  *
  * Longer strings are replaced first to avoid substring collisions
  * (e.g. "Ali's Pizza" before "Ali").
@@ -104,21 +118,53 @@ export const deInterpolateMerchant = (html, merchant = {}) => {
   if (!html) return "";
   const { merchantName, dmName } = merchant;
 
-  // Build the list of substitutions skip generic fallback values
   const subs = [];
+
+  // 1. Store name & its HTML-encoded variants
   if (merchantName && merchantName !== "Merchant Partner") {
     subs.push({ from: merchantName, to: "{Store Name}" });
-  }
-  // Only de-interpolate DM name if it's a meaningful distinct value
-  if (dmName && dmName !== merchantName && dmName !== "there" && dmName !== "Merchant Partner") {
-    subs.push({ from: dmName, to: "{DM Name}" });
+    const ampVariant = merchantName.replace(/&/g, "&amp;");
+    const aposVariant = merchantName.replace(/'/g, "&#39;");
+    const aposNamedVariant = merchantName.replace(/'/g, "&apos;");
+    const bothVariant = ampVariant.replace(/'/g, "&#39;");
+    if (ampVariant !== merchantName) subs.push({ from: ampVariant, to: "{Store Name}" });
+    if (aposVariant !== merchantName) subs.push({ from: aposVariant, to: "{Store Name}" });
+    if (aposNamedVariant !== merchantName) subs.push({ from: aposNamedVariant, to: "{Store Name}" });
+    if (bothVariant !== merchantName) subs.push({ from: bothVariant, to: "{Store Name}" });
   }
 
-  // Replace longer strings first to avoid partial-match bugs (e.g. "Ali" inside "Ali's Pizza")
-  subs.sort((a, b) => b.from.length - a.from.length);
+  // 2. DM Name: both raw spreadsheet value AND the formatted greeting first name (formatDmName)
+  const formattedDm = formatDmName(dmName);
+  if (formattedDm && formattedDm !== merchantName && formattedDm !== "there" && formattedDm !== "Merchant Partner") {
+    subs.push({ from: formattedDm, to: "{DM Name}" });
+  }
+  if (dmName && dmName !== merchantName && dmName !== formattedDm && dmName !== "there" && dmName !== "Merchant Partner") {
+    subs.push({ from: dmName, to: "{DM Name}" });
+    const dmFirstWord = dmName.trim().split(/\s+/)[0];
+    if (dmFirstWord && dmFirstWord.length > 1 && dmFirstWord !== formattedDm && dmFirstWord !== dmName) {
+      subs.push({ from: dmFirstWord, to: "{DM Name}" });
+    }
+  }
+
+  // 3. Greeting fallback: "{Store Name} team" (used when DM name is absent in _interpolate)
+  if (merchantName && merchantName !== "Merchant Partner") {
+    subs.push({ from: `${merchantName} team`, to: "{Store Name} team" });
+    subs.push({ from: `${merchantName.replace(/'/g, "&#39;")} team`, to: "{Store Name} team" });
+    subs.push({ from: `${merchantName.replace(/&/g, "&amp;")} team`, to: "{Store Name} team" });
+  }
+
+  // Deduplicate and sort longest first to avoid partial-match collisions
+  const seen = new Set();
+  const uniqueSubs = [];
+  for (const s of subs) {
+    if (!s.from || s.from.length < 2 || seen.has(s.from)) continue;
+    seen.add(s.from);
+    uniqueSubs.push(s);
+  }
+  uniqueSubs.sort((a, b) => b.from.length - a.from.length);
 
   let result = html;
-  for (const { from, to } of subs) {
+  for (const { from, to } of uniqueSubs) {
     result = result.split(from).join(to);
   }
   return result;

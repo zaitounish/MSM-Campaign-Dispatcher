@@ -52,6 +52,8 @@ export default function MerchantEmailEditor({
   // when the user switches between Rich and Clean.
   const richContentRef = useRef(initialRichHtml || "");
   const cleanContentRef = useRef(initialCleanHtml || "");
+  const hasEditedClean = useRef(false);
+  const hasEditedRich = useRef(false);
 
   // Which mode is currently loaded in the editor
   const [editMode, setEditMode] = useState(emailFormat || "html");
@@ -285,6 +287,8 @@ export default function MerchantEmailEditor({
 
   // Update live preview on every keystroke
   const handleInput = () => {
+    if (editMode === "plain") hasEditedClean.current = true;
+    else hasEditedRich.current = true;
     setLiveHtml(editorRef.current?.innerHTML || "");
   };
 
@@ -441,12 +445,12 @@ export default function MerchantEmailEditor({
   // ── Subject builder ────────────────────────────────────────────────────────────
   // When "Apply to All" is active, de-interpolate any merchant-specific names so the
   // saved subject contains {Store Name} / {DM Name} tokens that re-resolve per merchant.
-  const buildSubject = () => {
+  const buildSubject = (targetApplyToAll = applyToAll) => {
     if (subjectMode === "full") {
-      return applyToAll ? deInterpolateMerchant(subjectFull, merchant) : subjectFull;
+      return targetApplyToAll ? deInterpolateMerchant(subjectFull, merchant) : subjectFull;
     }
-    const prefix = applyToAll ? "{Store Name}" : (merchant?.merchantName || namePart);
-    const title = applyToAll ? deInterpolateMerchant(subjectTitle, merchant) : subjectTitle;
+    const prefix = targetApplyToAll ? "{Store Name}" : (merchant?.merchantName || namePart);
+    const title = targetApplyToAll ? deInterpolateMerchant(subjectTitle, merchant) : subjectTitle;
     return `${prefix}${title}`;
   };
 
@@ -478,24 +482,29 @@ export default function MerchantEmailEditor({
     onCancel();
   };
 
-  const handleSave = () => {
+  const handleSave = (targetApplyToAll = applyToAll) => {
     // Flush the currently-active editor content to its ref before saving
     const currentHtml = editorRef.current?.innerHTML || "";
     if (editMode === "plain") cleanContentRef.current = currentHtml;
     else richContentRef.current = currentHtml;
+
+    const isCleanEdited = hasEditedClean.current || editMode === "plain";
+    const isRichEdited = hasEditedRich.current || editMode === "html";
 
     // When "Apply to All" is active:
     //   1. de-inject deep links  → real URLs become %%DD_LINK_promoId%% tokens
     //   2. de-interpolate names  → merchant-specific names become {Store Name}/{DM Name}
     // App.jsx's emailDrafts re-injects/re-interpolates per-merchant on every render.
     const deToken = (html) =>
-      applyToAll ? deInterpolateMerchant(deInjectDeepLinks(html, dlMap), merchant) : html;
+      targetApplyToAll ? deInterpolateMerchant(deInjectDeepLinks(html, dlMap), merchant) : html;
 
     onSave({
       html: deToken(richContentRef.current),
       cleanHtml: deToken(cleanContentRef.current),
-      subject: buildSubject(),
-      applyToAll,
+      subject: buildSubject(targetApplyToAll),
+      applyToAll: targetApplyToAll,
+      cleanEdited: isCleanEdited,
+      richEdited: isRichEdited,
     });
   };
 
@@ -921,23 +930,41 @@ Rules:
 
         {/* ── Footer ── */}
         <div className="px-6 py-4 border-t border-slate-200 bg-white flex items-center justify-between gap-3 shrink-0">
-          <p className="text-xs text-slate-400 max-w-xs">
+          <p className="text-xs text-slate-400 max-w-sm">
             {applyToAll
-              ? "Deep links & rep details remain personalized per merchant."
+              ? "Deep links, store names & rep details automatically remain personalized per merchant."
               : "Override applies to this merchant only."
             }
           </p>
-          <div className="flex gap-3">
-            <button onClick={onCancel}
-              className="px-5 py-2.5 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleCancelSafe}
+              className="px-5 py-2.5 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+            >
               Cancel
             </button>
-            <button onClick={handleSave}
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-white shadow-md transition-colors ${applyToAll ? "bg-amber-500 hover:bg-amber-600" : "bg-dd-red hover:bg-dd-red-dark"
-                }`}>
-              <Save className="w-4 h-4" />
-              {applyToAll ? "Apply to All Merchants" : "Save for This Merchant"}
-            </button>
+            {applyToAll ? (
+              <button
+                type="button"
+                onClick={() => handleSave(true)}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-white bg-dd-red hover:bg-dd-red-dark shadow-md hover:-translate-y-0.5 transition-all animate-in fade-in duration-150"
+                title="Apply these changes across all selected merchants"
+              >
+                <Users className="w-4 h-4" />
+                Apply to All Merchants
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleSave(false)}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-white bg-dd-red hover:bg-dd-red-dark shadow-md hover:-translate-y-0.5 transition-all animate-in fade-in duration-150"
+                title="Save changes to this merchant's draft only"
+              >
+                <Save className="w-4 h-4" />
+                Save for This Merchant
+              </button>
+            )}
           </div>
         </div>
 
