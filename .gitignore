@@ -1,5 +1,41 @@
-# Logs
-logs
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production & Build Outputs
+dist/
+dist-ssr/
+*.local
+build/
+
+# Vite & Bundler Cache/Temporary Files
+*.timestamp-*.mjs
+vite.config.js.timestamp-*
+.vite/
+.cache/
+
+# Environment Variables & Local Secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env.local
+# Exception: keep public template tracked
+!.env.example
+
+# Internal Documentation, Research & Agent Notes
+RBAC.md
+RBAC_CONFIG.md
+AGENTS.md
+implementation_plan.md
+research/
+*.scratch.*
+scratch/
+
+# Logs & Diagnostics
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,18 +43,30 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# OS & File System Artifacts
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
 
-# Editor directories and files
+# IDEs, Text Editors & Workspaces
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
+.idea/
+*.sublime-project
+*.sublime-workspace
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+*.swo
+*.swp
+
+# Testing & Coverage
+coverage/
+.nyc_output/
