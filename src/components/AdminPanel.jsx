@@ -172,12 +172,12 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
 
   const handleResolve = async (request, approved) => {
     setResolvingSaving(request.id);
-    const customLimit = approvalLimits[request.id] ?? 65; // default: 45 base + 20 extra
+    const customLimit = approvalLimits[request.id] ?? 350; // default: 300 base + 50 extra
     const ok = await resolveApprovalRequest({
       requestId: request.id,
       repEmail: request.rep_email,
       approved,
-      approvedLimit: approved ? Math.max(customLimit, 46) : 45, // must be above 45 to be meaningful
+      approvedLimit: approved ? Math.max(customLimit, 301) : 300, // must be above 300 to be meaningful
     });
     if (ok) {
       setPendingApprovals(prev => prev.filter(r => r.id !== request.id));
@@ -618,7 +618,7 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                   <table className="w-full text-sm">
                     <thead className="bg-slate-50 border-b border-slate-200">
                       <tr>
-                        {["User", "Role", "Rep ID", actorRole !== "rep" && "Manager", actorRole !== "rep" && "Today's Limit", "Status", "Added", "Actions"].filter(Boolean).map(h => (
+                        {["User", "Role", "Rep ID", actorRole !== "rep" && "Manager", actorRole !== "rep" && "Weekly Limit", "Status", "Added", "Actions"].filter(Boolean).map(h => (
                           <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">{h}</th>
                         ))}
                       </tr>
@@ -686,11 +686,17 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                                 )}
                               </td>
                             )}
-                            {/* Daily limit override column   only visible to managers/ultimates */}
+                            {/* Weekly limit override column — only visible to managers/ultimates */}
                             {actorRole !== "rep" && (() => {
-                              const todayStr = new Date().toISOString().slice(0, 10);
-                              const hasOverride = user.role === "rep" && user.daily_limit_override && user.daily_limit_override_date === todayStr;
-                              const displayLimit = hasOverride ? user.daily_limit_override : 45;
+                              const now = new Date();
+                              const day = now.getDay();
+                              const diff = (day === 0 ? -6 : 1) - day;
+                              const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
+                              weekStart.setHours(0, 0, 0, 0);
+                              const weekStartStr = weekStart.toISOString().slice(0, 10);
+                              const hasOverride = user.role === "rep" && user.daily_limit_override && user.daily_limit_override_date >= weekStartStr;
+                              const baseEmailLimit = user.weekly_email_limit ?? user.daily_email_limit;
+                              const displayLimit = hasOverride ? user.daily_limit_override : (baseEmailLimit === 45 ? 300 : (baseEmailLimit || 300));
                               return (
                                 <td className="px-4 py-3">
                                   {user.role === "rep" ? (
@@ -712,13 +718,13 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                                               ? "border-violet-300 bg-violet-50 text-violet-700"
                                               : "border-slate-200 bg-white text-slate-500"
                                             }`}
-                                          title="Daily email limit for today. Press Enter or click away to save."
+                                          title="Weekly email limit. Press Enter or click away to save."
                                         />
                                         {hasOverride && (
                                           <button
                                             onClick={() => clearDailyOverride(user)}
                                             disabled={isBusy}
-                                            title="Reset to default (45)"
+                                            title="Reset to default (300)"
                                             className="text-slate-300 hover:text-red-500 transition-colors text-sm font-bold leading-none"
                                           >
                                             ×
@@ -794,8 +800,8 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                 <div>
                   <h3 className="font-bold text-slate-800 text-sm">Pending Limit Requests</h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Reps who've hit their 45-email daily limit and need more sends today.
-                    Set how many emails they can send in total today, then approve.
+                    Reps who've hit their 300-email weekly limit and need more sends this week.
+                    Set how many emails they can send in total this week, then approve.
                   </p>
                 </div>
                 <button onClick={fetchApprovals} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
@@ -811,13 +817,13 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                 <div className="flex flex-col items-center justify-center py-12 border border-slate-200 rounded-2xl text-center">
                   <CheckCircle2 className="w-10 h-10 text-green-300 mb-3" />
                   <p className="text-slate-500 font-semibold text-sm">No pending requests</p>
-                  <p className="text-xs text-slate-400 mt-1">All reps are within their daily limits.</p>
+                  <p className="text-xs text-slate-400 mt-1">All reps are within their weekly limits.</p>
                 </div>
               ) : (
                 <div className="border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-100">
                   {pendingApprovals.map(req => {
                     const isBusy = resolvingSaving === req.id;
-                    const customLimit = approvalLimits[req.id] ?? 65;
+                    const customLimit = approvalLimits[req.id] ?? 350;
                     const requestedAt = req.requested_at
                       ? new Date(req.requested_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
                       : " ";
@@ -834,7 +840,7 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                             <p className="font-bold text-slate-800 text-sm">{req.rep_name || req.rep_email}</p>
                             <p className="text-[10px] text-slate-400 font-mono truncate">{req.rep_email}</p>
                             <p className="text-[10px] text-slate-500 mt-0.5">
-                              Hit their 45-email limit · Requested {requestedAt}
+                              Hit their 300-email limit · Requested {requestedAt}
                             </p>
 
                             {/* Action row */}
@@ -844,18 +850,18 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                                 <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">Grant limit:</span>
                                 <input
                                   type="number"
-                                  min="46"
+                                  min="301"
                                   max="999"
                                   value={customLimit}
-                                  onChange={e => setApprovalLimits(prev => ({ ...prev, [req.id]: parseInt(e.target.value, 10) || 65 }))}
+                                  onChange={e => setApprovalLimits(prev => ({ ...prev, [req.id]: parseInt(e.target.value, 10) || 350 }))}
                                   disabled={isBusy}
                                   className="w-14 text-xs font-bold text-center border-0 outline-none bg-transparent text-violet-700"
-                                  title="Set the total emails this rep can send today"
+                                  title="Set the total emails this rep can send this week"
                                 />
-                                <span className="text-[10px] text-slate-400">emails today</span>
+                                <span className="text-[10px] text-slate-400">emails this week</span>
                               </div>
                               <span className="text-[10px] text-slate-400">
-                                ({customLimit > 45 ? `+${customLimit - 45} above limit` : "must be above 45"})
+                                ({customLimit > 300 ? `+${customLimit - 300} above limit` : "must be above 300"})
                               </span>
 
                               {/* Deny */}
@@ -870,12 +876,12 @@ export default function AdminPanel({ onClose, userProfile, repSettings }) {
                               {/* Approve */}
                               <button
                                 onClick={() => handleResolve(req, true)}
-                                disabled={isBusy || customLimit <= 45}
+                                disabled={isBusy || customLimit <= 300}
                                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-xl transition-colors disabled:opacity-50 shadow-sm"
                               >
                                 {isBusy
                                   ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Processing…</>
-                                  : <><CheckCircle2 className="w-3.5 h-3.5" /> Approve ({customLimit} today)</>}
+                                  : <><CheckCircle2 className="w-3.5 h-3.5" /> Approve ({customLimit} this week)</>}
                               </button>
                             </div>
                           </div>

@@ -84,12 +84,14 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
   // to re-upload their BOB every time they open the app. It is scoped to the
   // current calendar date — stale pipelines from previous days are ignored
   // automatically since BOBs change daily.
-  const PIPELINE_KEY = "mcd_pipeline_v1";
+  const PIPELINE_KEY = "mcd_pipeline_v3";
   const todayDateStr = new Date().toLocaleDateString("en-CA"); // "YYYY-MM-DD" in local time
 
   const [cachedPipelineMeta, setCachedPipelineMeta] = useState(() => {
     // On mount: check if a same-day pipeline exists in localStorage
     try {
+      localStorage.removeItem("mcd_pipeline_v1");
+      localStorage.removeItem("mcd_pipeline_v2");
       const raw = localStorage.getItem(PIPELINE_KEY);
       if (!raw) return null;
       const saved = JSON.parse(raw);
@@ -159,14 +161,21 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
   useEffect(() => {
     let hasRestoredLocal = false;
     try {
+      localStorage.removeItem("mcd_pipeline_v1");
+      localStorage.removeItem("mcd_pipeline_v2");
       const raw = localStorage.getItem(PIPELINE_KEY);
       if (raw) {
         const saved = JSON.parse(raw);
         if (saved.date === todayDateStr && saved.merchants && saved.merchants.length > 0) {
-          setMerchants(saved.merchants);
-          setAnalyticsPayload(saved.analyticsPayload || null);
-          setPhase(saved.analyticsPayload ? "analyze" : "select");
-          hasRestoredLocal = true;
+          const hasOppType = saved.merchants.some(m => m.oppType && m.oppType.trim() && m.oppType !== "#N/A");
+          if (saved.fileName === "Hot Ads Pipeline" && !hasOppType) {
+            localStorage.removeItem(PIPELINE_KEY);
+          } else {
+            setMerchants(saved.merchants);
+            setAnalyticsPayload(saved.analyticsPayload || null);
+            setPhase(saved.analyticsPayload ? "analyze" : "select");
+            hasRestoredLocal = true;
+          }
         }
       }
     } catch {
@@ -181,9 +190,9 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
         if (leads && leads.length > 0) {
           setDefaultLeadsCount(leads.length);
           setDefaultLeadsRaw(leads);
-          // If no local pipeline was active, auto-load these assigned leads as the default!
+          const transformed = transformAssignedLeadsToMerchants(leads);
+          // If no local pipeline was active, or if current is Hot Ads without oppType, auto-load!
           if (!hasRestoredLocal) {
-            const transformed = transformAssignedLeadsToMerchants(leads);
             if (transformed.length > 0) {
               handleDataLoaded(transformed, null, "Hot Ads Pipeline");
             }
@@ -519,44 +528,72 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
           />
         )}
 
-        {phase === "select" && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-slate-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 relative overflow-hidden">
-              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500 via-orange-500 to-amber-500" />
-              <div>
-                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-50 text-dd-red text-xs font-bold uppercase tracking-wider mb-2.5 border border-red-100">
-                  <Flame className="w-4 h-4 fill-dd-red text-dd-red" /> Client Ads Spiff
+        {phase === "select" && (() => {
+          const isSpiffPipeline = !analyticsPayload;
+          return (
+            <div className="space-y-6">
+              <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-slate-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 relative overflow-hidden">
+                <div className={`absolute top-0 left-0 right-0 h-1 ${isSpiffPipeline ? "bg-gradient-to-r from-red-500 via-orange-500 to-amber-500" : "bg-gradient-to-r from-slate-400 to-slate-600"}`} />
+                <div>
+                  {isSpiffPipeline ? (
+                    <>
+                      <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-50 text-dd-red text-xs font-bold uppercase tracking-wider mb-2.5 border border-red-100">
+                        <Flame className="w-4 h-4 fill-dd-red text-dd-red" /> Client Ads Spiff
+                      </div>
+                      <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+                        Hot Ads Pipeline
+                      </h2>
+                      <p className="text-slate-500 text-sm mt-1 max-w-2xl">
+                        Review and select the businesses you want to pitch campaigns to for the Client Ads Spiff.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-100 text-slate-700 text-xs font-bold uppercase tracking-wider mb-2.5 border border-slate-200">
+                        Custom Book of Business
+                      </div>
+                      <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+                        Merchant Pipeline
+                      </h2>
+                      <p className="text-slate-500 text-sm mt-1 max-w-2xl">
+                        Review and select the businesses from your uploaded BOB file.
+                      </p>
+                    </>
+                  )}
                 </div>
-                <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                  Hot Ads Pipeline
-                </h2>
-                <p className="text-slate-500 text-sm mt-1 max-w-2xl">
-                  Review and select the businesses you want to pitch campaigns to for the Client Ads Spiff.
-                </p>
+
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                  {!isSpiffPipeline && defaultLeadsCount > 0 && (
+                    <button
+                      onClick={handleLoadDefaultLeads}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-red-50 hover:bg-red-100 text-dd-red text-xs font-bold rounded-xl border border-red-200 transition-colors cursor-pointer"
+                    >
+                      <Flame className="w-3.5 h-3.5 fill-dd-red" /> Return to Hot Ads ({defaultLeadsCount})
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setPhase("upload")}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition-colors cursor-pointer"
+                  >
+                    <UploadCloud className="w-3.5 h-3.5 text-slate-500" /> {isSpiffPipeline ? "Upload Custom BOB" : "Upload Another BOB"}
+                  </button>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  onClick={() => setPhase("upload")}
-                  className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition-colors cursor-pointer"
-                >
-                  <UploadCloud className="w-3.5 h-3.5 text-slate-500" /> Upload Custom BOB
-                </button>
-              </div>
+              <MerchantTable
+                merchants={merchants}
+                setMerchants={setMerchants}
+                onActiveMerchantsChange={setActiveMerchantIds}
+                analyticsPayload={analyticsPayload}
+                isSpiff={isSpiffPipeline}
+                onContinue={(payloadIds) => {
+                  if (payloadIds) setActiveMerchantIds(payloadIds);
+                  setPhase("build");
+                }}
+              />
             </div>
-
-            <MerchantTable
-              merchants={merchants}
-              setMerchants={setMerchants}
-              onActiveMerchantsChange={setActiveMerchantIds}
-              analyticsPayload={analyticsPayload}
-              onContinue={(payloadIds) => {
-                if (payloadIds) setActiveMerchantIds(payloadIds);
-                setPhase("build");
-              }}
-            />
-          </div>
-        )}
+          );
+        })()}
 
         {phase === "build" && (
           <div className="space-y-4">

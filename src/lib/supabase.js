@@ -102,24 +102,26 @@ export async function logEmailSend(eventOrEvents) {
  *
  * Uses the browser's LOCAL midnight as the start of "today" so the quota
  * window matches the rep's actual workday, not UTC midnight (which would
- * incorrectly exclude emails sent in the morning for GMT+ timezones).
- * Case-insensitive match (ilike) handles any capitalisation differences
- * between the whitelist email and what was stored in the send log.
+ * Fetch the count of non-blank emails sent by a rep during the current week (starting Monday).
+ * Case-insensitive match (ilike) handles any capitalisation differences.
  */
-export async function getRepDailyCount(repEmail) {
+export async function getRepWeeklyCount(repEmail) {
   if (!repEmail) return 0;
-  // Local midnight: start of today in the rep's own timezone
+  // Local week start: Monday 00:00:00 in the rep's own timezone
   const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // local midnight
+  const day = now.getDay(); // 0 is Sunday, 1 is Monday, ...
+  const diff = (day === 0 ? -6 : 1) - day;
+  const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
+  weekStart.setHours(0, 0, 0, 0);
 
   const { data, error } = await supabase
     .from("email_send_log")
     .select("id, promo_types")
-    .ilike("rep_email", repEmail.trim())   // case-insensitive to handle capitalisation drift
-    .gte("sent_at", todayStart.toISOString());
+    .ilike("rep_email", repEmail.trim())
+    .gte("sent_at", weekStart.toISOString());
 
   if (error) {
-    console.warn("[getRepDailyCount]", error.message);
+    console.warn("[getRepWeeklyCount]", error.message);
     return 0;
   }
 
@@ -131,13 +133,21 @@ export async function getRepDailyCount(repEmail) {
   return nonBlank.length;
 }
 
+// Backwards-compatible alias for existing callers
+export const getRepDailyCount = getRepWeeklyCount;
+
 /**
- * Fetch the rep's active daily limit override for today (if any).
- * Returns the override limit (e.g. 60) or null if no override is active.
+ * Fetch the rep's active weekly limit override (if any).
+ * Returns the override limit (e.g. 350) or null if no override is active this week.
  */
-export async function getRepDailyLimitOverride(repEmail) {
+export async function getRepWeeklyLimitOverride(repEmail) {
   if (!repEmail) return null;
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const day = now.getDay();
+  const diff = (day === 0 ? -6 : 1) - day;
+  const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
+  weekStart.setHours(0, 0, 0, 0);
+  const weekStartStr = weekStart.toISOString().slice(0, 10);
 
   const { data, error } = await supabase
     .from("reps_whitelist")
@@ -146,11 +156,15 @@ export async function getRepDailyLimitOverride(repEmail) {
     .maybeSingle();
 
   if (error || !data) return null;
-  if (data.daily_limit_override && data.daily_limit_override_date === todayStr) {
+  if (data.daily_limit_override && data.daily_limit_override_date >= weekStartStr) {
     return data.daily_limit_override;
   }
   return null;
 }
+
+// Backwards-compatible alias for existing callers
+export const getRepDailyLimitOverride = getRepWeeklyLimitOverride;
+
 
 /**
  * Submit a limit increase approval request to the manager (or ultimates if unassigned).

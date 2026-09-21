@@ -29,13 +29,75 @@ export default function MerchantTable({
   onContinue,
   onActiveMerchantsChange,
   analyticsPayload,
+  isSpiff: isSpiffProp,
 }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [editingEmailsId, setEditingEmailsId] = useState(null);
   const [showDynFilters, setShowDynFilters] = useState(false);
 
-  // ── Hardcoded known-opp filters ──────────────────────────────────────────────
+  // ── Spiff Mode & Sheet Opp Types detection ──────────────────────────────────
+  // The app is in Spiff mode by default unless user uploaded a custom BOB with analytics
+  const isSpiff = isSpiffProp !== undefined
+    ? Boolean(isSpiffProp)
+    : (!analyticsPayload || merchants.some(m => m.isSpiff || (m.oppType && m.oppType.trim() && m.oppType !== "#N/A")));
+
+  const oppTypeCounts = useMemo(() => {
+    const counts = {
+      "Net New": 0,
+      "Optimization": 0,
+      "Retention Evergreen": 0,
+      "Retention Upcoming Churn": 0,
+    };
+    merchants.forEach(m => {
+      const t = (m.oppType || "").trim();
+      if (t && t !== "#N/A") {
+        counts[t] = (counts[t] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [merchants]);
+
+  // Standard Spiff categories: Net New, Optimization, Retention Evergreen (always shown),
+  // plus Retention Upcoming Churn (shown if present / count > 0)
+  const spiffFilterList = useMemo(() => {
+    const primary = ["Net New", "Optimization", "Retention Evergreen"];
+    const list = primary.map(type => ({
+      type,
+      count: oppTypeCounts[type] || 0,
+    }));
+
+    if ((oppTypeCounts["Retention Upcoming Churn"] || 0) > 0) {
+      list.push({
+        type: "Retention Upcoming Churn",
+        count: oppTypeCounts["Retention Upcoming Churn"],
+      });
+    }
+
+    Object.keys(oppTypeCounts).forEach(type => {
+      if (!primary.includes(type) && type !== "Retention Upcoming Churn" && oppTypeCounts[type] > 0) {
+        list.push({
+          type,
+          count: oppTypeCounts[type],
+        });
+      }
+    });
+
+    return list;
+  }, [oppTypeCounts]);
+
+  const [selectedOppTypes, setSelectedOppTypes] = useState(new Set());
+
+  const toggleOppType = (type) => {
+    setSelectedOppTypes(prev => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+  };
+
+  // ── Hardcoded known-opp filters (Standard BOB mode) ─────────────────────────
   const [filterSlOpp, setFilterSlOpp] = useState(false);
   const [filterPromoOpp, setFilterPromoOpp] = useState(false);
   const [filterLoyalOpp, setFilterLoyalOpp] = useState(false);
@@ -174,11 +236,18 @@ export default function MerchantTable({
     const touchColKey = dynConfig.touchCol?.normalized;
 
     return merchants.filter((m) => {
-      // 1. Known opp hard filters
-      if (filterSlOpp && !m.slOpp) return false;
-      if (filterPromoOpp && !m.promoOpp) return false;
-      if (filterLoyalOpp && !m.loyalOpp) return false;
-      if (filterSlCredit && !m.slCredit) return false;
+      // 1. Opportunity filters
+      if (isSpiff) {
+        if (selectedOppTypes.size > 0) {
+          const mType = (m.oppType || "").trim();
+          if (!selectedOppTypes.has(mType)) return false;
+        }
+      } else {
+        if (filterSlOpp && !m.slOpp) return false;
+        if (filterPromoOpp && !m.promoOpp) return false;
+        if (filterLoyalOpp && !m.loyalOpp) return false;
+        if (filterSlCredit && !m.slCredit) return false;
+      }
       if (filterEmailIssues && m.emailStatus === "valid") return false;
 
       // 2. Text search
@@ -227,6 +296,7 @@ export default function MerchantTable({
     });
   }, [
     merchants, searchTerm,
+    isSpiff, spiffFilterList, selectedOppTypes,
     filterSlOpp, filterPromoOpp, filterLoyalOpp, filterSlCredit, filterEmailIssues,
     statusFilters, activeColors, touchRange, resolvedTouchRange,
     dynConfig, rowAnalyticsLookup,
@@ -398,14 +468,26 @@ export default function MerchantTable({
 
   // ── Clear all filters ─────────────────────────────────────────────────────────
   const hasActiveFilters =
-    filterSlOpp || filterPromoOpp || filterLoyalOpp || filterSlCredit || filterEmailIssues ||
-    searchTerm || Object.values(statusFilters).some(s => s?.size > 0) ||
-    activeColors.size > 0 || touchRange !== null;
+    (isSpiff
+      ? selectedOppTypes.size > 0
+      : (filterSlOpp || filterPromoOpp || filterLoyalOpp || filterSlCredit)) ||
+    filterEmailIssues ||
+    searchTerm ||
+    Object.values(statusFilters).some(s => s?.size > 0) ||
+    activeColors.size > 0 ||
+    touchRange !== null;
 
   const clearFilters = () => {
-    setSearchTerm(""); setFilterSlOpp(false); setFilterPromoOpp(false);
-    setFilterLoyalOpp(false); setFilterSlCredit(false); setFilterEmailIssues(false);
-    setStatusFilters({}); setActiveColors(new Set()); setTouchRange(null);
+    setSearchTerm("");
+    setFilterSlOpp(false);
+    setFilterPromoOpp(false);
+    setFilterLoyalOpp(false);
+    setFilterSlCredit(false);
+    setFilterEmailIssues(false);
+    setSelectedOppTypes(new Set());
+    setStatusFilters({});
+    setActiveColors(new Set());
+    setTouchRange(null);
   };
 
   // Count email issues across all merchants for the warning banner
@@ -479,20 +561,40 @@ export default function MerchantTable({
           </div>
         </div>
 
-        {/* Known-opp chips row */}
+        {/* Known-opp / Spiff Opp Types chips row */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
             <Filter className="w-3.5 h-3.5" /> Quick Filters:
           </span>
-          <FilterChip label="SL Opp" active={filterSlOpp} onClick={() => { setFilterSlOpp(v => !v); if (filterSlOpp) setFilterSlCredit(false); }} />
-          {filterSlOpp && (
-            <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-left-2 duration-200">
-              <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
-              <FilterChip label="Has Credit" active={filterSlCredit} onClick={() => setFilterSlCredit(v => !v)} />
-            </div>
+
+          {isSpiff ? (
+            /* Spiff scope: Mapped directly to sheet's Opp Types */
+            spiffFilterList.map(({ type, count }) => {
+              const isActive = selectedOppTypes.has(type);
+              return (
+                <FilterChip
+                  key={type}
+                  label={`${type} (${count})`}
+                  active={isActive}
+                  onClick={() => toggleOppType(type)}
+                />
+              );
+            })
+          ) : (
+            /* Standard Custom BOB: Original SL Opp / Promo Opp / Loyal Opp chips */
+            <>
+              <FilterChip label="SL Opp" active={filterSlOpp} onClick={() => { setFilterSlOpp(v => !v); if (filterSlOpp) setFilterSlCredit(false); }} />
+              {filterSlOpp && (
+                <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-left-2 duration-200">
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+                  <FilterChip label="Has Credit" active={filterSlCredit} onClick={() => setFilterSlCredit(v => !v)} />
+                </div>
+              )}
+              <FilterChip label="Promo Opp" active={filterPromoOpp} onClick={() => setFilterPromoOpp(v => !v)} />
+              <FilterChip label="Loyal Opp" active={filterLoyalOpp} onClick={() => setFilterLoyalOpp(v => !v)} />
+            </>
           )}
-          <FilterChip label="Promo Opp" active={filterPromoOpp} onClick={() => setFilterPromoOpp(v => !v)} />
-          <FilterChip label="Loyal Opp" active={filterLoyalOpp} onClick={() => setFilterLoyalOpp(v => !v)} />
+
           {emailIssueCount > 0 && (
             <FilterChip
               label={`⚠️ Email Issues (${emailIssueCount})`}
@@ -836,6 +938,11 @@ export default function MerchantTable({
                           {row.bobFileCount > 1 && (
                             <span className="text-[10px] bg-orange-100 text-orange-700 font-bold px-1.5 py-0.5 rounded-full" title={`Appeared in ${row.bobFileCount} uploaded BOB files`}>
                               {row.bobFileCount} BOBs
+                            </span>
+                          )}
+                          {row.oppType && row.oppType !== "#N/A" && (
+                            <span className="text-[10px] bg-purple-50 text-purple-700 font-semibold px-2 py-0.5 rounded-full border border-purple-200" title={`Opportunity Type: ${row.oppType}`}>
+                              {row.oppType}
                             </span>
                           )}
                         </div>

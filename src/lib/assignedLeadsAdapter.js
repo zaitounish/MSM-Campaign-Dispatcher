@@ -1,4 +1,4 @@
-import { processSheetData } from "./bobParser";
+import { processSheetData } from "./bobParser.js";
 
 /**
  * Transforms raw Supabase `assigned_leads` rows into the unified Merchant pipeline format.
@@ -32,5 +32,35 @@ export function transformAssignedLeadsToMerchants(assignedLeads) {
     l.opp_type || "",
   ]);
 
-  return processSheetData([header, ...rows]);
+  const merchants = processSheetData([header, ...rows]);
+
+  // Build fallback lookup by businessId and storeId to ensure oppType is never lost
+  const oppMap = new Map();
+  assignedLeads.forEach((l) => {
+    if (l.opp_type && l.opp_type.trim() && l.opp_type !== "#N/A") {
+      if (l.business_id) oppMap.set(String(l.business_id).trim().toLowerCase(), l.opp_type.trim());
+      if (l.store_id) oppMap.set(String(l.store_id).trim().toLowerCase(), l.opp_type.trim());
+    }
+  });
+
+  return merchants.map((m) => {
+    let resolved = (m.oppType || "").trim();
+    if (!resolved || resolved === "#N/A") {
+      if (m.businessId && oppMap.has(m.businessId.toLowerCase())) {
+        resolved = oppMap.get(m.businessId.toLowerCase());
+      } else if (m.sids) {
+        for (const s of m.sids.split(",")) {
+          if (oppMap.has(s.trim().toLowerCase())) {
+            resolved = oppMap.get(s.trim().toLowerCase());
+            break;
+          }
+        }
+      }
+    }
+    return {
+      ...m,
+      isSpiff: true,
+      oppType: resolved || "",
+    };
+  });
 }

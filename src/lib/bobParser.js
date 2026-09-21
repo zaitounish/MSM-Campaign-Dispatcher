@@ -31,6 +31,7 @@ export const processSheetData = (json) => {
     promoOpp: -1,
     loyalOpp: -1,
     slCredit: -1,
+    oppType: -1,
   };
 
   rawHeaders.forEach((h, idx) => {
@@ -76,6 +77,9 @@ export const processSheetData = (json) => {
     if (normalized.includes("sl credit") || normalized === "sl_credit") {
       if (colMap.slCredit === -1) colMap.slCredit = idx;
     }
+    if (normalized.includes("opp type") || normalized === "opp_type" || normalized.includes("opportunity type")) {
+      if (colMap.oppType === -1) colMap.oppType = idx;
+    }
   });
 
   const parsedRows = [];
@@ -108,6 +112,7 @@ export const processSheetData = (json) => {
       promoOpp: getVal(colMap.promoOpp),
       loyalOpp: getVal(colMap.loyalOpp),
       slCredit: getVal(colMap.slCredit),
+      oppType: getVal(colMap.oppType),
     });
   }
 
@@ -154,6 +159,7 @@ export const processSheetData = (json) => {
         if (isTruthy(row.promoOpp)) existing.promoOpp = "1";
         if (isTruthy(row.loyalOpp)) existing.loyalOpp = "1";
         if (isTruthy(row.slCredit)) existing.slCredit = "1";
+        if (!existing.oppType && row.oppType) existing.oppType = row.oppType;
         // Keep the best non-empty merchant name
         if (!existing.merchantName && row.merchantName) existing.merchantName = row.merchantName;
       }
@@ -207,6 +213,7 @@ export const processSheetData = (json) => {
         if (isTruthy(row.promoOpp)) existing.promoOpp = "1";
         if (isTruthy(row.loyalOpp)) existing.loyalOpp = "1";
         if (isTruthy(row.slCredit)) existing.slCredit = "1";
+        if (!existing.oppType && row.oppType) existing.oppType = row.oppType;
         if (!existing.merchantName && row.merchantName) existing.merchantName = row.merchantName;
       }
     } else {
@@ -231,6 +238,7 @@ export const processSheetData = (json) => {
           if (isTruthy(row.promoOpp)) existing.promoOpp = "1";
           if (isTruthy(row.loyalOpp)) existing.loyalOpp = "1";
           if (isTruthy(row.slCredit)) existing.slCredit = "1";
+          if (!existing.oppType && row.oppType) existing.oppType = row.oppType;
           if (!existing.merchantName && row.merchantName) existing.merchantName = row.merchantName;
         }
       } else {
@@ -285,6 +293,7 @@ export const processSheetData = (json) => {
       if (isTruthy(p2Merchant.promoOpp)) existing.promoOpp = "1";
       if (isTruthy(p2Merchant.loyalOpp)) existing.loyalOpp = "1";
       if (isTruthy(p2Merchant.slCredit)) existing.slCredit = "1";
+      if (!existing.oppType && p2Merchant.oppType) existing.oppType = p2Merchant.oppType;
     } else {
       // No overlap   add as a new record and index its emails
       const newIdx = finalResults.length;
@@ -354,6 +363,7 @@ export const processSheetData = (json) => {
       promoOpp: isTruthy(target.promoOpp),
       loyalOpp: isTruthy(target.loyalOpp),
       slCredit: isTruthy(target.slCredit),
+      oppType: target.oppType || "",
       // Email validation metadata
       emailStatus,
       rawEmailIssue: rawEmailIssue || null,

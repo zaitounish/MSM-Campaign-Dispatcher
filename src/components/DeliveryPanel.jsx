@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import * as XLSX from "xlsx";
-import { logEmailSend, getRepDailyCount, getRepDailyLimitOverride, submitLimitApprovalRequest } from "../lib/supabase";
+import { logEmailSend, getRepWeeklyCount, getRepWeeklyLimitOverride, submitLimitApprovalRequest } from "../lib/supabase";
 import { trackFormSubmit } from "../lib/analytics";
 import {
   DownloadCloud, CheckCircle2, Layers, FileText,
@@ -144,25 +144,27 @@ function doPost(e) {
 //   Logger.log("Finished! Total emails sent this run: " + sentCount);
 // }`;
 
-// Fallback only   real limit comes from reps_whitelist.daily_email_limit
-const DEFAULT_DAILY_LIMIT = 45;
+// Fallback only — real limit comes from reps_whitelist.daily_email_limit / weekly_email_limit
+const DEFAULT_WEEKLY_LIMIT = 300;
 
 export default function DeliveryPanel({
   merchants, emailDrafts, repSettings, dispatchMode, setDispatchMode,
   emailFormat = "html", setEmailFormat,
   userProfile, selectedPromos = [], sessionId = null,
 }) {
-  // Base daily limit: from backend (reps_whitelist.daily_email_limit), fallback to 45
-  const baseLimit = userProfile?.daily_email_limit ?? DEFAULT_DAILY_LIMIT;
+  // Base weekly limit: from backend (reps_whitelist), automatically upgrade old 45 to 300
+  const rawLimit = userProfile?.weekly_email_limit ?? userProfile?.daily_email_limit;
+  const baseLimit = (rawLimit && rawLimit !== 45) ? rawLimit : DEFAULT_WEEKLY_LIMIT;
 
   const [queue, setQueue] = useState(null);
+  const [draftModal, setDraftModal] = useState(null);
   const [isSending, setIsSending] = useState(false);
   const [sendStatus, setSendStatus] = useState(null);
   const [gasExpanded, setGasExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // ── Daily quota state (reps only) ────────────────────────────────────────────
-  const [dailySentCount, setDailySentCount] = useState(0);
+  // ── Weekly quota state (reps only) ───────────────────────────────────────────
+  const [weeklySentCount, setWeeklySentCount] = useState(0);
   const [effectiveLimit, setEffectiveLimit] = useState(baseLimit);
   const [quotaLoading, setQuotaLoading] = useState(false);
   const [approvalRequesting, setApprovalRequesting] = useState(false);
@@ -172,25 +174,28 @@ export default function DeliveryPanel({
   const [sessionSentCount, setSessionSentCount] = useState(0);
 
   const isRep = userProfile?.role === "rep";
-  // Blank campaign sends don't count against the daily limit
+  // Blank campaign sends don't count against the weekly limit
   const isBlankSend = selectedPromos.length === 1 && selectedPromos[0] === "blank";
 
   const repEmail = userProfile?.email || repSettings?.email || "";
 
-  // Fetch today's send count for this rep on mount and after every send
+  // Backwards-compatible alias for dailySentCount
+  const dailySentCount = weeklySentCount;
+
+  // Fetch this week's send count for this rep on mount and after every send
   const refreshQuota = useCallback(async () => {
     if (!isRep || !repEmail) return;
     setQuotaLoading(true);
     const [count, override] = await Promise.all([
-      getRepDailyCount(repEmail),
-      getRepDailyLimitOverride(repEmail),
+      getRepWeeklyCount(repEmail),
+      getRepWeeklyLimitOverride(repEmail),
     ]);
-    setDailySentCount(count);
+    setWeeklySentCount(count);
     // Sync the optimistic counter to the real DB value, but NEVER downgrade it.
     // This prevents race conditions if the rep spams the send button and older
     // DB reads return before newer inserts finish.
     setSessionSentCount(prev => Math.max(prev, count));
-    // override (manager-granted today-only bump) takes priority over the base backend limit
+    // override (manager-granted weekly bump) takes priority over the base backend limit
     setEffectiveLimit(override ?? baseLimit);
     setQuotaLoading(false);
   }, [isRep, repEmail, baseLimit]);
@@ -427,34 +432,94 @@ export default function DeliveryPanel({
   };
 
   // ── GAS Bridge hidden form POST ────────────────────────────────────────────
-  // We use a hidden <form> + <iframe> instead of fetch() so the browser
-  // automatically includes the rep's Google session cookies in the request.
-  // This lets GAS authenticate via "Anyone within DoorDash" without any
-  // OAuth setup. The response lands in the invisible iframe we never read
-  // it cross-origin, but the drafts are created in the rep's Gmail.
-  const handleGasDraft = () => {
+  // ── Gmail Drafts Selection Modal Handlers ─────────────────────────────────
+  const handleOpenDraftModal = () => {
     if (!repSettings.gasUrl) {
-      setSendStatus({ type: "error", msg: "No GAS URL configured. Expand the setup guide below and paste your Web App URL into ⚙ Settings." });
+      setSendStatus({
+        type: "error",
+        msg: "No GAS URL configured. Expand the setup guide below and paste your Web App URL into ⚙ Settings."
+      });
       setGasExpanded(true);
       return;
     }
 
     const targets = buildTargets();
+    if (targets.length === 0) return;
 
-    // 🔒 Hard quota gate using the optimistic counter
-    if (isRep && !isBlankSend && sessionSentCount + targets.length > effectiveLimit) {
-      setSendStatus({ type: "error", msg: `Sending this batch would exceed your daily limit of ${effectiveLimit}.` });
+    // Initially select all items that have not been drafted yet
+    const undrafted = targets.map((_, i) => i).filter(i => draftStatus[i] !== "done");
+    const initialSelected = new Set(undrafted.length > 0 ? undrafted : targets.map((_, i) => i));
+
+    setDraftModal({
+      items: targets.map((t, i) => ({
+        index: i,
+        label: t.merchant?.merchantName || t.to,
+        to: t.to,
+        cc: t.cc,
+        merchant: t.merchant,
+        draft: t.draft,
+      })),
+      selected: initialSelected,
+      isDrafting: false,
+    });
+  };
+
+  const closeDraftModal = () => {
+    setDraftModal(null);
+  };
+
+  const toggleDraftSelect = (idx) => {
+    setDraftModal(prev => {
+      if (!prev) return null;
+      const next = new Set(prev.selected);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return { ...prev, selected: next };
+    });
+  };
+
+  const toggleSelectAllDrafts = () => {
+    setDraftModal(prev => {
+      if (!prev) return null;
+      if (prev.selected.size === prev.items.length) {
+        return { ...prev, selected: new Set() };
+      } else {
+        return { ...prev, selected: new Set(prev.items.map((_, i) => i)) };
+      }
+    });
+  };
+
+  const handleExecuteDraftBatch = () => {
+    if (!repSettings.gasUrl) {
+      setSendStatus({
+        type: "error",
+        msg: "No GAS URL configured. Expand the setup guide below and paste your Web App URL into ⚙ Settings."
+      });
+      setGasExpanded(true);
       return;
     }
 
-    // Increment immediately — blocks any further clicks in the same tick
-    if (isRep && !isBlankSend) setSessionSentCount(c => c + targets.length);
+    if (!draftModal || draftModal.selected.size === 0) return;
+    const selectedIndices = Array.from(draftModal.selected);
+    const selectedTargets = selectedIndices.map(i => draftModal.items[i]);
 
+    // 🔒 Hard quota gate using the optimistic counter
+    if (isRep && !isBlankSend && sessionSentCount + selectedTargets.length > effectiveLimit) {
+      setSendStatus({
+        type: "error",
+        msg: `Creating drafts for this batch (${selectedTargets.length}) would exceed your weekly limit of ${effectiveLimit}.`
+      });
+      return;
+    }
+
+    // Increment optimistic counter
+    if (isRep && !isBlankSend) setSessionSentCount(c => c + selectedTargets.length);
+
+    setDraftModal(prev => ({ ...prev, isDrafting: true }));
     setIsSending(true);
-    setSendStatus(null);
 
     const senderName = `${repSettings.firstName || ""} ${repSettings.lastName || ""}`.trim() || "DoorDash Merchant Success";
-    const payloads = targets.map(t => ({
+    const payloads = selectedTargets.map(t => ({
       to: t.to,
       cc: t.cc,
       subject: t.draft.subject,
@@ -476,7 +541,6 @@ export default function DeliveryPanel({
       document.body.appendChild(iframe);
     }
 
-    // Build a hidden form targeting the iframe
     const form = document.createElement("form");
     form.method = "POST";
     form.action = repSettings.gasUrl;
@@ -491,8 +555,6 @@ export default function DeliveryPanel({
       form.appendChild(input);
     };
 
-    // Use encodeURIComponent to completely protect emojis (like 🚀)
-    // from being garbled by the form POST process or Apps Script's backend.
     const jsonStr = JSON.stringify(payloads);
     const encodedPayload = encodeURIComponent(jsonStr);
 
@@ -501,21 +563,27 @@ export default function DeliveryPanel({
 
     document.body.appendChild(form);
     form.submit();
-    // Clean up the form element immediately after submit
     requestAnimationFrame(() => document.body.removeChild(form));
 
-    // GAS typically processes within 3–8 seconds.
-    // We can't read the iframe response cross-origin, so we show a
-    // "check your drafts" message after a short delay.
     setTimeout(async () => {
       setIsSending(false);
+      setDraftModal(prev => prev ? { ...prev, isDrafting: false } : null);
+
+      // Mark drafted items as done
+      setDraftStatus(prev => {
+        const next = { ...prev };
+        selectedIndices.forEach(idx => { next[idx] = "done"; });
+        return next;
+      });
+
       setSendStatus({
         type: "success",
-        msg: `${payloads.length} draft${payloads.length > 1 ? "s" : ""} created in Gmail. Open your Drafts folder, then send each one manually   this ensures Salesforce logs them as manual.`,
+        msg: `${payloads.length} draft${payloads.length > 1 ? "s" : ""} created in Gmail. Open your Drafts folder to review and send.`,
         draftsUrl: "https://mail.google.com/mail/u/0/#drafts",
       });
+
       // Log each draft creation event via bulk insert
-      const logEvents = targets.map(t => ({
+      const logEvents = selectedTargets.map(t => ({
         repEmail: userProfile?.email || repSettings?.email || "",
         repName: userProfile?.full_name || senderName,
         merchantName: t.merchant?.merchantName || "",
@@ -527,20 +595,22 @@ export default function DeliveryPanel({
         deliveryMethod: "gas_draft",
         emailFormat,
       }));
+
       const logResult = await logEmailSend(logEvents);
-      // If the bulk log insert failed, overwrite the success status with a warning
-      // so managers are alerted and can count these manually.
       if (!logResult.success) {
         setSendStatus({
           type: "error",
-          msg: `⚠️ ${payloads.length} draft${payloads.length > 1 ? "s" : ""} were created in Gmail but the send log failed to save. Please notify your manager so these can be counted manually.`,
+          msg: `⚠️ ${payloads.length} draft${payloads.length > 1 ? "s" : ""} were created in Gmail but the send log failed to save. Please notify your manager.`,
           draftsUrl: "https://mail.google.com/mail/u/0/#drafts",
         });
       }
-      // Refresh quota after GAS send (non-blocking)
+
       if (isRep && !isBlankSend) refreshQuota();
     }, 1500);
   };
+
+  // Backwards compatibility alias
+  const handleGasDraft = handleOpenDraftModal;
 
   // Open the GAS URL directly in a new tab so the rep can grant Gmail
   // permissions on first use (one-time step subsequent form POSTs are silent)
@@ -611,13 +681,13 @@ export default function DeliveryPanel({
 
       <div className="max-w-4xl mx-auto space-y-5">
 
-        {/* ── Daily Quota Bar (reps only, skip for blank sends) ──────────────── */}
+        {/* ── Weekly Quota Bar (reps only, skip for blank sends) ─────────────── */}
         {!isRep ? null : isBlankSend ? (
           <div className="rounded-2xl border px-5 py-3 bg-violet-50 border-violet-200 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-sm font-bold text-violet-700">Blank Email Selected</span>
             </div>
-            <p className="text-xs text-violet-600 font-semibold">These emails do not count toward your daily limit.</p>
+            <p className="text-xs text-violet-600 font-semibold">These emails do not count toward your weekly limit.</p>
           </div>
         ) : (() => {
           // Use the highest known count: either the DB value or the optimistic local counter.
@@ -639,7 +709,7 @@ export default function DeliveryPanel({
                 <div className="flex items-center gap-2">
                   <TrendingUp className={`w-4 h-4 ${isAtLimit ? "text-red-500" : "text-slate-500"}`} />
                   <span className={`text-sm font-bold ${isAtLimit ? "text-red-700" : "text-slate-700"}`}>
-                    Daily Email Quota
+                    Weekly Email Quota
                   </span>
                   {effectiveLimit > baseLimit && (
                     <span className="text-[10px] font-bold bg-violet-100 text-violet-700 border border-violet-200 px-2 py-0.5 rounded-full">
@@ -666,7 +736,7 @@ export default function DeliveryPanel({
                 // Limit reached   show approval request
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-red-700">
-                    ⛔ You've reached your {effectiveLimit}-email daily limit. Ask your manager to grant you additional sends.
+                    ⛔ You've reached your {effectiveLimit}-email weekly limit. Ask your manager to grant you additional sends.
                   </p>
                   {approvalSent ? (
                     <div className="flex items-center gap-2 text-xs font-bold text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
@@ -687,11 +757,11 @@ export default function DeliveryPanel({
                 </div>
               ) : wouldExceed ? (
                 <p className="text-xs font-semibold text-amber-700">
-                  ⚠ Sending this batch ({totalCount} email{totalCount > 1 ? "s" : ""}) will exceed your daily limit. {remaining} remaining today.
+                  ⚠ Sending this batch ({totalCount} email{totalCount > 1 ? "s" : ""}) will exceed your weekly limit. {remaining} remaining this week.
                 </p>
               ) : (
                 <p className="text-xs text-slate-500">
-                  {remaining} email{remaining !== 1 ? "s" : ""} remaining today (limit: {effectiveLimit}).
+                  {remaining} email{remaining !== 1 ? "s" : ""} remaining this week (limit: {effectiveLimit}).
                   {sessionSentCount > dailySentCount && (
                     <span className="ml-1 text-violet-500 font-semibold">({sessionSentCount - dailySentCount} pending sync…)</span>
                   )}
@@ -744,13 +814,13 @@ export default function DeliveryPanel({
             {/* Quota gate for reps: if at limit and not a blank send, disable all send buttons */}
             {isRep && !isBlankSend && dailySentCount >= effectiveLimit ? (
               <div className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-slate-200 text-slate-400 text-sm cursor-not-allowed select-none">
-                <AlertTriangle className="w-4 h-4" /> Daily Limit Reached
+                <AlertTriangle className="w-4 h-4" /> Weekly Limit Reached
               </div>
             ) : (
               <>
-                {/* Gmail Drafts via GAS – enabled for all reps and roles */}
-                <button onClick={handleGasDraft} disabled={isSending}
-                  className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md disabled:opacity-60 text-sm">
+                {/* Gmail Drafts via GAS – opens modal with checkboxes */}
+                <button onClick={handleOpenDraftModal} disabled={isSending}
+                  className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md disabled:opacity-60 text-sm cursor-pointer">
                   {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
                   Gmail Drafts (HTML)
                 </button>
@@ -863,7 +933,7 @@ export default function DeliveryPanel({
                   <div className={`rounded-xl px-4 py-2.5 space-y-1.5 ${atLimit ? "bg-red-50 border border-red-200" : "bg-slate-50 border border-slate-200"}`}>
                     <div className="flex items-center justify-between text-xs font-bold">
                       <span className={atLimit ? "text-red-700" : "text-slate-600"}>
-                        {atLimit ? "⛔ Daily limit reached" : `${remaining} email${remaining !== 1 ? "s" : ""} remaining today`}
+                        {atLimit ? "⛔ Weekly limit reached" : `${remaining} email${remaining !== 1 ? "s" : ""} remaining this week`}
                       </span>
                       <span className={atLimit ? "text-red-700" : "text-slate-500"}>
                         {sessionSentCount} / {effectiveLimit}
@@ -916,7 +986,7 @@ export default function DeliveryPanel({
                                 ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
                                 : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
                           }`}
-                          title={repAtLimit ? "Daily limit reached" : "Create Gmail Draft"}
+                          title={repAtLimit ? "Weekly limit reached" : "Create Gmail Draft"}
                         >
                           {draftStatus[idx] === "drafting"
                             ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Drafting…</>
@@ -941,7 +1011,7 @@ export default function DeliveryPanel({
                                 ? "bg-green-100 text-green-700 hover:bg-green-200"
                                 : "bg-dd-red text-white hover:bg-[#ff3019] shadow-sm"
                           }`}
-                          title={repAtLimit ? "Daily limit reached" : undefined}
+                          title={repAtLimit ? "Weekly limit reached" : undefined}
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
                           {repAtLimit ? "Limit Reached" : clipStatus[idx] === "copying" ? "Opening…" : isOpened ? "Re-open" : "Open in Gmail"}
@@ -965,6 +1035,197 @@ export default function DeliveryPanel({
                 className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-bold rounded-xl transition-colors">
                 Done
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Gmail Drafts Queue Modal (with Checkboxes) ────────────────────────── */}
+      {draftModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col animate-in zoom-in-95 duration-200 overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-200 flex flex-col gap-2 shrink-0 bg-white">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <h2 className="text-lg font-bold text-slate-800">Gmail Drafts Queue</h2>
+                </div>
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                  {draftModal.selected.size} of {draftModal.items.length} selected
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">
+                Select the merchants you want to push to Gmail Drafts as rich HTML formatting.
+              </p>
+
+              {/* Select All Controls */}
+              <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-bold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={draftModal.selected.size === draftModal.items.length && draftModal.items.length > 0}
+                    onChange={toggleSelectAllDrafts}
+                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                  />
+                  Select All ({draftModal.items.length} merchants)
+                </label>
+                <button
+                  type="button"
+                  onClick={toggleSelectAllDrafts}
+                  className="text-xs font-bold text-emerald-600 hover:text-emerald-700 transition-colors cursor-pointer"
+                >
+                  {draftModal.selected.size === draftModal.items.length ? "Deselect All" : "Select All"}
+                </button>
+              </div>
+
+              {/* Live quota bar — reps only, skip for blank sends */}
+              {isRep && !isBlankSend && (() => {
+                const pct = Math.min((sessionSentCount / effectiveLimit) * 100, 100);
+                const remaining = Math.max(effectiveLimit - sessionSentCount, 0);
+                const atLimit = sessionSentCount >= effectiveLimit;
+                const wouldExceed = sessionSentCount + draftModal.selected.size > effectiveLimit;
+
+                return (
+                  <div className={`rounded-xl px-4 py-2 space-y-1.5 ${
+                    atLimit || wouldExceed ? "bg-red-50 border border-red-200" : "bg-slate-50 border border-slate-200"
+                  }`}>
+                    <div className="flex items-center justify-between text-xs font-bold">
+                      <span className={atLimit || wouldExceed ? "text-red-700" : "text-slate-600"}>
+                        {atLimit
+                          ? "⛔ Weekly limit reached"
+                          : wouldExceed
+                            ? `⚠ Selection (${draftModal.selected.size}) exceeds weekly limit (${remaining} left)`
+                            : `${remaining} email${remaining !== 1 ? "s" : ""} remaining this week`
+                        }
+                      </span>
+                      <span className={atLimit || wouldExceed ? "text-red-700" : "text-slate-500"}>
+                        {sessionSentCount} / {effectiveLimit}
+                      </span>
+                    </div>
+                    <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          atLimit || wouldExceed ? "bg-red-500" : pct >= 80 ? "bg-amber-500" : "bg-emerald-500"
+                        }`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Merchant List with checkboxes */}
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+              {draftModal.items.map((item, idx) => {
+                const isSelected = draftModal.selected.has(idx);
+                const isDone = draftStatus[idx] === "done";
+                const isDraftingRow = draftStatus[idx] === "drafting";
+
+                return (
+                  <div
+                    key={idx}
+                    className={`flex items-center gap-3 px-5 py-3 transition-colors ${
+                      isSelected ? "bg-emerald-50/40" : "hover:bg-slate-50"
+                    }`}
+                  >
+                    {/* Checkbox */}
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleDraftSelect(idx)}
+                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer shrink-0"
+                    />
+
+                    {/* Number Badge */}
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${
+                      isDone ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-500"
+                    }`}>
+                      {isDone ? <Check className="w-4 h-4" /> : idx + 1}
+                    </div>
+
+                    {/* Merchant Details */}
+                    <div className="flex-1 min-w-0" onClick={() => toggleDraftSelect(idx)}>
+                      <p className="font-semibold text-slate-800 text-sm truncate cursor-pointer">{item.label}</p>
+                      <p className="text-xs text-slate-500 truncate cursor-pointer">{item.to}{item.cc ? ` · CC: ${item.cc}` : ""}</p>
+                      {isDone && (
+                        <p className="text-[10px] text-emerald-600 font-bold mt-0.5">✓ Draft created in Gmail</p>
+                      )}
+                      {isDraftingRow && (
+                        <p className="text-[10px] text-slate-400 font-bold mt-0.5 animate-pulse">Drafting...</p>
+                      )}
+                    </div>
+
+                    {/* Single Row Draft Button */}
+                    {(() => {
+                      const repAtLimit = isRep && !isBlankSend && sessionSentCount >= effectiveLimit && !isDone;
+                      return (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            createOneGasDraft(idx);
+                          }}
+                          disabled={isDraftingRow || isDone || repAtLimit || draftModal.isDrafting}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
+                            isDone
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : repAtLimit
+                                ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                                : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
+                          }`}
+                          title={repAtLimit ? "Weekly limit reached" : "Create single Gmail Draft"}
+                        >
+                          {isDraftingRow ? (
+                            <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Drafting…</>
+                          ) : isDone ? (
+                            <><Check className="w-3.5 h-3.5" /> Drafted</>
+                          ) : (
+                            <><FileText className="w-3.5 h-3.5" /> Draft</>
+                          )}
+                        </button>
+                      );
+                    })()}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 shrink-0 flex items-center justify-between gap-3">
+              <p className="text-xs text-slate-500">
+                {draftModal.selected.size === 0
+                  ? "No merchants selected."
+                  : `${draftModal.selected.size} of ${draftModal.items.length} selected.`}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={closeDraftModal}
+                  className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-sm font-bold rounded-xl transition-colors cursor-pointer"
+                >
+                  Done
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteDraftBatch}
+                  disabled={
+                    draftModal.selected.size === 0 ||
+                    draftModal.isDrafting ||
+                    (isRep && !isBlankSend && sessionSentCount + draftModal.selected.size > effectiveLimit)
+                  }
+                  className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-all shadow-md cursor-pointer"
+                >
+                  {draftModal.isDrafting ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Drafting…</>
+                  ) : (
+                    <><FileText className="w-4 h-4" /> Push {draftModal.selected.size} to Gmail Drafts</>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
