@@ -11,7 +11,7 @@ import RepSettingsModal from "./components/RepSettingsModal";
 import BOBDashboard from "./components/BOBDashboard";
 import SendLogDashboard from "./components/SendLogDashboard";
 import AdminPanel from "./components/AdminPanel";
-import { ArrowRight, Settings } from "lucide-react";
+import { ArrowRight, Settings, Flame, UploadCloud } from "lucide-react";
 import { buildAllDeepLinks } from "./lib/deepLinkBuilder";
 import { trackNavigation } from "./lib/analytics";
 import {
@@ -33,6 +33,8 @@ import {
   stripDeepLinkTokens,
   formatDmName,
 } from "./lib/emailBlockEngine";
+import { fetchAssignedLeads } from "./lib/supabase";
+import { transformAssignedLeadsToMerchants } from "./lib/assignedLeadsAdapter";
 
 // Catches any unhandled render crash and shows a message instead of a blank page
 class ErrorBoundary extends React.Component {
@@ -98,26 +100,106 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
     }
   });
 
-  // Restore pipeline from localStorage on mount if same-day data exists
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(PIPELINE_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw);
-      if (saved.date !== todayDateStr) return;
-      if (!saved.merchants || saved.merchants.length === 0) return;
-      setMerchants(saved.merchants);
-      setAnalyticsPayload(saved.analyticsPayload || null);
-      // Go straight to the merchant selection screen — skip the upload step
-      setPhase(saved.analyticsPayload ? "analyze" : "select");
-    } catch {
-      /* silently ignore corrupt data */
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   const [merchants, setMerchants] = useState([]);
   const [activeMerchantIds, setActiveMerchantIds] = useState(new Set());
   const [analyticsPayload, setAnalyticsPayload] = useState(null);  // BOB Intelligence Suite data
+  const [defaultLeadsCount, setDefaultLeadsCount] = useState(0);
+  const [defaultLeadsRaw, setDefaultLeadsRaw] = useState(null);
+  const [leadsLoading, setLeadsLoading] = useState(true);
+
+  const handleDataLoaded = useCallback((parsedData, payload, fileName) => {
+    setMerchants(parsedData);
+    setAnalyticsPayload(payload || null);
+
+    // 🧹 Clear all stale state from the previous upload so old promo selections,
+    // block edits, and template overrides don't bleed into the new session.
+    setSelectedPromos([]);
+    setPromoConfigs({});
+    setGlobalBlocks([]);
+    setGlobalHtmlTemplate("");
+
+    // 💾 Persist parsed pipeline to localStorage so the rep doesn't need to
+    // re-upload on refresh. Scoped to today's date — automatically ignored tomorrow.
+    try {
+      const meta = { fileName: fileName || "pipeline", merchantCount: parsedData.length, date: todayDateStr };
+      localStorage.setItem(PIPELINE_KEY, JSON.stringify({
+        ...meta,
+        merchants: parsedData,
+        analyticsPayload: payload || null,
+      }));
+      setCachedPipelineMeta(meta);
+    } catch (e) {
+      console.warn("[pipeline] Could not persist to localStorage:", e.message);
+    }
+
+    setPhase(payload ? "analyze" : "select");
+  }, [todayDateStr]);
+
+  const handleLoadDefaultLeads = useCallback(async () => {
+    if (!repEmail) return;
+    try {
+      let leads = defaultLeadsRaw;
+      if (!leads || leads.length === 0) {
+        leads = await fetchAssignedLeads(repEmail);
+        if (leads) setDefaultLeadsRaw(leads);
+      }
+      if (leads && leads.length > 0) {
+        setDefaultLeadsCount(leads.length);
+        const transformed = transformAssignedLeadsToMerchants(leads);
+        if (transformed.length > 0) {
+          handleDataLoaded(transformed, null, "Hot Ads Pipeline");
+        }
+      }
+    } catch (err) {
+      console.error("[defaultLeads] Error loading assigned leads:", err);
+    }
+  }, [repEmail, defaultLeadsRaw, handleDataLoaded]);
+
+  // Restore pipeline from localStorage on mount, or auto-load persistent default assigned leads
+  useEffect(() => {
+    let hasRestoredLocal = false;
+    try {
+      const raw = localStorage.getItem(PIPELINE_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (saved.date === todayDateStr && saved.merchants && saved.merchants.length > 0) {
+          setMerchants(saved.merchants);
+          setAnalyticsPayload(saved.analyticsPayload || null);
+          setPhase(saved.analyticsPayload ? "analyze" : "select");
+          hasRestoredLocal = true;
+        }
+      }
+    } catch {
+      /* silently ignore corrupt data */
+    }
+
+    // Always fetch default leads count for the rep so it's ready in UploadZone if cleared
+    if (repEmail) {
+      setLeadsLoading(true);
+      fetchAssignedLeads(repEmail).then(leads => {
+        setLeadsLoading(false);
+        if (leads && leads.length > 0) {
+          setDefaultLeadsCount(leads.length);
+          setDefaultLeadsRaw(leads);
+          // If no local pipeline was active, auto-load these assigned leads as the default!
+          if (!hasRestoredLocal) {
+            const transformed = transformAssignedLeadsToMerchants(leads);
+            if (transformed.length > 0) {
+              handleDataLoaded(transformed, null, "Hot Ads Pipeline");
+            }
+          }
+        } else {
+          setDefaultLeadsCount(0);
+          setDefaultLeadsRaw([]);
+        }
+      }).catch(err => {
+        setLeadsLoading(false);
+        console.warn("[assignedLeads] Could not fetch default leads:", err.message);
+      });
+    } else {
+      setLeadsLoading(false);
+    }
+  }, [repEmail, todayDateStr, handleDataLoaded]);
 
   // Track every phase transition as a navigation event
   useEffect(() => {
@@ -373,36 +455,6 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
     });
   }, [resolvedGlobalBlocks, globalHtmlTemplate, targetMerchants, deepLinks, selectedTheme, selectedPromos]);
 
-  const handleDataLoaded = (parsedData, payload, fileName) => {
-    setMerchants(parsedData);
-    setAnalyticsPayload(payload || null);
-
-    // 🧹 Clear all stale state from the previous upload so old promo selections,
-    // block edits, and template overrides don't bleed into the new session.
-    setSelectedPromos([]);
-    setPromoConfigs({});
-    setGlobalBlocks([]);
-    setGlobalHtmlTemplate("");
-
-    // 💾 Persist parsed pipeline to localStorage so the rep doesn't need to
-    // re-upload on refresh. Scoped to today's date — automatically ignored tomorrow.
-    try {
-      const meta = { fileName: fileName || "pipeline", merchantCount: parsedData.length, date: todayDateStr };
-      localStorage.setItem(PIPELINE_KEY, JSON.stringify({
-        ...meta,
-        merchants: parsedData,
-        analyticsPayload: payload || null,
-      }));
-      setCachedPipelineMeta(meta);
-    } catch (e) {
-      // localStorage quota exceeded — not critical, just skip persistence
-      console.warn("[pipeline] Could not persist to localStorage:", e.message);
-    }
-
-    // Navigate to analyze if we have analytics data, otherwise straight to select
-    setPhase(payload ? "analyze" : "select");
-  };
-
   // Allow the rep to wipe the saved pipeline and return to the upload screen
   const handleClearPipeline = () => {
     localStorage.removeItem(PIPELINE_KEY);
@@ -451,6 +503,9 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
             onDataLoaded={handleDataLoaded}
             cachedPipelineMeta={cachedPipelineMeta}
             onClearPipeline={handleClearPipeline}
+            defaultLeadsCount={defaultLeadsCount}
+            onLoadDefaultLeads={handleLoadDefaultLeads}
+            leadsLoading={leadsLoading}
           />
         )}
 
@@ -466,11 +521,28 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
 
         {phase === "select" && (
           <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-              <h3 className="text-xl font-bold text-slate-800 mb-2">Review Your Book of Business</h3>
-              <p className="text-slate-500 max-w-3xl">
-                We've automatically consolidated multiple locations under the same business ID and extracted the best target email for each franchise. Check the merchants you want to pitch campaigns to today.
-              </p>
+            <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-slate-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 relative overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500 via-orange-500 to-amber-500" />
+              <div>
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-50 text-dd-red text-xs font-bold uppercase tracking-wider mb-2.5 border border-red-100">
+                  <Flame className="w-4 h-4 fill-dd-red text-dd-red" /> Client Ads Spiff
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+                  Hot Ads Pipeline
+                </h2>
+                <p className="text-slate-500 text-sm mt-1 max-w-2xl">
+                  Review and select the businesses you want to pitch campaigns to for the Client Ads Spiff.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setPhase("upload")}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition-colors cursor-pointer"
+                >
+                  <UploadCloud className="w-3.5 h-3.5 text-slate-500" /> Upload Custom BOB
+                </button>
+              </div>
             </div>
 
             <MerchantTable

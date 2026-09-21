@@ -2,14 +2,17 @@ import React, { useEffect } from "react";
 import { Check, BarChart2 } from "lucide-react";
 
 const STEPS = [
-  { id: "upload", label: "Upload BOB", title: "Upload Book of Business" },
-  { id: "select", label: "Select Merchants", title: "Select Merchants" },
+  { id: "select", label: "Hot Ads Pipeline", title: "Hot Ads Pipeline" },
   { id: "build", label: "Configure Campaigns", title: "Configure Campaigns" },
   { id: "deliver", label: "Preview & Send", title: "Preview & Send Emails" },
 ];
 
 export default function StepIndicator({ phase, setPhase, hasMerchants, hasPromos, onOpenAnalysis }) {
-  const effectiveIndex = phase === "analyze" ? 0.5 : STEPS.findIndex(s => s.id === phase);
+  const effectiveIndex = (phase === "upload" || phase === "select")
+    ? 0
+    : phase === "analyze"
+      ? 0.5
+      : STEPS.findIndex(s => s.id === phase);
 
   // Update browser tab title per step
   useEffect(() => {
@@ -17,19 +20,20 @@ export default function StepIndicator({ phase, setPhase, hasMerchants, hasPromos
       document.title = "BOB Analysis · MSM Campaign Dispatcher";
       return;
     }
-    const step = STEPS.find(s => s.id === phase);
+    const step = (phase === "upload" || phase === "select")
+      ? STEPS[0]
+      : STEPS.find(s => s.id === phase);
     document.title = step
       ? `${step.title} · MSM Campaign Dispatcher`
       : "MSM Campaign Dispatcher";
   }, [phase]);
 
   return (
-    <div className="w-full max-w-4xl mx-auto my-8 px-4 flex items-center justify-between">
+    <div className="w-full max-w-3xl mx-auto my-8 px-4 flex items-center justify-between">
       {STEPS.map((step, index) => {
         const isCompleted = index < effectiveIndex;
         const isCurrent = index === effectiveIndex;
         const isDisabled =
-          (step.id === "select" && !hasMerchants) ||
           (step.id === "build" && !hasMerchants) ||
           (step.id === "deliver" && (!hasMerchants || !hasPromos));
 
@@ -37,7 +41,13 @@ export default function StepIndicator({ phase, setPhase, hasMerchants, hasPromos
           <React.Fragment key={step.id}>
             <div className="flex flex-col items-center gap-2 relative z-10 group">
               <button
-                onClick={() => !isDisabled && setPhase(step.id)}
+                onClick={() => {
+                  if (step.id === "select") {
+                    setPhase(hasMerchants ? "select" : "upload");
+                  } else if (!isDisabled) {
+                    setPhase(step.id);
+                  }
+                }}
                 disabled={isDisabled}
                 aria-current={isCurrent ? "step" : undefined}
                 className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all duration-300 ${isCompleted

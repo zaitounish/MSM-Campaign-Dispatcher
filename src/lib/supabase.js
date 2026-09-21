@@ -223,3 +223,21 @@ export async function resolveApprovalRequest({ requestId, repEmail, approved, ap
   }
   return true;
 }
+
+/**
+ * Fetch persistent assigned leads for a given sales rep by their login email.
+ * Returns an array of lead rows from `assigned_leads`.
+ */
+export async function fetchAssignedLeads(repEmail) {
+  if (!repEmail) return [];
+  const { data, error } = await supabase
+    .from("assigned_leads")
+    .select("*")
+    .ilike("rep_email", repEmail.trim());
+
+  if (error) {
+    console.warn("[fetchAssignedLeads]", error.message);
+    return [];
+  }
+  return data || [];
+}

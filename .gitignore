@@ -25,6 +25,9 @@ vite.config.js.timestamp-*
 # Exception: keep public template tracked
 !.env.example
 
+# Local Data, Raw CSV Exports & PII
+*.csv
+
 # Internal Documentation, Research & Agent Notes
 RBAC.md
 RBAC_CONFIG.md

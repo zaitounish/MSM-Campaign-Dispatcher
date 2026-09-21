@@ -1,10 +1,30 @@
 import React, { useState, useRef } from "react";
-import { UploadCloud, Loader2, FileSpreadsheet, AlertTriangle, RefreshCw, Plus, X, Files } from "lucide-react";
+import {
+  UploadCloud,
+  Loader2,
+  FileSpreadsheet,
+  AlertTriangle,
+  RefreshCw,
+  Plus,
+  X,
+  Files,
+  Sparkles,
+  Flame,
+  AlertCircle,
+  ArrowRight,
+} from "lucide-react";
 import * as XLSX from "xlsx";
 import { processSheetData } from "../lib/bobParser";
 import { analyzeBOB } from "../lib/bobAnalyzer";
 
-export default function UploadZone({ onDataLoaded, cachedPipelineMeta = null, onClearPipeline }) {
+export default function UploadZone({
+  onDataLoaded,
+  cachedPipelineMeta = null,
+  onClearPipeline,
+  defaultLeadsCount = 0,
+  onLoadDefaultLeads,
+  leadsLoading = false,
+}) {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -179,6 +199,69 @@ export default function UploadZone({ onDataLoaded, cachedPipelineMeta = null, on
         </div>
       )}
 
+      {/* ── Hot Ads Pipeline (Primary Hero Card) ── */}
+      {!cachedPipelineMeta && (
+        <div className="w-full max-w-3xl mb-8 bg-white border border-slate-200/80 rounded-3xl p-8 sm:p-10 shadow-sm text-center relative overflow-hidden animate-in fade-in duration-300">
+          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-red-500 via-orange-500 to-amber-500" />
+
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-50 text-dd-red text-xs font-bold uppercase tracking-wider mb-4 border border-red-100">
+            <Flame className="w-4 h-4 fill-dd-red text-dd-red" /> Client Ads Spiff
+          </div>
+
+          <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight mb-2">
+            Hot Ads Pipeline
+          </h2>
+
+          {leadsLoading ? (
+            <div className="py-8 flex flex-col items-center justify-center gap-3 text-slate-400">
+              <Loader2 className="w-7 h-7 animate-spin text-dd-red" />
+              <p className="text-sm font-medium">Checking your Hot Ads leads...</p>
+            </div>
+          ) : defaultLeadsCount > 0 ? (
+            <div className="py-4 animate-in fade-in duration-200">
+              <p className="text-slate-600 text-sm sm:text-base mb-6 max-w-lg mx-auto leading-relaxed">
+                Your assigned businesses for the <strong className="text-slate-800 font-bold">Client Ads Spiff</strong> are ready to select and dispatch.
+              </p>
+
+              <div className="inline-flex items-center gap-6 sm:gap-8 px-6 sm:px-8 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl mb-6 shadow-xs">
+                <div className="text-center">
+                  <span className="block text-2xl sm:text-3xl font-black text-slate-900">{defaultLeadsCount.toLocaleString()}</span>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Assigned Stores</span>
+                </div>
+                <div className="w-px h-8 bg-slate-200" />
+                <div className="text-center">
+                  <span className="block text-2xl sm:text-3xl font-black text-emerald-600">Active</span>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Campaign Status</span>
+                </div>
+              </div>
+
+              <div>
+                <button
+                  onClick={onLoadDefaultLeads}
+                  className="inline-flex items-center gap-2.5 px-8 py-3.5 bg-dd-red hover:bg-red-700 text-white font-bold rounded-2xl shadow-md hover:shadow-lg transition-all duration-200 text-base group cursor-pointer"
+                >
+                  <Flame className="w-5 h-5 fill-white" />
+                  Select Businesses ({defaultLeadsCount.toLocaleString()} stores)
+                  <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="py-6 animate-in fade-in duration-200">
+              <div className="inline-flex items-center gap-3 px-6 py-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 max-w-lg mx-auto mb-3 shadow-xs">
+                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+                <p className="text-sm font-bold text-left leading-relaxed">
+                  Please refer back to your manager
+                </p>
+              </div>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                No assigned leads were found for your account in the Hot Ads Pipeline. Please contact your manager to get assigned.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       {isProcessing && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center">
           <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md text-center animate-in zoom-in-95">
@@ -266,6 +349,17 @@ export default function UploadZone({ onDataLoaded, cachedPipelineMeta = null, on
           >
             <RefreshCw className="w-3.5 h-3.5" /> Try Again
           </button>
+        </div>
+      )}
+
+      {/* ── Or manual upload divider ── */}
+      {pendingFiles.length === 0 && !isProcessing && !cachedPipelineMeta && (
+        <div className="w-full max-w-3xl flex items-center gap-4 my-6">
+          <div className="flex-1 h-px bg-slate-200" />
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            Or Manual Book of Business Upload
+          </span>
+          <div className="flex-1 h-px bg-slate-200" />
         </div>
       )}
 
