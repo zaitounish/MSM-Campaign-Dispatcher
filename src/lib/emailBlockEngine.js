@@ -72,9 +72,22 @@ export const stripDeepLinkTokens = (html) => {
  * @param {object} dlMap  - { [promoId]: urlString } for the CURRENT merchant
  * @returns {string} HTML with real URLs replaced by %%DD_LINK_promoId%% tokens
  */
+const PROMO_BASE_PATTERNS = [
+  { promoId: "ads", regex: /https:\/\/www\.doordash\.com\/merchant\/marketing\/sl\/create[^\s"'>]*/gi },
+  { promoId: "smart_campaign", regex: /https:\/\/www\.doordash\.com\/merchant\/marketing\/smart\/create[^\s"'>]*/gi },
+  { promoId: "loyalty", regex: /https:\/\/www\.doordash\.com\/merchant\/loyalty[^\s"'>]*/gi },
+  { promoId: "discount", regex: /https:\/\/www\.doordash\.com\/merchant\/marketing\/spendxgety\/create[^\s"'>]*/gi },
+  { promoId: "bogo", regex: /https:\/\/www\.doordash\.com\/merchant\/marketing\/bogo\/create[^\s"'>]*/gi },
+  { promoId: "delivery_fee", regex: /https:\/\/www\.doordash\.com\/merchant\/marketing\/ddd\/create[^\s"'>]*/gi },
+  { promoId: "happy_hour", regex: /https:\/\/www\.doordash\.com\/merchant\/marketing\/cx_moment\/create[^\s"'>]*/gi },
+  { promoId: "lunch_specials", regex: /https:\/\/www\.doordash\.com\/merchant\/marketing\/lunch_special\/create[^\s"'>]*/gi },
+];
+
 export const deInjectDeepLinks = (html, dlMap = {}) => {
   if (!html) return "";
   let result = html;
+  
+  // Step 1: Replace exact URL variations from current dlMap
   Object.entries(dlMap).forEach(([promoId, url]) => {
     if (!url) return;
     const token = deepLinkToken(promoId);
@@ -94,6 +107,17 @@ export const deInjectDeepLinks = (html, dlMap = {}) => {
       }
     }
   });
+
+  // Step 2: Auto-heal any remaining/stale DoorDash campaign URLs back to tokens
+  // so older drafts with stale timestamps, old budgets, or different repIds
+  // are refreshed with the active campaign configuration.
+  const hasDlMap = dlMap && Object.keys(dlMap).length > 0;
+  PROMO_BASE_PATTERNS.forEach(({ promoId, regex }) => {
+    if (!hasDlMap || dlMap[promoId] !== undefined) {
+      result = result.replace(regex, deepLinkToken(promoId));
+    }
+  });
+
   return result;
 };
 

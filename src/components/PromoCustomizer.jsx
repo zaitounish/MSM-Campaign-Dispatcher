@@ -41,8 +41,9 @@ export function getPromoConfigErrors(selectedPromos, promoConfigs, isUltimate) {
     if (raw === undefined || raw === null || String(raw).trim() === "") {
       errors.push("Sponsored Listing: Please enter a weekly budget.");
     } else {
-      const budget = parseFloat(raw);
-      if (!isFinite(budget) || isNaN(budget)) {
+      const sanitized = String(raw).replace(/[^0-9.]/g, "");
+      const budget = parseFloat(sanitized);
+      if (!sanitized || !isFinite(budget) || isNaN(budget)) {
         errors.push("Sponsored Listing: Weekly budget must be a number.");
       } else if (budget <= 0) {
         errors.push("Sponsored Listing: Weekly budget must be greater than $0.");
@@ -202,7 +203,7 @@ export default function PromoCustomizer({ selectedPromos, promoConfigs, setPromo
                       <DollarSign className="w-4 h-4 text-slate-400 mr-1" />
                       <input
                         type="number"
-                        placeholder="e.g. 10"
+                        placeholder="e.g. 150"
                         value={getConfig(promo.id, "budget")}
                         onChange={e => updateConfig(promo.id, "budget", e.target.value)}
                         className="outline-none bg-transparent w-full text-slate-700 sm:text-sm"

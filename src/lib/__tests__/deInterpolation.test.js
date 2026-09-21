@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { generateDeepLink } from "../deepLinkBuilder.js";
 
 // Mirror pure functions from emailBlockEngine for contract and behavior testing
 function formatDmName(raw) {
@@ -71,6 +72,17 @@ function deInterpolateMerchant(html, merchant = {}) {
   return result;
 }
 
+const PROMO_BASE_PATTERNS = [
+  { promoId: "ads", regex: /https:\/\/www\.doordash\.com\/merchant\/marketing\/sl\/create[^\s"'>]*/gi },
+  { promoId: "smart_campaign", regex: /https:\/\/www\.doordash\.com\/merchant\/marketing\/smart\/create[^\s"'>]*/gi },
+  { promoId: "loyalty", regex: /https:\/\/www\.doordash\.com\/merchant\/loyalty[^\s"'>]*/gi },
+  { promoId: "discount", regex: /https:\/\/www\.doordash\.com\/merchant\/marketing\/spendxgety\/create[^\s"'>]*/gi },
+  { promoId: "bogo", regex: /https:\/\/www\.doordash\.com\/merchant\/marketing\/bogo\/create[^\s"'>]*/gi },
+  { promoId: "delivery_fee", regex: /https:\/\/www\.doordash\.com\/merchant\/marketing\/ddd\/create[^\s"'>]*/gi },
+  { promoId: "happy_hour", regex: /https:\/\/www\.doordash\.com\/merchant\/marketing\/cx_moment\/create[^\s"'>]*/gi },
+  { promoId: "lunch_specials", regex: /https:\/\/www\.doordash\.com\/merchant\/marketing\/lunch_special\/create[^\s"'>]*/gi },
+];
+
 function deInjectDeepLinks(html, dlMap = {}) {
   if (!html) return "";
   let result = html;
@@ -92,6 +104,14 @@ function deInjectDeepLinks(html, dlMap = {}) {
       }
     }
   });
+
+  const hasDlMap = dlMap && Object.keys(dlMap).length > 0;
+  PROMO_BASE_PATTERNS.forEach(({ promoId, regex }) => {
+    if (!hasDlMap || dlMap[promoId] !== undefined) {
+      result = result.replace(regex, `%%DD_LINK_${promoId}%%`);
+    }
+  });
+
   return result;
 }
 
@@ -160,5 +180,30 @@ describe("deInjectDeepLinks", () => {
     const result = deInjectDeepLinks(html, dlMap);
 
     assert.equal(result, '<a href="%%DD_LINK_ads%%">Activate Ads</a>');
+  });
+
+  it("auto-heals stale DoorDash campaign URLs (e.g. old $98 default or old timestamp) back to tokens", () => {
+    const dlMap = {
+      ads: "https://www.doordash.com/merchant/marketing/sl/create?business_id=12345&aud=all&dsd=9999999999999&sids=111&assisted_rep_id=rep99&abv=2100&abwv=15000&bsao=0&bscv=500&bsia=true&sch_ad=true",
+    };
+    // HTML contains an old link with empty budget or old $98 default (abv=1400) and different dsd
+    const staleHtml = '<p>Check out our offer</p><a href="https://www.doordash.com/merchant/marketing/sl/create?business_id=12345&amp;aud=all&amp;dsd=1111111111111&amp;sids=111&amp;assisted_rep_id=rep99&amp;abv=1400&amp;abwv=9800&amp;bsao=0&amp;bscv=500&amp;bsia=true&amp;sch_ad=true">Activate Ads</a>';
+    const result = deInjectDeepLinks(staleHtml, dlMap);
+
+    assert.equal(result, '<p>Check out our offer</p><a href="%%DD_LINK_ads%%">Activate Ads</a>');
+  });
+});
+
+describe("generateDeepLink budget sanitization", () => {
+  it("sanitizes weeklyBudget string with currency symbol ($150) and produces abwv=15000 and abv=2100", () => {
+    const url = generateDeepLink({
+      businessId: "12345",
+      sidsArray: ["111"],
+      repId: "rep99",
+      weeklyBudget: "$150",
+      audienceKey: "all",
+    });
+    assert.match(url, /abv=2100/);
+    assert.match(url, /abwv=15000/);
   });
 });

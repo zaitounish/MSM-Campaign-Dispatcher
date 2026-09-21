@@ -30,6 +30,7 @@ import {
   wrapForRichEmail,
   htmlToPlainText,
   injectDeepLinks,
+  deInjectDeepLinks,
   stripDeepLinkTokens,
   formatDmName,
 } from "./lib/emailBlockEngine";
@@ -173,7 +174,25 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
           } else {
             setMerchants(saved.merchants);
             setAnalyticsPayload(saved.analyticsPayload || null);
-            setPhase(saved.analyticsPayload ? "analyze" : "select");
+            if (saved.activeMerchantIds && Array.isArray(saved.activeMerchantIds)) {
+              setActiveMerchantIds(new Set(saved.activeMerchantIds));
+            } else if (saved.merchants) {
+              setActiveMerchantIds(new Set(saved.merchants.filter(m => m.selected).map(m => m.id)));
+            }
+            if (saved.selectedPromos && Array.isArray(saved.selectedPromos) && saved.selectedPromos.length > 0) {
+              setSelectedPromos(saved.selectedPromos);
+            }
+            if (saved.promoConfigs && typeof saved.promoConfigs === "object" && Object.keys(saved.promoConfigs).length > 0) {
+              setPromoConfigs(saved.promoConfigs);
+            }
+            if (saved.globalHtmlTemplate) {
+              setGlobalHtmlTemplate(saved.globalHtmlTemplate);
+            }
+            if (saved.phase) {
+              setPhase(saved.phase);
+            } else {
+              setPhase(saved.analyticsPayload ? "analyze" : "select");
+            }
             hasRestoredLocal = true;
           }
         }
@@ -230,6 +249,31 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
   // Raw HTML override state (written by MerchantEmailEditor "Apply to All" save)
   // Contains %%DD_LINK_<promoId>%% tokens | resolved per merchant at render time
   const [globalHtmlTemplate, setGlobalHtmlTemplate] = useState("");
+
+  // Persist session state (merchants, activeMerchantIds, selectedPromos, promoConfigs, phase, globalHtmlTemplate)
+  // so refreshing or reopening the tool does not wipe the rep's campaign configuration or budget recommendation.
+  useEffect(() => {
+    if (!merchants || merchants.length === 0) return;
+    try {
+      const raw = localStorage.getItem(PIPELINE_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (saved.date === todayDateStr) {
+          localStorage.setItem(PIPELINE_KEY, JSON.stringify({
+            ...saved,
+            merchants,
+            activeMerchantIds: Array.from(activeMerchantIds),
+            selectedPromos,
+            promoConfigs,
+            globalHtmlTemplate,
+            phase,
+          }));
+        }
+      }
+    } catch (e) {
+      console.warn("[pipeline] Could not update localStorage session:", e.message);
+    }
+  }, [merchants, activeMerchantIds, selectedPromos, promoConfigs, globalHtmlTemplate, phase, todayDateStr]);
 
   // ── Promo change handler ──────────────────────────────────────────────────────
   const applyPromoWipe = useCallback((newPromos) => {
@@ -403,12 +447,12 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
 
       // Priority 1: per-merchant HTML override
       if (m.emailOverride) {
-        let html = injectDeepLinks(m.emailOverride, dlMap)
+        let html = injectDeepLinks(deInjectDeepLinks(m.emailOverride, dlMap), dlMap)
           .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
           .replace(/\{DM\s*Name\}/gi, dmResolved);
         // Use independent clean override if set, otherwise fall back to same HTML
         const cleanHtml = m.cleanOverride
-          ? injectDeepLinks(m.cleanOverride, dlMap)
+          ? injectDeepLinks(deInjectDeepLinks(m.cleanOverride, dlMap), dlMap)
             .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
             .replace(/\{DM\s*Name\}/gi, dmResolved)
           : html;
@@ -425,11 +469,11 @@ function AppInner({ userProfile, onSignOut, sessionId }) {
 
       // Priority 2: global HTML template
       if (globalHtmlTemplate) {
-        let html = injectDeepLinks(globalHtmlTemplate, dlMap)
+        let html = injectDeepLinks(deInjectDeepLinks(globalHtmlTemplate, dlMap), dlMap)
           .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
           .replace(/\{DM\s*Name\}/gi, dmResolved);
         const cleanHtml = m.cleanOverride
-          ? injectDeepLinks(m.cleanOverride, dlMap)
+          ? injectDeepLinks(deInjectDeepLinks(m.cleanOverride, dlMap), dlMap)
             .replace(/\{Store\s*Name\}/gi, m.merchantName || "Merchant Partner")
             .replace(/\{DM\s*Name\}/gi, dmResolved)
           : html;

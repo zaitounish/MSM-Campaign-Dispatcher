@@ -68,10 +68,14 @@ const getGlobalParams = (merchant, repId) => {
 
 // ─── 1. Sponsored Listing (SL) Generator ─────────────────────────────────────
 export const generateDeepLink = ({ businessId, sidsArray, repId, weeklyBudget, audienceKey }) => {
-  const hasBudget = Boolean(weeklyBudget && !isNaN(parseFloat(weeklyBudget)));
+  const sanitizedBudget = typeof weeklyBudget === "string"
+    ? weeklyBudget.replace(/[^0-9.]/g, "")
+    : weeklyBudget;
+  const numBudget = parseFloat(sanitizedBudget);
+  const hasBudget = Boolean(!isNaN(numBudget) && isFinite(numBudget) && numBudget > 0);
   
-  const abwv = hasBudget ? Math.round(parseFloat(weeklyBudget) * 100) : "";
-  const abv  = hasBudget ? Math.floor(parseFloat(weeklyBudget) / 7) * 100 : "";
+  const abwv = hasBudget ? Math.round(numBudget * 100) : "";
+  const abv  = hasBudget ? Math.floor(numBudget / 7) * 100 : "";
   const bscv = hasBudget ? 500 : "";
 
   const encodedSids   = encodeSids(sidsArray);

@@ -491,12 +491,13 @@ export default function MerchantEmailEditor({
     const isCleanEdited = hasEditedClean.current || editMode === "plain";
     const isRichEdited = hasEditedRich.current || editMode === "html";
 
-    // When "Apply to All" is active:
-    //   1. de-inject deep links  → real URLs become %%DD_LINK_promoId%% tokens
-    //   2. de-interpolate names  → merchant-specific names become {Store Name}/{DM Name}
-    // App.jsx's emailDrafts re-injects/re-interpolates per-merchant on every render.
-    const deToken = (html) =>
-      targetApplyToAll ? deInterpolateMerchant(deInjectDeepLinks(html, dlMap), merchant) : html;
+    // Deep links are ALWAYS de-injected back to tokens (%%DD_LINK_promoId%%)
+    // so any merchant overrides stay dynamic and inherit updated campaign budgets/configs.
+    // Merchant names are only de-interpolated back to {Store Name}/{DM Name} when Apply to All is active.
+    const deToken = (html) => {
+      const deInjected = deInjectDeepLinks(html, dlMap);
+      return targetApplyToAll ? deInterpolateMerchant(deInjected, merchant) : deInjected;
+    };
 
     onSave({
       html: deToken(richContentRef.current),

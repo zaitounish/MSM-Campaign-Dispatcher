@@ -28,14 +28,17 @@ vite.config.js.timestamp-*
 # Local Data, Raw CSV Exports & PII
 *.csv
 
-# Internal Documentation, Research & Agent Notes
-RBAC.md
-RBAC_CONFIG.md
-AGENTS.md
-implementation_plan.md
-research/
+# Scratch/Temp Agent Files
 *.scratch.*
 scratch/
+
+# Internal Documentation, Guides & Research
+docs/
+images/
+research/
+implementation_plan.md
+REP_USER_GUIDE.md
+Campaign Dispatcher Guide.pdf
 
 # Logs & Diagnostics
 logs/
@@ -73,3 +76,5 @@ Thumbs.db
 # Testing & Coverage
 coverage/
 .nyc_output/
+.playwright-mcp/
+scripts/guide_printable.html
