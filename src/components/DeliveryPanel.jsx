@@ -41,86 +41,60 @@ const copyHtmlToClipboard = async (draft) => {
   }
 };
 
-// ─── GAS Draft Dispatcher Helper ─────────────────────────────────────────────
-// Dispatches email drafts to the user's personal Google Apps Script Web App.
-// Uses direct fetch with Content-Type: text/plain;charset=utf-8 (CORS simple request)
-// to avoid iframe cookie-blocking and preflight rejections.
-// Falls back to hidden form post if fetch is blocked by local network/browser policies.
+// ─── GAS Draft Dispatcher ────────────────────────────────────────────────────
+//
+// WHY a top-level window (not fetch / not hidden iframe):
+//   - "Who has access: Anyone within DoorDash" requires Google Workspace auth.
+//   - fetch()            → CORS blocks the response; Google auth cookies are SameSite=Lax
+//                          and are NOT sent on cross-site XHR/fetch requests.
+//   - hidden <iframe>    → When Google auth fires a redirect, it returns
+//                          X-Frame-Options: DENY, silently killing the request.
+//   - top-level window   → A real browser window IS a first-party navigation to
+//                          script.google.com. Chrome sends all Google session cookies,
+//                          Google validates DoorDash Workspace membership, and doPost()
+//                          runs under the rep's own account.
+//
 async function sendDraftsToGas(gasUrl, payloads) {
   if (!gasUrl) {
     return { success: false, error: "No GAS URL configured." };
   }
 
-  // Strategy 1: Direct fetch with text/plain (CORS simple request)
-  try {
-    const res = await fetch(gasUrl, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(payloads),
-      redirect: "follow",
-    });
-
-    if (res.ok) {
-      const data = await res.json().catch(() => null);
-      if (data && data.ok) {
-        return {
-          success: true,
-          count: data.createdCount || payloads.length,
-          failedCount: data.failedCount || 0,
-        };
-      }
-      if (data && data.error) {
-        return { success: false, error: data.error };
-      }
-      return { success: true, count: payloads.length };
-    }
-  } catch (fetchErr) {
-    console.warn("[sendDraftsToGas] Direct fetch failed, trying iframe fallback:", fetchErr);
-  }
-
-  // Strategy 2: Hidden iframe form post fallback
   return new Promise((resolve) => {
     try {
-      const FRAME_ID = "__gas_bridge_frame__";
-      let iframe = document.getElementById(FRAME_ID);
-      if (!iframe) {
-        iframe = document.createElement("iframe");
-        iframe.id = FRAME_ID;
-        iframe.name = FRAME_ID;
-        iframe.style.cssText = "position:fixed;width:1px;height:1px;top:-9999px;left:-9999px;border:0;opacity:0;pointer-events:none;";
-        document.body.appendChild(iframe);
-      }
+      // Open a small top-level window (preserves user-gesture context for cookies).
+      const WIN_NAME = "dd_gas_bridge";
+      const bridgeWin = window.open(
+        "about:blank",
+        WIN_NAME,
+        "width=420,height=300,top=200,left=300,menubar=no,toolbar=no,location=no,status=no"
+      );
 
+      // Build and submit the form targeting that window.
       const form = document.createElement("form");
       form.method = "POST";
       form.action = gasUrl;
-      form.target = FRAME_ID;
+      form.target = WIN_NAME;
       form.style.display = "none";
 
-      const addField = (name, value) => {
-        const input = document.createElement("input");
-        input.type = "hidden";
-        input.name = name;
-        input.value = value;
-        form.appendChild(input);
+      const field = (name, value) => {
+        const i = document.createElement("input");
+        i.type = "hidden"; i.name = name; i.value = value;
+        form.appendChild(i);
       };
-
-      const jsonStr = JSON.stringify(payloads);
-      const encodedPayload = encodeURIComponent(jsonStr);
-
-      addField("action", "draft");
-      addField("payload_encoded", encodedPayload);
+      field("action", "draft");
+      field("payload_encoded", encodeURIComponent(JSON.stringify(payloads)));
 
       document.body.appendChild(form);
       form.submit();
-      requestAnimationFrame(() => {
-        if (form.parentNode) form.parentNode.removeChild(form);
-      });
+      requestAnimationFrame(() => { if (form.parentNode) form.parentNode.removeChild(form); });
 
-      // In fallback mode, allow reasonable time for GAS execution
+      // Allow Google Apps Script enough time to run, then close and resolve.
+      const waitMs = Math.min(Math.max(3000, payloads.length * 400), 10000);
       setTimeout(() => {
-        resolve({ success: true, count: payloads.length, isFallback: true });
-      }, Math.min(Math.max(1500, payloads.length * 400), 5000));
+        try { if (bridgeWin && !bridgeWin.closed) bridgeWin.close(); } catch (_) {}
+        resolve({ success: true, count: payloads.length });
+      }, waitMs);
+
     } catch (err) {
       resolve({ success: false, error: err.message });
     }
@@ -613,8 +587,8 @@ export default function DeliveryPanel({
     XLSX.writeFile(wb, `Campaign_${new Date().toISOString().split("T")[0]}.xlsx`);
   };
 
-  const displayScript = isRep 
-    ? GAS_SCRIPT.replace(/\/\*\*[\s\n\r]*\* OPTIONAL:[\s\S]*$/, "").trim() 
+  const displayScript = isRep
+    ? GAS_SCRIPT.replace(/\/\*\*[\s\n\r]*\* OPTIONAL:[\s\S]*$/, "").trim()
     : GAS_SCRIPT;
 
   const handleCopyScript = () => {
@@ -671,10 +645,10 @@ export default function DeliveryPanel({
 
           return (
             <div className={`rounded-2xl border px-5 py-4 space-y-3 ${isAtLimit
-                ? "bg-red-50 border-red-200"
-                : wouldExceed
-                  ? "bg-amber-50 border-amber-200"
-                  : "bg-slate-50 border-slate-200"
+              ? "bg-red-50 border-red-200"
+              : wouldExceed
+                ? "bg-amber-50 border-amber-200"
+                : "bg-slate-50 border-slate-200"
               }`}>
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
@@ -950,13 +924,12 @@ export default function DeliveryPanel({
                         <button
                           onClick={() => createOneGasDraft(idx)}
                           disabled={draftStatus[idx] === "drafting" || draftStatus[idx] === "done" || repAtLimit}
-                          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
-                            draftStatus[idx] === "done"
+                          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${draftStatus[idx] === "done"
                               ? "bg-blue-50 text-blue-700 border-blue-200"
                               : repAtLimit
                                 ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
                                 : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
-                          }`}
+                            }`}
                           title={repAtLimit ? "Weekly limit reached" : "Create Gmail Draft"}
                         >
                           {draftStatus[idx] === "drafting"
@@ -975,13 +948,12 @@ export default function DeliveryPanel({
                         <button
                           onClick={() => openOneInGmail(idx)}
                           disabled={clipStatus[idx] === "copying" || repAtLimit}
-                          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap disabled:opacity-60 ${
-                            repAtLimit
+                          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap disabled:opacity-60 ${repAtLimit
                               ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
                               : isOpened
                                 ? "bg-green-100 text-green-700 hover:bg-green-200"
                                 : "bg-dd-red text-white hover:bg-[#ff3019] shadow-sm"
-                          }`}
+                            }`}
                           title={repAtLimit ? "Weekly limit reached" : undefined}
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
@@ -1060,9 +1032,8 @@ export default function DeliveryPanel({
                 const wouldExceed = sessionSentCount + draftModal.selected.size > effectiveLimit;
 
                 return (
-                  <div className={`rounded-xl px-4 py-2 space-y-1.5 ${
-                    atLimit || wouldExceed ? "bg-red-50 border border-red-200" : "bg-slate-50 border border-slate-200"
-                  }`}>
+                  <div className={`rounded-xl px-4 py-2 space-y-1.5 ${atLimit || wouldExceed ? "bg-red-50 border border-red-200" : "bg-slate-50 border border-slate-200"
+                    }`}>
                     <div className="flex items-center justify-between text-xs font-bold">
                       <span className={atLimit || wouldExceed ? "text-red-700" : "text-slate-600"}>
                         {atLimit
@@ -1078,9 +1049,8 @@ export default function DeliveryPanel({
                     </div>
                     <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
                       <div
-                        className={`h-full rounded-full transition-all duration-300 ${
-                          atLimit || wouldExceed ? "bg-red-500" : pct >= 80 ? "bg-amber-500" : "bg-emerald-500"
-                        }`}
+                        className={`h-full rounded-full transition-all duration-300 ${atLimit || wouldExceed ? "bg-red-500" : pct >= 80 ? "bg-amber-500" : "bg-emerald-500"
+                          }`}
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -1099,9 +1069,8 @@ export default function DeliveryPanel({
                 return (
                   <div
                     key={idx}
-                    className={`flex items-center gap-3 px-5 py-3 transition-colors ${
-                      isSelected ? "bg-emerald-50/40" : "hover:bg-slate-50"
-                    }`}
+                    className={`flex items-center gap-3 px-5 py-3 transition-colors ${isSelected ? "bg-emerald-50/40" : "hover:bg-slate-50"
+                      }`}
                   >
                     {/* Checkbox */}
                     <input
@@ -1112,9 +1081,8 @@ export default function DeliveryPanel({
                     />
 
                     {/* Number Badge */}
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${
-                      isDone ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-500"
-                    }`}>
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${isDone ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-500"
+                      }`}>
                       {isDone ? <Check className="w-4 h-4" /> : idx + 1}
                     </div>
 
@@ -1141,13 +1109,12 @@ export default function DeliveryPanel({
                             createOneGasDraft(idx);
                           }}
                           disabled={isDraftingRow || isDone || repAtLimit || draftModal.isDrafting}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
-                            isDone
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${isDone
                               ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                               : repAtLimit
                                 ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
                                 : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
-                          }`}
+                            }`}
                           title={repAtLimit ? "Weekly limit reached" : "Create single Gmail Draft"}
                         >
                           {isDraftingRow ? (

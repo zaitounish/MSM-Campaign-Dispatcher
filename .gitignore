@@ -76,5 +76,17 @@ Thumbs.db
 # Testing & Coverage
 coverage/
 .nyc_output/
+test-results/
+playwright-report/
+blob-report/
+.playwright/
 .playwright-mcp/
+test-harness.*
+src/test-harness.*
+test-*.html
+*.test.html
 scripts/guide_printable.html
+
+# AI & Agent Artifacts
+.agents/
+.gemini/
