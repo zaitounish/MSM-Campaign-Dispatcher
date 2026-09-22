@@ -428,6 +428,11 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
               <input type="url" name="gasUrl" value={formData.gasUrl} onChange={handleChange}
                 placeholder="https://script.google.com/macros/s/.../exec"
                 className="w-full bg-slate-50 border border-slate-300 font-mono text-xs rounded-xl px-4 py-2.5 focus:border-dd-red focus:ring-1 focus:ring-dd-red outline-none transition-all" />
+              {formData.gasUrl && !formData.gasUrl.includes("/exec") && (
+                <p className="text-xs text-amber-600 font-semibold mt-1.5 flex items-center gap-1">
+                  ⚠️ Must be a Web App URL ending in <strong>/exec</strong> (from Deploy → Web app), not the /edit URL from your browser address bar.
+                </p>
+              )}
             </div>
 
             <div className="border border-slate-200 rounded-2xl overflow-hidden">
@@ -450,7 +455,7 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
                     <li>Delete any existing code and paste the script below.</li>
                     <li>Click <strong>Deploy → New Deployment → Web App</strong>. <span className="text-xs text-amber-600 font-bold">(Always choose &quot;New Deployment&quot; if updating!)</span></li>
                     <li>Set <em>Execute as</em> = <strong>Me</strong>, <em>Who has access</em> = <strong>Anyone within DoorDash</strong>.</li>
-                    <li>Click Deploy, authorize Gmail permissions, and <strong>copy the Web App URL</strong>.</li>
+                    <li>Click Deploy, authorize Gmail permissions, and <strong>copy the Web App URL</strong> (ends in <code>/exec</code>).</li>
                     <li>Paste that URL into the <strong>Google Apps Script Web App URL</strong> field above, then hit <strong>Save Configuration</strong>.</li>
                     <li className="font-semibold text-slate-800">Click the <span className="bg-emerald-100 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md text-xs">Authorize GAS</span> button below — this opens your script once so Google records your approval. Only needed the first time.</li>
                   </ol>
@@ -480,7 +485,7 @@ export default function RepSettingsModal({ isOpen, onClose, repSettings, setRepS
                   </div>
 
                   <p className="text-[11px] text-slate-400 leading-relaxed">
-                    <strong>How it works:</strong> Instead of a network API call, the app submits a hidden browser form to your GAS URL. This automatically includes your DoorDash Google session cookies, so GAS authenticates you silently — no CORS issues, no IT approvals needed.
+                    <strong>How it works:</strong> The Dispatcher communicates with your personal Google Apps Script Web App to build drafts directly in your Gmail inbox. Because it executes under your own DoorDash Google account, no IT admin permissions or passwords are needed.
                   </p>
                 </div>
               )}

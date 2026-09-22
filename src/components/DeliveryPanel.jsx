@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback } from "react";
 import * as XLSX from "xlsx";
 import { logEmailSend, getRepWeeklyCount, getRepWeeklyLimitOverride, submitLimitApprovalRequest } from "../lib/supabase";
 import { trackFormSubmit } from "../lib/analytics";
+import { GAS_SCRIPT } from "../lib/gasScript";
 import {
   DownloadCloud, CheckCircle2, Layers, FileText,
   Loader2, AlertTriangle, Mail, ExternalLink, ChevronDown,
@@ -40,109 +41,91 @@ const copyHtmlToClipboard = async (draft) => {
   }
 };
 
-// GAS script the user deploys once to enable rich HTML drafts.
-const GAS_SCRIPT = `/**
- * MSM Campaign Dispatcher – Gmail Drafts Bridge
- *
- * Deploy as a Web App:
- *   Execute as : Me
- *   Who has access : Anyone within DoorDash
- *
- * After deploying, open the Web App URL once in your browser to grant Gmail
- * permissions, then paste the URL into ⚙ Settings → Google Apps Script URL.
- */
-
-function doGet(e) {
-  // Simple GET endpoint to confirm the script is authorized and reachable.
-  return ContentService
-    .createTextOutput(
-      "✅ Authorization successful! You can close this tab and return to the Dispatcher."
-    )
-    .setMimeType(ContentService.MimeType.TEXT);
-}
-
-/**
- * POST endpoint used by the Dispatcher.
- * Expects either:
- *   - payload_encoded : URL-encoded JSON string (preferred, preserves emojis)
- *   - payload         : Base64-encoded JSON string
- *   - emails          : raw JSON string (fallback)
- *
- * It ONLY creates drafts; it never sends mail directly.
- * The rep must open Gmail Drafts and click Send manually  
- * this ensures Salesforce logs the email as manual ([outreach] [Email] manual [out]).
- */
-function doPost(e) {
-  var emails = [];
-
-  try {
-    // Prefer the explicitly encoded payload to avoid emoji corruption.
-    if (e.parameter.payload_encoded) {
-      var jsonStr = decodeURIComponent(e.parameter.payload_encoded);
-      emails = JSON.parse(jsonStr);
-    } else if (e.parameter.payload) {
-      // Base64-encoded fallback.
-      var decodedBytes = Utilities.base64Decode(e.parameter.payload);
-      var jsonStr = Utilities.newBlob(decodedBytes).getDataAsString();
-      emails = JSON.parse(jsonStr);
-    } else {
-      // Legacy fallback.
-      emails = JSON.parse(e.parameter.emails || "[]");
-    }
-  } catch (err) {
-    // If parsing fails, treat as empty list so the script doesn't crash.
-    emails = [];
+// ─── GAS Draft Dispatcher Helper ─────────────────────────────────────────────
+// Dispatches email drafts to the user's personal Google Apps Script Web App.
+// Uses direct fetch with Content-Type: text/plain;charset=utf-8 (CORS simple request)
+// to avoid iframe cookie-blocking and preflight rejections.
+// Falls back to hidden form post if fetch is blocked by local network/browser policies.
+async function sendDraftsToGas(gasUrl, payloads) {
+  if (!gasUrl) {
+    return { success: false, error: "No GAS URL configured." };
   }
 
-  // Create a draft for each email object.
-  // NOTE: We never call GmailApp.sendEmail() here.
-  // Sending must be done manually by the rep inside Gmail
-  // so that Salesforce/Outreach tags the message as [manual out].
-  emails.forEach(function (email) {
-    var opts = {
-      cc:       email.cc || "",
-      htmlBody: email.htmlBody || ""
-    };
-    GmailApp.createDraft(
-      email.to,
-      email.subject,
-      email.plainTextBody || "",  // plain-text body (required)
-      opts
-    );
+  // Strategy 1: Direct fetch with text/plain (CORS simple request)
+  try {
+    const res = await fetch(gasUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payloads),
+      redirect: "follow",
+    });
+
+    if (res.ok) {
+      const data = await res.json().catch(() => null);
+      if (data && data.ok) {
+        return {
+          success: true,
+          count: data.createdCount || payloads.length,
+          failedCount: data.failedCount || 0,
+        };
+      }
+      if (data && data.error) {
+        return { success: false, error: data.error };
+      }
+      return { success: true, count: payloads.length };
+    }
+  } catch (fetchErr) {
+    console.warn("[sendDraftsToGas] Direct fetch failed, trying iframe fallback:", fetchErr);
+  }
+
+  // Strategy 2: Hidden iframe form post fallback
+  return new Promise((resolve) => {
+    try {
+      const FRAME_ID = "__gas_bridge_frame__";
+      let iframe = document.getElementById(FRAME_ID);
+      if (!iframe) {
+        iframe = document.createElement("iframe");
+        iframe.id = FRAME_ID;
+        iframe.name = FRAME_ID;
+        iframe.style.cssText = "position:fixed;width:1px;height:1px;top:-9999px;left:-9999px;border:0;opacity:0;pointer-events:none;";
+        document.body.appendChild(iframe);
+      }
+
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = gasUrl;
+      form.target = FRAME_ID;
+      form.style.display = "none";
+
+      const addField = (name, value) => {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = name;
+        input.value = value;
+        form.appendChild(input);
+      };
+
+      const jsonStr = JSON.stringify(payloads);
+      const encodedPayload = encodeURIComponent(jsonStr);
+
+      addField("action", "draft");
+      addField("payload_encoded", encodedPayload);
+
+      document.body.appendChild(form);
+      form.submit();
+      requestAnimationFrame(() => {
+        if (form.parentNode) form.parentNode.removeChild(form);
+      });
+
+      // In fallback mode, allow reasonable time for GAS execution
+      setTimeout(() => {
+        resolve({ success: true, count: payloads.length, isFallback: true });
+      }, Math.min(Math.max(1500, payloads.length * 400), 5000));
+    } catch (err) {
+      resolve({ success: false, error: err.message });
+    }
   });
-
-  // Respond with a simple JSON payload so the frontend can show a count.
-  return ContentService
-    .createTextOutput(JSON.stringify({ ok: true, count: emails.length }))
-    .setMimeType(ContentService.MimeType.JSON);
 }
-
-/**
- * OPTIONAL: Helper to send a limited number of existing drafts from the script editor.
- * WARNING: Do NOT call this from the web-app endpoint if you need the "manual" tag
- * in Salesforce. Sending from Apps Script will always tag as automated.
- */
-// function sendAllMyDrafts() {
-//   var MAX_SENDS = 50; // adjust as needed
-//   var drafts = GmailApp.getDrafts();
-//   var sentCount = 0;
-// 
-//   for (var i = 0; i < drafts.length; i++) {
-//     if (sentCount >= MAX_SENDS) {
-//       Logger.log("Reached maximum limit of " + MAX_SENDS + " sends. Stopping.");
-//       break;
-//     }
-//     var toAddress = drafts[i].getMessage().getTo();
-//     if (!toAddress || toAddress.trim() === "") {
-//       break; 
-//     }
-//     
-//     drafts[i].send();
-//     sentCount++;
-//   }
-//   
-//   Logger.log("Finished! Total emails sent this run: " + sentCount);
-// }`;
 
 // Fallback only — real limit comes from reps_whitelist.daily_email_limit / weekly_email_limit
 const DEFAULT_WEEKLY_LIMIT = 300;
@@ -332,13 +315,14 @@ export default function DeliveryPanel({
   };
 
   // Create a draft for a single email via GAS
-  const createOneGasDraft = (idx) => {
+  const createOneGasDraft = async (idx) => {
     // 🔒 Hard quota gate using the optimistic counter (never stale due to async delay)
     if (isRep && !isBlankSend && sessionSentCount >= effectiveLimit) return;
     // Increment immediately — blocks any further clicks in the same tick
     if (isRep && !isBlankSend) setSessionSentCount(c => c + 1);
 
     if (!repSettings.gasUrl) {
+      if (isRep && !isBlankSend) setSessionSentCount(c => Math.max(0, c - 1));
       setSendStatus({ type: "error", msg: "No GAS URL configured. Please set up Gmail Drafts in settings." });
       return;
     }
@@ -358,64 +342,42 @@ export default function DeliveryPanel({
       name: senderName,
     };
 
-    const FRAME_ID = "__gas_bridge_frame__";
-    let iframe = document.getElementById(FRAME_ID);
-    if (!iframe) {
-      iframe = document.createElement("iframe");
-      iframe.id = FRAME_ID;
-      iframe.name = FRAME_ID;
-      iframe.style.cssText = "position:fixed;width:1px;height:1px;top:-9999px;left:-9999px;border:0;opacity:0;pointer-events:none;";
-      document.body.appendChild(iframe);
+    const res = await sendDraftsToGas(repSettings.gasUrl, [payload]);
+
+    if (!res.success) {
+      if (isRep && !isBlankSend) setSessionSentCount(c => Math.max(0, c - 1));
+      setDraftStatus(prev => ({ ...prev, [idx]: "error" }));
+      setSendStatus({
+        type: "error",
+        msg: `Failed to create draft in Gmail: ${res.error || "Connection failed"}. Check your GAS URL and verify it is deployed with 'Who has access: Anyone within DoorDash'.`
+      });
+      return;
     }
 
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = repSettings.gasUrl;
-    form.target = FRAME_ID;
-    form.style.display = "none";
+    setDraftStatus(prev => ({ ...prev, [idx]: "done" }));
+    setQueue(prev => {
+      const opened = new Set(prev.opened);
+      opened.add(idx);
+      return { ...prev, opened };
+    });
 
-    const addField = (name, value) => {
-      const input = document.createElement("input");
-      input.type = "hidden";
-      input.name = name;
-      input.value = value;
-      form.appendChild(input);
-    };
+    const logResult = await logEmailSend({
+      repEmail: userProfile?.email || repSettings?.email || "",
+      repName: userProfile?.full_name || senderName,
+      merchantName: t.merchant?.merchantName || "",
+      merchantId: t.merchant?.businessId || t.merchant?.id || "",
+      toEmail: t.to,
+      ccEmails: t.cc || "",
+      subject: t.draft.subject,
+      promoTypes: selectedPromos,
+      deliveryMethod: "gas_draft",
+      emailFormat,
+    });
 
-    const jsonStr = JSON.stringify([payload]);
-    const encodedPayload = encodeURIComponent(jsonStr);
-
-    addField("action", "draft");
-    addField("payload_encoded", encodedPayload);
-
-    document.body.appendChild(form);
-    form.submit();
-    requestAnimationFrame(() => document.body.removeChild(form));
-
-    setTimeout(async () => {
-      setDraftStatus(prev => ({ ...prev, [idx]: "done" }));
-      setQueue(prev => {
-        const opened = new Set(prev.opened);
-        opened.add(idx);
-        return { ...prev, opened };
-      });
-      const logResult = await logEmailSend({
-        repEmail: userProfile?.email || repSettings?.email || "",
-        repName: userProfile?.full_name || senderName,
-        merchantName: t.merchant?.merchantName || "",
-        merchantId: t.merchant?.businessId || t.merchant?.id || "",
-        toEmail: t.to,
-        ccEmails: t.cc || "",
-        subject: t.draft.subject,
-        promoTypes: selectedPromos,
-        deliveryMethod: "gmail_tab",
-        emailFormat,
-      });
-      if (!logResult.success) {
-        setSendStatus({ type: "error", msg: "⚠️ Draft created but the send log failed to save. Please notify your manager so this can be counted manually." });
-      }
-      if (isRep && !isBlankSend) refreshQuota();
-    }, 1500);
+    if (!logResult.success) {
+      setSendStatus({ type: "error", msg: "⚠️ Draft created in Gmail but the send log failed to save. Please notify your manager so this can be counted manually." });
+    }
+    if (isRep && !isBlankSend) refreshQuota();
   };
 
   const closeQueue = () => {
@@ -489,7 +451,7 @@ export default function DeliveryPanel({
     });
   };
 
-  const handleExecuteDraftBatch = () => {
+  const handleExecuteDraftBatch = async () => {
     if (!repSettings.gasUrl) {
       setSendStatus({
         type: "error",
@@ -530,83 +492,92 @@ export default function DeliveryPanel({
       name: senderName,
     }));
 
-    // Ensure a persistent hidden iframe exists for receiving the GAS response
-    const FRAME_ID = "__gas_bridge_frame__";
-    let iframe = document.getElementById(FRAME_ID);
-    if (!iframe) {
-      iframe = document.createElement("iframe");
-      iframe.id = FRAME_ID;
-      iframe.name = FRAME_ID;
-      iframe.style.cssText = "position:fixed;width:1px;height:1px;top:-9999px;left:-9999px;border:0;opacity:0;pointer-events:none;";
-      document.body.appendChild(iframe);
+    // Process in chunks of 25 to prevent execution timeouts and payload limits
+    const CHUNK_SIZE = 25;
+    let totalCreated = 0;
+    let anyFailure = false;
+    let lastError = null;
+    const successfulIndices = [];
+    const successfulTargets = [];
+
+    for (let i = 0; i < payloads.length; i += CHUNK_SIZE) {
+      const chunkPayloads = payloads.slice(i, i + CHUNK_SIZE);
+      const chunkIndices = selectedIndices.slice(i, i + CHUNK_SIZE);
+      const chunkTargets = selectedTargets.slice(i, i + CHUNK_SIZE);
+
+      const chunkRes = await sendDraftsToGas(repSettings.gasUrl, chunkPayloads);
+      if (chunkRes.success) {
+        totalCreated += chunkRes.count || chunkPayloads.length;
+        chunkIndices.forEach(idx => successfulIndices.push(idx));
+        chunkTargets.forEach(t => successfulTargets.push(t));
+      } else {
+        anyFailure = true;
+        lastError = chunkRes.error;
+      }
     }
 
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = repSettings.gasUrl;
-    form.target = FRAME_ID;
-    form.style.display = "none";
+    setIsSending(false);
+    setDraftModal(prev => prev ? { ...prev, isDrafting: false } : null);
 
-    const addField = (name, value) => {
-      const input = document.createElement("input");
-      input.type = "hidden";
-      input.name = name;
-      input.value = value;
-      form.appendChild(input);
-    };
-
-    const jsonStr = JSON.stringify(payloads);
-    const encodedPayload = encodeURIComponent(jsonStr);
-
-    addField("action", "draft");
-    addField("payload_encoded", encodedPayload);
-
-    document.body.appendChild(form);
-    form.submit();
-    requestAnimationFrame(() => document.body.removeChild(form));
-
-    setTimeout(async () => {
-      setIsSending(false);
-      setDraftModal(prev => prev ? { ...prev, isDrafting: false } : null);
-
-      // Mark drafted items as done
-      setDraftStatus(prev => {
-        const next = { ...prev };
-        selectedIndices.forEach(idx => { next[idx] = "done"; });
-        return next;
-      });
-
+    // If completely failed, rollback optimistic quota counter completely
+    if (totalCreated === 0) {
+      if (isRep && !isBlankSend) {
+        setSessionSentCount(c => Math.max(0, c - selectedTargets.length));
+      }
       setSendStatus({
-        type: "success",
-        msg: `${payloads.length} draft${payloads.length > 1 ? "s" : ""} created in Gmail. Open your Drafts folder to review and send.`,
+        type: "error",
+        msg: `Failed to create drafts in Gmail: ${lastError || "Connection failed"}. Check your GAS script URL in Settings and ensure it is deployed with 'Who has access: Anyone within DoorDash'.`
+      });
+      return;
+    }
+
+    // If partial failure, refund uncreated slots
+    if (anyFailure && totalCreated < selectedTargets.length) {
+      const uncreatedCount = selectedTargets.length - totalCreated;
+      if (isRep && !isBlankSend) {
+        setSessionSentCount(c => Math.max(0, c - uncreatedCount));
+      }
+    }
+
+    // Mark drafted items as done
+    setDraftStatus(prev => {
+      const next = { ...prev };
+      successfulIndices.forEach(idx => { next[idx] = "done"; });
+      return next;
+    });
+
+    setSendStatus({
+      type: anyFailure ? "warning" : "success",
+      msg: anyFailure
+        ? `Created ${totalCreated} of ${selectedTargets.length} drafts in Gmail. Open your Drafts folder to review and send.`
+        : `${totalCreated} draft${totalCreated > 1 ? "s" : ""} created in Gmail. Open your Drafts folder to review and send.`,
+      draftsUrl: "https://mail.google.com/mail/u/0/#drafts",
+    });
+
+    // Log ONLY confirmed draft creation events via bulk insert
+    const logEvents = successfulTargets.map(t => ({
+      repEmail: userProfile?.email || repSettings?.email || "",
+      repName: userProfile?.full_name || senderName,
+      merchantName: t.merchant?.merchantName || "",
+      merchantId: t.merchant?.businessId || t.merchant?.id || "",
+      toEmail: t.to,
+      ccEmails: t.cc || "",
+      subject: t.draft.subject,
+      promoTypes: selectedPromos,
+      deliveryMethod: "gas_draft",
+      emailFormat,
+    }));
+
+    const logResult = await logEmailSend(logEvents);
+    if (!logResult.success) {
+      setSendStatus({
+        type: "error",
+        msg: `⚠️ ${totalCreated} draft${totalCreated > 1 ? "s" : ""} were created in Gmail but the send log failed to save. Please notify your manager.`,
         draftsUrl: "https://mail.google.com/mail/u/0/#drafts",
       });
+    }
 
-      // Log each draft creation event via bulk insert
-      const logEvents = selectedTargets.map(t => ({
-        repEmail: userProfile?.email || repSettings?.email || "",
-        repName: userProfile?.full_name || senderName,
-        merchantName: t.merchant?.merchantName || "",
-        merchantId: t.merchant?.businessId || t.merchant?.id || "",
-        toEmail: t.to,
-        ccEmails: t.cc || "",
-        subject: t.draft.subject,
-        promoTypes: selectedPromos,
-        deliveryMethod: "gas_draft",
-        emailFormat,
-      }));
-
-      const logResult = await logEmailSend(logEvents);
-      if (!logResult.success) {
-        setSendStatus({
-          type: "error",
-          msg: `⚠️ ${payloads.length} draft${payloads.length > 1 ? "s" : ""} were created in Gmail but the send log failed to save. Please notify your manager.`,
-          draftsUrl: "https://mail.google.com/mail/u/0/#drafts",
-        });
-      }
-
-      if (isRep && !isBlankSend) refreshQuota();
-    }, 1500);
+    if (isRep && !isBlankSend) refreshQuota();
   };
 
   // Backwards compatibility alias
@@ -868,7 +839,7 @@ export default function DeliveryPanel({
                     <li>Delete any existing code and paste the script below.</li>
                     <li>Click <strong>Deploy → New Deployment → Web App</strong>. <span className="text-xs text-amber-600 font-bold">(Always choose "New Deployment" if updating!)</span></li>
                     <li>Set <em>Execute as</em> = <strong>Me</strong>, <em>Who has access</em> = <strong>Anyone within DoorDash</strong>.</li>
-                    <li>Click Deploy, authorize Gmail permissions, and <strong>copy the Web App URL</strong>.</li>
+                    <li>Click Deploy, authorize Gmail permissions, and <strong>copy the Web App URL</strong> (ends in <code>/exec</code>).</li>
                     <li>Paste that URL into <strong>⚙ Settings → Google Apps Script URL</strong>.</li>
                     <li className="font-semibold text-slate-800">Click the <span className="bg-emerald-100 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-md text-xs">Authorize GAS</span> button below this opens your script once so Google records your approval. Only needed the first time.</li>
                   </ol>
@@ -898,7 +869,7 @@ export default function DeliveryPanel({
 
                   {/* How it works note */}
                   <p className="text-[11px] text-slate-400 leading-relaxed">
-                    <strong>How it works:</strong> Instead of a network API call, the app submits a hidden browser form to your GAS URL. This automatically includes your DoorDash Google session cookies, so GAS authenticates you silently no CORS issues, no IT approvals needed.
+                    <strong>How it works:</strong> The Dispatcher communicates with your personal Google Apps Script Web App to build drafts directly in your Gmail inbox. Because it executes under your own Google account, no IT admin permissions or passwords are needed.
                   </p>
                 </div>
               )}

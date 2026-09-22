@@ -1,9 +1,8 @@
 /**
  * gasScript.js | Canonical Gmail Drafts Bridge script (single source of truth)
  *
- * Displayed in RepSettingsModal's "Gmail Drafts Setup" accordion (and mirrored
- * in DeliveryPanel, which keeps its own identical copy). The rep pastes this into
- * script.google.com → Deploy as Web App → pastes the URL back into Settings.
+ * Displayed in RepSettingsModal's "Gmail Drafts Setup" accordion and DeliveryPanel.
+ * The rep pastes this into script.google.com → Deploy as Web App → pastes the URL back into Settings.
  */
 
 export const GAS_SCRIPT = `/**
@@ -21,17 +20,18 @@ function doGet(e) {
   // Simple GET endpoint to confirm the script is authorized and reachable.
   return ContentService
     .createTextOutput(
-      "✅ Authorization successful! You can close this tab and return to the Dispatcher."
+      "✅ Authorization successful! Gmail Drafts Bridge is connected and ready. You can close this tab and return to the Dispatcher."
     )
     .setMimeType(ContentService.MimeType.TEXT);
 }
 
 /**
  * POST endpoint used by the Dispatcher.
- * Expects either:
- *   - payload_encoded : URL-encoded JSON string (preferred, preserves emojis)
+ * Accepts:
+ *   - Direct JSON body (via e.postData.contents from fetch text/plain)
+ *   - payload_encoded : URL-encoded JSON string (form submission)
  *   - payload         : Base64-encoded JSON string
- *   - emails          : raw JSON string (fallback)
+ *   - emails          : raw JSON string
  *
  * It ONLY creates drafts; it never sends mail directly.
  * The rep must open Gmail Drafts and click Send manually  
@@ -39,46 +39,92 @@ function doGet(e) {
  */
 function doPost(e) {
   var emails = [];
+  var errors = [];
+  var createdCount = 0;
 
   try {
-    // Prefer the explicitly encoded payload to avoid emoji corruption.
-    if (e.parameter.payload_encoded) {
-      var jsonStr = decodeURIComponent(e.parameter.payload_encoded);
-      emails = JSON.parse(jsonStr);
-    } else if (e.parameter.payload) {
-      // Base64-encoded fallback.
-      var decodedBytes = Utilities.base64Decode(e.parameter.payload);
-      var jsonStr = Utilities.newBlob(decodedBytes).getDataAsString();
-      emails = JSON.parse(jsonStr);
-    } else {
-      // Legacy fallback.
-      emails = JSON.parse(e.parameter.emails || "[]");
+    // 1. Direct JSON body (preferred from fetch text/plain)
+    if (e && e.postData && e.postData.contents) {
+      try {
+        var parsed = JSON.parse(e.postData.contents);
+        if (Array.isArray(parsed)) {
+          emails = parsed;
+        } else if (parsed && Array.isArray(parsed.emails)) {
+          emails = parsed.emails;
+        } else if (parsed && parsed.payload_encoded) {
+          emails = JSON.parse(decodeURIComponent(parsed.payload_encoded));
+        }
+      } catch (postDataErr) {
+        // Fall back to parameter parsing below
+      }
+    }
+
+    // 2. Form parameter fallbacks
+    if (emails.length === 0 && e && e.parameter) {
+      if (e.parameter.payload_encoded) {
+        emails = JSON.parse(decodeURIComponent(e.parameter.payload_encoded));
+      } else if (e.parameter.payload) {
+        var decodedBytes = Utilities.base64Decode(e.parameter.payload);
+        var jsonStr = Utilities.newBlob(decodedBytes).getDataAsString();
+        emails = JSON.parse(jsonStr);
+      } else if (e.parameter.emails) {
+        emails = JSON.parse(e.parameter.emails);
+      }
     }
   } catch (err) {
-    // If parsing fails, treat as empty list so the script doesn't crash.
-    emails = [];
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: false, error: "Failed to parse payload: " + err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 
-  // Create a draft for each email object.
-  // NOTE: We never call GmailApp.sendEmail() here.
-  // Sending must be done manually by the rep inside Gmail
-  // so that Salesforce/Outreach tags the message as [manual out].
-  emails.forEach(function (email) {
-    var opts = {
-      cc:       email.cc || "",
-      htmlBody: email.htmlBody || ""
-    };
-    GmailApp.createDraft(
-      email.to,
-      email.subject,
-      email.plainTextBody || "",  // plain-text body (required)
-      opts
-    );
+  if (!Array.isArray(emails) || emails.length === 0) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: false, error: "No emails provided in payload." }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // Create drafts with individual error handling per email
+  emails.forEach(function (email, index) {
+    try {
+      var to = (email.to || "").trim();
+      if (!to) {
+        errors.push({ index: index, error: "Missing recipient address" });
+        return;
+      }
+
+      var opts = {};
+      // ONLY include cc if it contains a non-empty string. Passing cc: "" causes
+      // GmailApp.createDraft to throw "Invalid argument: cc" and crash execution!
+      if (email.cc && typeof email.cc === "string" && email.cc.trim().length > 0) {
+        opts.cc = email.cc.trim();
+      }
+      if (email.htmlBody) {
+        opts.htmlBody = email.htmlBody;
+      }
+      if (email.name) {
+        opts.name = email.name;
+      }
+
+      GmailApp.createDraft(
+        to,
+        email.subject || "(No Subject)",
+        email.plainTextBody || "",
+        opts
+      );
+      createdCount++;
+    } catch (draftErr) {
+      errors.push({ index: index, to: email.to, error: draftErr.toString() });
+    }
   });
 
-  // Respond with a simple JSON payload so the frontend can show a count.
   return ContentService
-    .createTextOutput(JSON.stringify({ ok: true, count: emails.length }))
+    .createTextOutput(JSON.stringify({
+      ok: createdCount > 0,
+      createdCount: createdCount,
+      totalRequested: emails.length,
+      failedCount: errors.length,
+      errors: errors.slice(0, 5)
+    }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
