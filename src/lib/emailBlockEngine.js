@@ -260,7 +260,7 @@ export const THEMES = {
   momentum: {
     id: "momentum",
     label: "Momentum",
-    icon: "🚀",
+    icon: "⚡",
     description: "Bold DoorDash red | ideal for multi-promo outreach",
   },
   executive: {
@@ -405,7 +405,7 @@ export const buildEmailSubject = (merchant, selectedPromos) => {
   const mName = merchant.merchantName || "Merchant Partner";
   if (selectedPromos.length === 1) {
     const p = getPromoInfo(selectedPromos[0]);
-    if (p) return `${mName} | Boost Sales with ${p.name} on DoorDash 🚀`;
+    if (p) return `${mName} | Boost Sales with ${p.name} on DoorDash`;
   }
   if (selectedPromos.length > 1 && selectedPromos.length < 4) {
     return `${mName} | ${selectedPromos.length} Growth Opportunities Waiting For You on DoorDash`;
@@ -684,7 +684,7 @@ export const compileBlocksToText = (blocks, deepLinks, merchant) => {
         const promoId = block.data.promoId;
         const url = (promoId && deepLinks?.[promoId]) ? deepLinks[promoId] : "#";
         const body = _toPlainText(_interpolate(block.data.body, merchant));
-        return `━━━ 🚀 ${block.data.title} ━━━\n${body}\n→ ${block.data.buttonText}: ${url}\n`;
+        return `━━━ ${block.data.title} ━━━\n${body}\n→ ${block.data.buttonText}: ${url}\n`;
       }
 
       case BLOCK_TYPES.SIGNATURE: {

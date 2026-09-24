@@ -68,7 +68,7 @@ export const generateEmail = ({ merchant, selectedPromos, promoConfigs, repSetti
   if (!subject) {
     if (selectedPromos.length === 1) {
       const p1 = getPromoInfo(selectedPromos[0]);
-      if (p1) subject = `${mName} | Boost Sales with ${p1.name} on DoorDash \ud83d\ude80`;
+      if (p1) subject = `${mName} | Boost Sales with ${p1.name} on DoorDash`;
     } else if (selectedPromos.length > 1 && selectedPromos.length < 4) {
       subject = `${mName} | ${selectedPromos.length} Growth Opportunities Waiting For You on DoorDash`;
     } else {
@@ -126,7 +126,7 @@ export const generateEmail = ({ merchant, selectedPromos, promoConfigs, repSetti
 
     html += `
     <div style="margin: 24px 0; padding-top: 16px; border-top: 1px solid #eee; font-family: sans-serif;">
-      <h3 style="margin: 0 0 12px 0; color: #eb1700;">━━━ 🚀 ${promoInfo.name} ━━━</h3>
+      <h3 style="margin: 0 0 12px 0; color: #eb1700;">━━━ ${promoInfo.name} ━━━</h3>
       <p style="margin: 0 0 16px 0; font-size: 14px; color: #444; line-height: 1.5;">
         ${buildPromoSummary(promoId, config)}
         ${hasPromoCredit ? `<br><br><span style="color: #15803d; font-weight: bold;">💳 Covered by your $${config.creditAmount || "0"} risk-free trial credit!</span>` : ""}
@@ -137,7 +137,7 @@ export const generateEmail = ({ merchant, selectedPromos, promoConfigs, repSetti
     </div>
     `;
 
-    text += `━━━ 🚀 ${promoInfo.name} ━━━\n`;
+    text += `━━━ ${promoInfo.name} ━━━\n`;
     text += `${buildPromoSummary(promoId, config)}\n`;
     if (hasPromoCredit) text += `💳 Covered by your $${config.creditAmount || "0"} risk-free trial credit!\n`;
     text += `\n→ Activate Here: ${link}\n\n`;

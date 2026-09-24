@@ -124,7 +124,7 @@ Rules:
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Theme:</span>
         {[
-          { id: "momentum", icon: "🚀", label: "Momentum" },
+          { id: "momentum", icon: "⚡", label: "Momentum" },
           { id: "executive", icon: "💼", label: "Executive" },
           { id: "spotlight", icon: "✨", label: "Spotlight" },
         ].map(t => (

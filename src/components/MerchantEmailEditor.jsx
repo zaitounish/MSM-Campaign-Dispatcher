@@ -686,7 +686,7 @@ Rules:
                     {applyToAll ? "{Store Name}" : namePart}
                   </span>
                   <input ref={subjectTitleRef} value={subjectTitle} onChange={e => setSubjectTitle(e.target.value)}
-                    placeholder=" | Boost Sales on DoorDash 🚀"
+                    placeholder=" | Boost Sales on DoorDash"
                     className="flex-1 px-3 py-2.5 text-sm text-slate-800 outline-none bg-white" />
                 </div>
               ) : (

@@ -124,7 +124,7 @@ function BlockVisual({ block }) {
       return (
         <div className="px-5 py-4" style={{ borderTop: "1px solid #eee", fontFamily: "sans-serif" }}>
           <h3 className="font-bold mb-3" style={{ color: "#eb1700", fontSize: 15 }}>
-            ━━━ 🚀 {block.data.title} ━━━
+            ━━━ {block.data.title} ━━━
           </h3>
           <div
             className="text-sm text-slate-600 leading-relaxed mb-4
