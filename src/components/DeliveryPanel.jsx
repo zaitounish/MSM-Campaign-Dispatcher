@@ -130,7 +130,7 @@ export default function DeliveryPanel({
   // so quota enforcement is never dependent on async DB refresh timing.
   const [sessionSentCount, setSessionSentCount] = useState(0);
 
-  const isRep = userProfile?.role === "rep";
+  const isRep = (userProfile?.role || "rep") === "rep";
   // Blank campaign sends don't count against the weekly limit
   const isBlankSend = selectedPromos.length === 1 && selectedPromos[0] === "blank";
 
@@ -763,14 +763,16 @@ export default function DeliveryPanel({
               </div>
             ) : (
               <>
-                {/* Gmail Drafts via GAS – opens modal with checkboxes */}
-                <button onClick={handleOpenDraftModal} disabled={isSending}
-                  className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md disabled:opacity-60 text-sm cursor-pointer">
-                  {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                  Gmail Drafts (HTML)
-                </button>
+                {/* Gmail Drafts via GAS – opens modal with checkboxes (hidden for reps) */}
+                {!isRep && (
+                  <button onClick={handleOpenDraftModal} disabled={isSending}
+                    className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md disabled:opacity-60 text-sm cursor-pointer">
+                    {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                    Gmail Drafts (HTML)
+                  </button>
+                )}
 
-                {/* Open One by One   all roles */}
+                {/* Open One by One – all roles */}
                 <button onClick={handleOpenGmailQueue}
                   className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold bg-dd-red hover:bg-[#ff3019] text-white transition-all shadow-md text-sm">
                   <Mail className="w-4 h-4" /> Open One by One
@@ -787,7 +789,9 @@ export default function DeliveryPanel({
               <ExternalLink className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
               <div className="space-y-1">
                 <p><strong>Open in Gmail →</strong> copies the full rich email to your clipboard, then opens Gmail compose pre-filled with recipient &amp; subject. Just press <strong>Ctrl+V</strong> inside Gmail to paste the formatted email with all links intact.</p>
-                <p><strong>Gmail Drafts (HTML)</strong> creates fully-formatted rich HTML drafts in your Gmail Drafts folder via Google Apps Script | no paste needed. Requires one-time setup below.</p>
+                {!isRep && (
+                  <p><strong>Gmail Drafts (HTML)</strong> creates fully-formatted rich HTML drafts in your Gmail Drafts folder via Google Apps Script | no paste needed. Requires one-time setup below.</p>
+                )}
               </div>
             </div>
 
@@ -984,7 +988,7 @@ export default function DeliveryPanel({
       )}
 
       {/* ── Gmail Drafts Queue Modal (with Checkboxes) ────────────────────────── */}
-      {draftModal && (
+      {draftModal && !isRep && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col animate-in zoom-in-95 duration-200 overflow-hidden">
             {/* Modal Header */}
